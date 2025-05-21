@@ -26,8 +26,8 @@ pub fn build(b: *std.Build) void {
     });
     exe.root_module.addImport("zmath", zmath.module("root"));
 
-    // const build_shader_cmd = b.addSystemCommand(&.{ "sh", "build_shaders.sh" });
-    // b.getInstallStep().dependOn(&build_shader_cmd.step);
+    const build_shader_cmd = b.addSystemCommand(&.{ "sh", "build_shaders.sh" });
+    b.getInstallStep().dependOn(&build_shader_cmd.step);
 
     b.installArtifact(exe);
 
