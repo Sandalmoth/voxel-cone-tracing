@@ -7,7 +7,6 @@ pub fn build(b: *std.Build) void {
     const sdl_dep = b.dependency("sdl", .{
         .target = target,
         .optimize = optimize,
-        .preferred_linkage = .static,
     });
     const sdl_lib = sdl_dep.artifact("SDL3");
 

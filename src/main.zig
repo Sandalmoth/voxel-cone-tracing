@@ -97,7 +97,13 @@ pub fn main() !void {
             log.err("SDL_AcquireGPUCommandBuffer: {s}", .{sdl.c.SDL_GetError()});
             return error.Sdl;
         };
+
+        {
+            draw_pass.begin(command_buffer);
+            defer draw_pass.end(command_buffer);
+        }
         try present_pass.run(window, command_buffer, draw_pass.backbuffer);
+
         if (!sdl.c.SDL_SubmitGPUCommandBuffer(command_buffer)) {
             log.err("SDL_SubmitGPUCommandBuffer: {s}", .{sdl.c.SDL_GetError()});
             return error.Sdl;
@@ -108,6 +114,7 @@ pub fn main() !void {
 const DrawPass = struct {
     device: *sdl.c.SDL_GPUDevice,
     pipeline: *sdl.c.SDL_GPUGraphicsPipeline,
+    render_pass: ?*sdl.c.SDL_GPURenderPass,
 
     backbuffer: *sdl.c.SDL_GPUTexture,
     backbuffer_depth: *sdl.c.SDL_GPUTexture,
@@ -221,7 +228,7 @@ const DrawPass = struct {
             .target_info = .{
                 .color_target_descriptions = &color_target_descriptions[0],
                 .num_color_targets = color_target_descriptions.len,
-                .depth_stencil_format = @intCast(depth_stencil_format), // bug?
+                .depth_stencil_format = @intCast(depth_stencil_format),
                 .has_depth_stencil_target = true,
             },
         };
@@ -269,6 +276,7 @@ const DrawPass = struct {
         return .{
             .device = device,
             .pipeline = pipeline,
+            .render_pass = null,
             .backbuffer = backbuffer,
             .backbuffer_depth = backbuffer_depth,
         };
@@ -279,6 +287,34 @@ const DrawPass = struct {
         sdl.c.SDL_ReleaseGPUTexture(pass.device, pass.backbuffer);
         sdl.c.SDL_ReleaseGPUGraphicsPipeline(pass.device, pass.pipeline);
         pass.* = undefined;
+    }
+
+    fn begin(pass: *DrawPass, command_buffer: *sdl.c.SDL_GPUCommandBuffer) void {
+        const clear_color: sdl.c.SDL_FColor = .{ .r = 0.22, .g = 0.11, .b = 0.22, .a = 1.0 };
+        const color_target_infos = [_]sdl.c.SDL_GPUColorTargetInfo{.{
+            .texture = pass.backbuffer,
+            .clear_color = clear_color,
+            .load_op = sdl.c.SDL_GPU_LOADOP_CLEAR,
+            .store_op = sdl.c.SDL_GPU_STOREOP_STORE,
+        }};
+        pass.render_pass = sdl.c.SDL_BeginGPURenderPass(
+            command_buffer,
+            &color_target_infos[0],
+            color_target_infos.len,
+            &.{
+                .texture = pass.backbuffer_depth,
+                .clear_depth = 1,
+                .load_op = sdl.c.SDL_GPU_LOADOP_CLEAR,
+                .store_op = sdl.c.SDL_GPU_STOREOP_STORE,
+            },
+        );
+        sdl.c.SDL_BindGPUGraphicsPipeline(pass.render_pass, pass.pipeline);
+    }
+
+    fn end(pass: *DrawPass, command_buffer: *sdl.c.SDL_GPUCommandBuffer) void {
+        const render_pass = pass.render_pass.?;
+        sdl.c.SDL_EndGPURenderPass(render_pass);
+        _ = command_buffer;
     }
 };
 
@@ -503,10 +539,9 @@ const PresentPass = struct {
             log.err("SDL_WaitAndAcquireGPUSwapchainTexture: {s}", .{sdl.c.SDL_GetError()});
             return error.Sdl;
         }
-        const color_target_infos = [_]sdl.c.SDL_GPUColorTargetInfo{.{
-            .texture = swapchain_texture,
-            .load_op = sdl.c.SDL_GPU_LOADOP_DONT_CARE,
-        }};
+        const color_target_infos = [_]sdl.c.SDL_GPUColorTargetInfo{
+            .{ .texture = swapchain_texture, .load_op = sdl.c.SDL_GPU_LOADOP_DONT_CARE },
+        };
         const render_pass = sdl.c.SDL_BeginGPURenderPass(
             command_buffer,
             &color_target_infos[0],
@@ -523,10 +558,9 @@ const PresentPass = struct {
             &vertex_buffers[0],
             vertex_buffers.len,
         );
-        const sampler_bindings = [_]sdl.c.SDL_GPUTextureSamplerBinding{.{
-            .texture = backbuffer,
-            .sampler = pass.sampler,
-        }};
+        const sampler_bindings = [_]sdl.c.SDL_GPUTextureSamplerBinding{
+            .{ .texture = backbuffer, .sampler = pass.sampler },
+        };
         sdl.c.SDL_BindGPUFragmentSamplers(
             render_pass,
             0,

@@ -7,6 +7,9 @@ layout(location = 0) out vec3 frag_normal;
 
 layout(set = 1, binding = 0) uniform DrawData {
     mat4 vp;
+    vec3 diffuse;
+    vec3 emissive;
+    float roughness;
 } draw_data;
 
 void main() {
