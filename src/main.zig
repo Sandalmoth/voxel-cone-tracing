@@ -37,6 +37,11 @@ pub fn main() !void {
     };
     defer sdl.c.SDL_DestroyWindow(window);
 
+    if (!sdl.c.SDL_SetWindowRelativeMouseMode(window, true)) {
+        log.err("SDL_SetWindowRelativeMouseMode: {s}", .{sdl.c.SDL_GetError()});
+        return error.Sdl;
+    }
+
     const gpu_device = sdl.c.SDL_CreateGPUDevice(
         sdl.c.SDL_GPU_SHADERFORMAT_SPIRV,
         true,
@@ -66,8 +71,17 @@ pub fn main() !void {
     try input.map.put(.{ .keyboard = sdl.c.SDL_SCANCODE_LCTRL }, .down);
     defer input.deinit();
 
-    var scene = try Scene.init(gpa);
-    defer scene.deinit();
+    var camera = Camera{
+        .pos = zm.f32x4(0.0, 0.0, 0.0, 1.0),
+        .yaw = 0.0,
+        .pitch = 0.0,
+        .prev_pos = zm.f32x4(0.0, 0.0, 0.0, 1.0),
+        .prev_yaw = 0.0,
+        .prev_pitch = 0.0,
+    };
+
+    var scene = try Scene.init(gpa, gpu_device);
+    defer scene.deinit(gpa, gpu_device);
 
     var frame_timer = try std.time.Timer.start();
     var lag: u64 = 0;
@@ -88,10 +102,14 @@ pub fn main() !void {
         }
 
         while (lag >= tick_ns) {
+            camera.update(&input);
+
             input.decay();
             lag -= tick_ns;
             time += 1.0 / @as(f64, @floatFromInt(ticks_per_second));
         }
+
+        const alpha = @as(f32, @floatFromInt(lag)) / @as(f32, @floatFromInt(tick_ns));
 
         const command_buffer = sdl.c.SDL_AcquireGPUCommandBuffer(gpu_device) orelse {
             log.err("SDL_AcquireGPUCommandBuffer: {s}", .{sdl.c.SDL_GetError()});
@@ -101,6 +119,13 @@ pub fn main() !void {
         {
             draw_pass.begin(command_buffer);
             defer draw_pass.end(command_buffer);
+            const camera_vp = camera.vp(alpha);
+            for (scene.objects.items) |object| draw_pass.drawObject(
+                command_buffer,
+                object,
+                camera_vp,
+                alpha,
+            );
         }
         try present_pass.run(window, command_buffer, draw_pass.backbuffer);
 
@@ -112,6 +137,11 @@ pub fn main() !void {
 }
 
 const DrawPass = struct {
+    const DrawData = extern struct {
+        mvp: [16]f32,
+        normal: [16]f32,
+    };
+
     device: *sdl.c.SDL_GPUDevice,
     pipeline: *sdl.c.SDL_GPUGraphicsPipeline,
     render_pass: ?*sdl.c.SDL_GPURenderPass,
@@ -216,8 +246,8 @@ const DrawPass = struct {
             },
             .primitive_type = sdl.c.SDL_GPU_PRIMITIVETYPE_TRIANGLELIST,
             .rasterizer_state = .{
-                .front_face = sdl.c.SDL_GPU_FRONTFACE_COUNTER_CLOCKWISE,
-                .cull_mode = sdl.c.SDL_GPU_CULLMODE_BACK,
+                // .front_face = sdl.c.SDL_GPU_FRONTFACE_COUNTER_CLOCKWISE,
+                // .cull_mode = sdl.c.SDL_GPU_CULLMODE_BACK,
             },
             .multisample_state = .{},
             .depth_stencil_state = .{
@@ -290,7 +320,7 @@ const DrawPass = struct {
     }
 
     fn begin(pass: *DrawPass, command_buffer: *sdl.c.SDL_GPUCommandBuffer) void {
-        const clear_color: sdl.c.SDL_FColor = .{ .r = 0.22, .g = 0.11, .b = 0.22, .a = 1.0 };
+        const clear_color: sdl.c.SDL_FColor = .{ .r = 0.05, .g = 0.05, .b = 0.05, .a = 1.0 };
         const color_target_infos = [_]sdl.c.SDL_GPUColorTargetInfo{.{
             .texture = pass.backbuffer,
             .clear_color = clear_color,
@@ -303,12 +333,48 @@ const DrawPass = struct {
             color_target_infos.len,
             &.{
                 .texture = pass.backbuffer_depth,
-                .clear_depth = 1,
+                .clear_depth = 0,
                 .load_op = sdl.c.SDL_GPU_LOADOP_CLEAR,
                 .store_op = sdl.c.SDL_GPU_STOREOP_STORE,
             },
         );
         sdl.c.SDL_BindGPUGraphicsPipeline(pass.render_pass, pass.pipeline);
+    }
+
+    fn drawObject(
+        pass: *DrawPass,
+        command_buffer: *sdl.GPUCommandBuffer,
+        object: Scene.Object,
+        camera_vp: zm.Mat,
+        alpha: f32,
+    ) void {
+        const vertex_buffers = [_]sdl.c.SDL_GPUBufferBinding{
+            .{ .buffer = object.model.vertex_buffer, .offset = 0 },
+        };
+        sdl.c.SDL_BindGPUVertexBuffers(
+            pass.render_pass,
+            0,
+            &vertex_buffers[0],
+            vertex_buffers.len,
+        );
+        sdl.c.SDL_BindGPUIndexBuffer(
+            pass.render_pass,
+            &.{ .buffer = object.model.index_buffer, .offset = 0 },
+            sdl.c.SDL_GPU_INDEXELEMENTSIZE_32BIT,
+        );
+        const model = object.transform(alpha);
+        const mvp = zm.mul(model, camera_vp);
+        const normal = zm.transpose(zm.inverse(model));
+        sdl.c.SDL_PushGPUVertexUniformData(
+            command_buffer,
+            0,
+            &DrawData{
+                .mvp = zm.matToArr(mvp),
+                .normal = zm.matToArr(normal),
+            },
+            @sizeOf(DrawData),
+        );
+        sdl.c.SDL_DrawGPUIndexedPrimitives(pass.render_pass, object.model.n_indices, 1, 0, 0, 0);
     }
 
     fn end(pass: *DrawPass, command_buffer: *sdl.c.SDL_GPUCommandBuffer) void {
@@ -446,40 +512,28 @@ const PresentPass = struct {
         };
         errdefer sdl.c.SDL_ReleaseGPUGraphicsPipeline(device, pipeline);
 
-        const vertex_buffer = sdl.c.SDL_CreateGPUBuffer(device, &.{
+        const vertex_buffer = try sdl.createGPUBuffer(device, &.{
             .usage = sdl.c.SDL_GPU_BUFFERUSAGE_VERTEX,
             .size = 6 * @sizeOf(PresentVertex),
-        }) orelse {
-            log.err("SDL_CreateGPUBuffer: {s}", .{sdl.c.SDL_GetError()});
-            return error.Sdl;
-        };
-        errdefer sdl.c.SDL_ReleaseGPUBuffer(device, vertex_buffer);
+        });
+        errdefer sdl.releaseGPUBuffer(device, vertex_buffer);
 
-        const transfer_buffer = sdl.c.SDL_CreateGPUTransferBuffer(device, &.{
+        const transfer_buffer = try sdl.createGPUTransferBuffer(device, &.{
             .usage = sdl.c.SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD,
             .size = 6 * @sizeOf(PresentVertex),
-        }) orelse {
-            log.err("SDL_CreateGPUTransferBuffer: {s}", .{sdl.c.SDL_GetError()});
-            return error.Sdl;
-        };
-        defer sdl.c.SDL_ReleaseGPUTransferBuffer(device, transfer_buffer);
+        });
+        defer sdl.releaseGPUTransferBuffer(device, transfer_buffer);
 
-        const command_buffer = sdl.c.SDL_AcquireGPUCommandBuffer(device) orelse {
-            log.err("SDL_AcquireGPUCommandBuffer: {s}", .{sdl.c.SDL_GetError()});
-            return error.Sdl;
-        };
+        const command_buffer = try sdl.acquireGPUCommandBuffer(device);
 
         const bytes: [*]PresentVertex = @alignCast(@ptrCast(
-            sdl.c.SDL_MapGPUTransferBuffer(device, transfer_buffer, true) orelse {
-                log.err("SDL_MapGPUTransferBuffer: {s}", .{sdl.c.SDL_GetError()});
-                return error.Sdl;
-            },
+            try sdl.mapGPUTransferBuffer(device, transfer_buffer, true),
         ));
         @memcpy(bytes, &full_screen_quad);
-        sdl.c.SDL_UnmapGPUTransferBuffer(device, transfer_buffer);
+        sdl.unmapGPUTransferBuffer(device, transfer_buffer);
 
-        const copy_pass = sdl.c.SDL_BeginGPUCopyPass(command_buffer);
-        sdl.c.SDL_UploadToGPUBuffer(copy_pass, &.{
+        const copy_pass = try sdl.beginGPUCopyPass(command_buffer);
+        sdl.uploadToGPUBuffer(copy_pass, &.{
             .transfer_buffer = transfer_buffer,
             .offset = 0,
         }, &.{
@@ -487,12 +541,9 @@ const PresentPass = struct {
             .offset = 0,
             .size = @sizeOf(PresentVertex) * 6,
         }, false);
-        sdl.c.SDL_EndGPUCopyPass(copy_pass);
+        sdl.endGPUCopyPass(copy_pass);
 
-        if (!sdl.c.SDL_SubmitGPUCommandBuffer(command_buffer)) {
-            log.err("SDL_SubmitGPUCommandBuffer: {s}", .{sdl.c.SDL_GetError()});
-            return error.Sdl;
-        }
+        try sdl.submitGPUCommandBuffer(command_buffer);
 
         const sampler = sdl.c.SDL_CreateGPUSampler(device, &.{
             .min_filter = sdl.c.SDL_GPU_FILTER_NEAREST,
@@ -571,3 +622,87 @@ const PresentPass = struct {
         sdl.c.SDL_EndGPURenderPass(render_pass);
     }
 };
+
+const Camera = struct {
+    pos: zm.Vec,
+    yaw: f32,
+    pitch: f32,
+
+    prev_pos: zm.Vec,
+    prev_yaw: f32,
+    prev_pitch: f32,
+
+    const up = zm.f32x4(0.0, 1.0, 0.0, 0.0);
+    const mouse_sensitivity = 0.3;
+    const move_speed = 3;
+
+    fn update(camera: *Camera, input: *Input) void {
+        // mouse-look camera
+        camera.prev_pos = camera.pos;
+        camera.prev_yaw = camera.yaw;
+        camera.prev_pitch = camera.pitch;
+
+        camera.yaw += input.mouse_delta[0] * mouse_sensitivity * tick;
+        camera.pitch -= input.mouse_delta[1] * mouse_sensitivity * tick;
+        camera.pitch = std.math.clamp(camera.pitch, -0.49 * std.math.pi, 0.49 * std.math.pi);
+
+        const forward = zm.f32x4(
+            @cos(camera.yaw),
+            0.0,
+            @sin(camera.yaw),
+            0.0,
+        ) * zm.f32x4s(move_speed * tick);
+
+        const right = zm.f32x4(
+            @cos(camera.yaw + 0.5 * std.math.pi),
+            0.0,
+            @sin(camera.yaw + 0.5 * std.math.pi),
+            0.0,
+        ) * zm.f32x4s(move_speed * tick);
+
+        if (input.peek(.forward).held) camera.pos += forward;
+        if (input.peek(.backward).held) camera.pos -= forward;
+        if (input.peek(.right).held) camera.pos += right;
+        if (input.peek(.left).held) camera.pos -= right;
+        if (input.peek(.up).held) camera.pos += up * zm.f32x4s(move_speed * tick);
+        if (input.peek(.down).held) camera.pos -= up * zm.f32x4s(move_speed * tick);
+    }
+
+    fn vp(camera: Camera, alpha: f32) zm.Mat {
+        const pos = zm.lerp(camera.prev_pos, camera.pos, alpha);
+        const yaw = (1 - alpha) * camera.prev_yaw + alpha * camera.yaw;
+        const pitch = (1 - alpha) * camera.prev_pitch + alpha * camera.pitch;
+
+        const facing = zm.normalize3(zm.f32x4(
+            @cos(pitch) * @cos(yaw),
+            @sin(pitch),
+            @cos(pitch) * @sin(yaw),
+            0.0,
+        ));
+
+        return zm.mul(
+            zm.lookAtRh(pos, pos + facing, up),
+            // zm.perspectiveFovRh(std.math.degreesToRadians(69), 4.0 / 3.0, 0.01, 100.0),
+            perspectiveFovRhInv(std.math.degreesToRadians(69), 16.0 / 9.0, 0.1, 1e5),
+        );
+    }
+};
+
+pub fn perspectiveFovRhInv(fovy: f32, aspect: f32, near: f32, far: f32) zm.Mat {
+    const scfov = zm.sincos(0.5 * fovy);
+
+    std.debug.assert(near > 0.0 and far > 0.0);
+    std.debug.assert(!std.math.approxEqAbs(f32, scfov[0], 0.0, 0.001));
+    std.debug.assert(!std.math.approxEqAbs(f32, far, near, 0.001));
+    std.debug.assert(!std.math.approxEqAbs(f32, aspect, 0.0, 0.01));
+
+    const h = scfov[1] / scfov[0];
+    const w = h / aspect;
+    const r = far / (near - far);
+    return .{
+        zm.f32x4(w, 0.0, 0.0, 0.0),
+        zm.f32x4(0.0, h, 0.0, 0.0),
+        zm.f32x4(0.0, 0.0, -r - 1.0, -1.0),
+        zm.f32x4(0.0, 0.0, -r * near, 0.0),
+    };
+}
