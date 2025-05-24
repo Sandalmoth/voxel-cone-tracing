@@ -23,6 +23,9 @@ pub const GPUComputePipelineCreateInfo = c.SDL_GPUComputePipelineCreateInfo;
 pub const GPUComputePipeline = c.SDL_GPUComputePipeline;
 pub const GPUTextureCreateInfo = c.SDL_GPUTextureCreateInfo;
 pub const GPUTexture = c.SDL_GPUTexture;
+pub const GPUComputePass = c.SDL_GPUComputePass;
+pub const GPUStorageTextureReadWriteBinding = c.SDL_GPUStorageTextureReadWriteBinding;
+pub const GPUStorageBufferReadWriteBinding = c.SDL_GPUStorageBufferReadWriteBinding;
 
 pub fn getError() [*c]const u8 {
     return c.SDL_GetError();

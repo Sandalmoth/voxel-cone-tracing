@@ -119,6 +119,15 @@ pub fn main() !void {
         };
 
         {
+            voxelize_pass.begin(command_buffer);
+            defer voxelize_pass.end(command_buffer);
+            for (scene.objects.items) |object| voxelize_pass.voxelizeObject(
+                command_buffer,
+                object,
+                alpha,
+            );
+        }
+        {
             draw_pass.begin(command_buffer);
             defer draw_pass.end(command_buffer);
             const camera_vp = camera.vp(alpha);
@@ -139,10 +148,16 @@ pub fn main() !void {
 }
 
 const VoxelizePass = struct {
+    const VoxelizeData = extern struct {
+        model_matrix: [16]f32 align(16),
+        n_triangles: u32,
+    };
+
     const n_cascades = 4;
 
     device: *sdl.GPUDevice,
     pipeline: *sdl.GPUComputePipeline,
+    compute_pass: ?*sdl.GPUComputePass,
 
     cascades: [n_cascades]*sdl.GPUTexture,
 
@@ -166,10 +181,10 @@ const VoxelizePass = struct {
                 .format = sdl.c.SDL_GPU_SHADERFORMAT_SPIRV,
                 .num_samplers = 0,
                 .num_readonly_storage_textures = 0,
-                .num_readonly_storage_buffers = 0,
-                .num_readwrite_storage_textures = 0,
+                .num_readonly_storage_buffers = 2,
+                .num_readwrite_storage_textures = 1,
                 .num_readwrite_storage_buffers = 0,
-                .num_uniform_buffers = 0,
+                .num_uniform_buffers = 1,
                 .threadcount_x = 64,
                 .threadcount_y = 1,
                 .threadcount_z = 1,
@@ -183,7 +198,7 @@ const VoxelizePass = struct {
             while (i < n_cascades) : (i += 1) {
                 cascades[i] = try sdl.createGPUTexture(device, &.{
                     .type = sdl.c.SDL_GPU_TEXTURETYPE_3D,
-                    .format = sdl.c.SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM, // _SRGB ???
+                    .format = sdl.c.SDL_GPU_TEXTUREFORMAT_R32_UINT,
                     .usage = sdl.c.SDL_GPU_TEXTUREUSAGE_COMPUTE_STORAGE_SIMULTANEOUS_READ_WRITE |
                         sdl.c.SDL_GPU_TEXTUREUSAGE_SAMPLER,
                     .width = 64,
@@ -199,6 +214,7 @@ const VoxelizePass = struct {
         return .{
             .device = device,
             .pipeline = pipeline,
+            .compute_pass = null,
             .cascades = cascades,
         };
     }
@@ -208,12 +224,73 @@ const VoxelizePass = struct {
         sdl.releaseGPUComputePipeline(pass.device, pass.pipeline);
         pass.* = undefined;
     }
+
+    fn begin(pass: *VoxelizePass, command_buffer: *sdl.GPUCommandBuffer) void {
+        // TODO I think we need an entire separate pass here just to clear the cascade
+        const storage_texture_bindings = [_]sdl.GPUStorageTextureReadWriteBinding{
+            .{
+                .texture = pass.cascades[0],
+                .mip_level = 0,
+                .layer = 0,
+                .cycle = false,
+            },
+        };
+        pass.compute_pass = sdl.c.SDL_BeginGPUComputePass(
+            command_buffer,
+            &storage_texture_bindings[0],
+            storage_texture_bindings.len,
+            null,
+            0,
+        );
+        sdl.c.SDL_BindGPUComputePipeline(pass.compute_pass.?, pass.pipeline);
+    }
+
+    fn voxelizeObject(
+        pass: *VoxelizePass,
+        command_buffer: *sdl.GPUCommandBuffer,
+        object: Scene.Object,
+        alpha: f32,
+    ) void {
+        const storage_buffers = [_]*sdl.GPUBuffer{
+            object.model.vertex_buffer,
+            object.model.index_buffer,
+        };
+        sdl.c.SDL_BindGPUComputeStorageBuffers(
+            pass.compute_pass,
+            0,
+            &storage_buffers[0],
+            storage_buffers.len,
+        );
+        sdl.c.SDL_PushGPUComputeUniformData(
+            command_buffer,
+            0,
+            &VoxelizeData{
+                .model_matrix = zm.matToArr(object.transform(alpha)),
+                .n_triangles = object.model.n_indices / 3,
+            },
+            @sizeOf(VoxelizeData),
+        );
+        sdl.c.SDL_DispatchGPUCompute(
+            pass.compute_pass,
+            (object.model.n_indices / 3 + 63) / 64,
+            1,
+            1,
+        );
+    }
+
+    fn end(pass: *VoxelizePass, command_buffer: *sdl.GPUCommandBuffer) void {
+        sdl.c.SDL_EndGPUComputePass(pass.compute_pass.?);
+        // TODO I think we need some kind of pass or operation here to convert the cascade
+        // to an image format that we can sample
+        pass.compute_pass = null;
+        _ = command_buffer;
+    }
 };
 
 const DrawPass = struct {
     const DrawData = extern struct {
-        mvp: [16]f32,
-        normal: [16]f32,
+        mvp: [16]f32 align(16),
+        normal: [16]f32 align(16),
     };
 
     device: *sdl.c.SDL_GPUDevice,

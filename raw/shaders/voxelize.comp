@@ -1,5 +1,34 @@
 #version 460
 
+struct Vertex {
+    vec3 position;
+    vec3 normal;  
+};
+
 layout(local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
 
-void main() {}
+layout(std140, set = 0, binding = 0) readonly buffer VertexBuffer {
+    Vertex vertices[];
+} vertex_buffer;
+
+layout(std140, set = 0, binding = 1) readonly buffer IndexBuffer {
+    uint indices[];
+} index_buffer;
+
+layout(r32ui, set = 1, binding = 0) uniform uimage3D cascade;
+
+layout(set = 2, binding = 0) uniform VoxelizeData {
+    mat4 model_matrix;
+    uint n_triangles;
+} voxelize_data;
+
+void main() {
+    uint ix_triangle = gl_GlobalInvocationID.x;
+    if (ix_triangle >= voxelize_data.n_triangles) return;
+
+    vec3 p0 = vertex_buffer.vertices[ix_triangle * 3 + 0].position;
+    vec3 p1 = vertex_buffer.vertices[ix_triangle * 3 + 1].position;
+    vec3 p2 = vertex_buffer.vertices[ix_triangle * 3 + 2].position;
+
+    // time to write a software rasterizer i guess ._.
+}
