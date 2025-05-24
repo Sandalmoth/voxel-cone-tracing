@@ -18,6 +18,11 @@ pub const GPUTransferBuffer = c.SDL_GPUTransferBuffer;
 pub const GPUTransferBufferCreateInfo = c.SDL_GPUTransferBufferCreateInfo;
 pub const GPUTransferBufferLocation = c.SDL_GPUTransferBufferLocation;
 pub const GPUBufferRegion = c.SDL_GPUBufferRegion;
+pub const GPUShaderCreateInfo = c.SDL_GPUShaderCreateInfo;
+pub const GPUComputePipelineCreateInfo = c.SDL_GPUComputePipelineCreateInfo;
+pub const GPUComputePipeline = c.SDL_GPUComputePipeline;
+pub const GPUTextureCreateInfo = c.SDL_GPUTextureCreateInfo;
+pub const GPUTexture = c.SDL_GPUTexture;
 
 pub fn getError() [*c]const u8 {
     return c.SDL_GetError();
@@ -95,4 +100,39 @@ pub fn uploadToGPUBuffer(
     cycle: bool,
 ) void {
     c.SDL_UploadToGPUBuffer(copy_pass, source, destination, cycle);
+}
+
+pub fn createGPUShader(
+    device: *GPUDevice,
+    createinfo: *const GPUShaderCreateInfo,
+) *c.SDL_GPUShader {
+    return c.SDL_CreateGPUShader(device, createinfo) orelse {
+        log.err("SDL_CreateGPUShader: {s}", .{getError()});
+        return error.Sdl;
+    };
+}
+
+pub fn createGPUComputePipeline(
+    device: *GPUDevice,
+    createinfo: *const GPUComputePipelineCreateInfo,
+) !*GPUComputePipeline {
+    return c.SDL_CreateGPUComputePipeline(device, createinfo) orelse {
+        log.err("SDL_CreateGPUComputePipeline: {s}", .{getError()});
+        return error.Sdl;
+    };
+}
+
+pub fn releaseGPUComputePipeline(device: *GPUDevice, pipeline: *GPUComputePipeline) void {
+    c.SDL_ReleaseGPUComputePipeline(device, pipeline);
+}
+
+pub fn createGPUTexture(device: *GPUDevice, createinfo: *const GPUTextureCreateInfo) !*GPUTexture {
+    return c.SDL_CreateGPUTexture(device, createinfo) orelse {
+        log.err("SDL_CreateGPUTexture: {s}", .{getError()});
+        return error.Sdl;
+    };
+}
+
+pub fn releaseGPUTexture(device: *GPUDevice, texture: *GPUTexture) void {
+    c.SDL_ReleaseGPUTexture(device, texture);
 }

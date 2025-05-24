@@ -7,9 +7,9 @@ const Scene = @This();
 
 const log = std.log.scoped(.scene);
 
-pub const Vertex = struct {
-    position: [3]f32,
-    normal: [3]f32,
+pub const Vertex = extern struct {
+    position: [3]f32 align(16),
+    normal: [3]f32 align(16),
 };
 
 const Model = struct {
@@ -95,13 +95,13 @@ fn load(device: *sdl.c.SDL_GPUDevice, vertices: []const Vertex, indices: []const
     const sizeof_indices: u32 = @intCast(indices.len * @sizeOf(u32));
 
     const vertex_buffer = try sdl.createGPUBuffer(device, &.{
-        .usage = sdl.c.SDL_GPU_BUFFERUSAGE_VERTEX,
+        .usage = sdl.c.SDL_GPU_BUFFERUSAGE_VERTEX | sdl.c.SDL_GPU_BUFFERUSAGE_COMPUTE_STORAGE_READ,
         .size = sizeof_vertices,
     });
     errdefer sdl.releaseGPUBuffer(device, vertex_buffer);
 
     const index_buffer = try sdl.createGPUBuffer(device, &.{
-        .usage = sdl.c.SDL_GPU_BUFFERUSAGE_INDEX,
+        .usage = sdl.c.SDL_GPU_BUFFERUSAGE_INDEX | sdl.c.SDL_GPU_BUFFERUSAGE_COMPUTE_STORAGE_READ,
         .size = sizeof_indices,
     });
     errdefer sdl.releaseGPUBuffer(device, index_buffer);
@@ -183,10 +183,10 @@ const cube_vertices = [_]Vertex{
 };
 
 const cube_indices = [_]u32{
-    0,  1,  2,  3,  2,  1,
     4,  5,  6,  7,  6,  5,
-    8,  9,  10, 11, 10, 9,
     12, 13, 14, 15, 14, 13,
-    16, 17, 18, 19, 18, 17,
     20, 21, 22, 23, 22, 21,
+    2,  1,  0,  1,  2,  3,
+    10, 9,  8,  9,  10, 11,
+    18, 17, 16, 17, 18, 19,
 };

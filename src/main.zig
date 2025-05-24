@@ -57,6 +57,8 @@ pub fn main() !void {
         return error.Sdl;
     }
 
+    var voxelize_pass = try VoxelizePass.init(gpa, gpu_device);
+    defer voxelize_pass.deinit();
     var draw_pass = try DrawPass.init(gpa, gpu_device);
     defer draw_pass.deinit();
     var present_pass = try PresentPass.init(gpa, gpu_device, window);
@@ -135,6 +137,78 @@ pub fn main() !void {
         }
     }
 }
+
+const VoxelizePass = struct {
+    const n_cascades = 4;
+
+    device: *sdl.GPUDevice,
+    pipeline: *sdl.GPUComputePipeline,
+
+    cascades: [n_cascades]*sdl.GPUTexture,
+
+    fn init(
+        gpa: std.mem.Allocator,
+        device: *sdl.GPUDevice,
+    ) !VoxelizePass {
+        const pipeline = blk: {
+            const file = try std.fs.cwd().openFile(
+                "data/shaders/voxelize.comp.spv",
+                .{ .mode = .read_only },
+            );
+            defer file.close();
+            const bytes = try file.reader().readAllAlloc(gpa, 1_000_000);
+            defer gpa.free(bytes);
+
+            break :blk try sdl.createGPUComputePipeline(device, &.{
+                .code_size = bytes.len,
+                .code = bytes.ptr,
+                .entrypoint = "main",
+                .format = sdl.c.SDL_GPU_SHADERFORMAT_SPIRV,
+                .num_samplers = 0,
+                .num_readonly_storage_textures = 0,
+                .num_readonly_storage_buffers = 0,
+                .num_readwrite_storage_textures = 0,
+                .num_readwrite_storage_buffers = 0,
+                .num_uniform_buffers = 0,
+                .threadcount_x = 64,
+                .threadcount_y = 1,
+                .threadcount_z = 1,
+            });
+        };
+        errdefer sdl.releaseGPUComputePipeline(device, pipeline);
+
+        var cascades: [n_cascades]*sdl.GPUTexture = undefined;
+        {
+            var i: usize = 0;
+            while (i < n_cascades) : (i += 1) {
+                cascades[i] = try sdl.createGPUTexture(device, &.{
+                    .type = sdl.c.SDL_GPU_TEXTURETYPE_3D,
+                    .format = sdl.c.SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM, // _SRGB ???
+                    .usage = sdl.c.SDL_GPU_TEXTUREUSAGE_COMPUTE_STORAGE_SIMULTANEOUS_READ_WRITE |
+                        sdl.c.SDL_GPU_TEXTUREUSAGE_SAMPLER,
+                    .width = 64,
+                    .height = 64,
+                    .layer_count_or_depth = 64,
+                    .num_levels = 1,
+                    .sample_count = sdl.c.SDL_GPU_SAMPLECOUNT_1,
+                });
+                errdefer while (i > 0) : (i -= 1) sdl.releaseGPUTexture(device, cascades[i - 1]);
+            }
+        }
+
+        return .{
+            .device = device,
+            .pipeline = pipeline,
+            .cascades = cascades,
+        };
+    }
+
+    fn deinit(pass: *VoxelizePass) void {
+        for (pass.cascades) |cascade| sdl.releaseGPUTexture(pass.device, cascade);
+        sdl.releaseGPUComputePipeline(pass.device, pass.pipeline);
+        pass.* = undefined;
+    }
+};
 
 const DrawPass = struct {
     const DrawData = extern struct {
@@ -246,8 +320,8 @@ const DrawPass = struct {
             },
             .primitive_type = sdl.c.SDL_GPU_PRIMITIVETYPE_TRIANGLELIST,
             .rasterizer_state = .{
-                // .front_face = sdl.c.SDL_GPU_FRONTFACE_COUNTER_CLOCKWISE,
-                // .cull_mode = sdl.c.SDL_GPU_CULLMODE_BACK,
+                .front_face = sdl.c.SDL_GPU_FRONTFACE_COUNTER_CLOCKWISE,
+                .cull_mode = sdl.c.SDL_GPU_CULLMODE_BACK,
             },
             .multisample_state = .{},
             .depth_stencil_state = .{
