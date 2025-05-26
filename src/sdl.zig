@@ -26,6 +26,9 @@ pub const GPUTexture = c.SDL_GPUTexture;
 pub const GPUComputePass = c.SDL_GPUComputePass;
 pub const GPUStorageTextureReadWriteBinding = c.SDL_GPUStorageTextureReadWriteBinding;
 pub const GPUStorageBufferReadWriteBinding = c.SDL_GPUStorageBufferReadWriteBinding;
+pub const GPUGraphicsPipeline = c.SDL_GPUGraphicsPipeline;
+pub const GPUSampler = c.SDL_GPUSampler;
+pub const GPUShader = c.SDL_GPUShader;
 
 pub fn getError() [*c]const u8 {
     return c.SDL_GetError();
@@ -108,11 +111,15 @@ pub fn uploadToGPUBuffer(
 pub fn createGPUShader(
     device: *GPUDevice,
     createinfo: *const GPUShaderCreateInfo,
-) *c.SDL_GPUShader {
+) !*GPUShader {
     return c.SDL_CreateGPUShader(device, createinfo) orelse {
         log.err("SDL_CreateGPUShader: {s}", .{getError()});
         return error.Sdl;
     };
+}
+
+pub fn releaseGPUShader(device: *GPUDevice, shader: *GPUShader) void {
+    c.SDL_ReleaseGPUShader(device, shader);
 }
 
 pub fn createGPUComputePipeline(

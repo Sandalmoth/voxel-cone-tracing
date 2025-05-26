@@ -31,4 +31,20 @@ void main() {
     vec3 p2 = vertex_buffer.vertices[ix_triangle * 3 + 2].position;
 
     // time to write a software rasterizer i guess ._.
+
+    // testcube
+    for (int x = 0; x < 2; ++x) {
+        for (int y = 0; y < 2; ++y) {
+            for (int z = 0; z < 2; ++z) {
+                uint current;
+                uint new;
+                uint original;
+                do {
+                    current = imageLoad(cascade, ivec3(x, y, z) + 31).r;
+                    new = 0xFFFFFFFFu;
+                    original = imageAtomicCompSwap(cascade, ivec3(x, y, z) + 31, current, new);
+                } while (original != current);
+            }
+        }
+    }
 }

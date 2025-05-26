@@ -59,6 +59,8 @@ pub fn main() !void {
 
     var voxelize_pass = try VoxelizePass.init(gpa, gpu_device);
     defer voxelize_pass.deinit();
+    var debug_voxel_draw_pass = try DebugVoxelDrawPass.init(gpa, gpu_device);
+    defer debug_voxel_draw_pass.deinit();
     var draw_pass = try DrawPass.init(gpa, gpu_device);
     defer draw_pass.deinit();
     var present_pass = try PresentPass.init(gpa, gpu_device, window);
@@ -127,18 +129,28 @@ pub fn main() !void {
                 alpha,
             );
         }
-        {
-            draw_pass.begin(command_buffer);
-            defer draw_pass.end(command_buffer);
-            const camera_vp = camera.vp(alpha);
-            for (scene.objects.items) |object| draw_pass.drawObject(
+        if (false) {
+            {
+                draw_pass.begin(command_buffer);
+                defer draw_pass.end(command_buffer);
+                const camera_vp = camera.vp(alpha);
+                for (scene.objects.items) |object| draw_pass.drawObject(
+                    command_buffer,
+                    object,
+                    camera_vp,
+                    alpha,
+                );
+            }
+            try present_pass.run(window, command_buffer, draw_pass.backbuffer);
+        } else {
+            debug_voxel_draw_pass.run(
                 command_buffer,
-                object,
-                camera_vp,
-                alpha,
+                &voxelize_pass.cascades,
+                camera.v(alpha),
+                camera.p(alpha),
             );
+            try present_pass.run(window, command_buffer, debug_voxel_draw_pass.backbuffer);
         }
-        try present_pass.run(window, command_buffer, draw_pass.backbuffer);
 
         if (!sdl.c.SDL_SubmitGPUCommandBuffer(command_buffer)) {
             log.err("SDL_SubmitGPUCommandBuffer: {s}", .{sdl.c.SDL_GetError()});
@@ -200,7 +212,7 @@ const VoxelizePass = struct {
                     .type = sdl.c.SDL_GPU_TEXTURETYPE_3D,
                     .format = sdl.c.SDL_GPU_TEXTUREFORMAT_R32_UINT,
                     .usage = sdl.c.SDL_GPU_TEXTUREUSAGE_COMPUTE_STORAGE_SIMULTANEOUS_READ_WRITE |
-                        sdl.c.SDL_GPU_TEXTUREUSAGE_SAMPLER,
+                        sdl.c.SDL_GPU_TEXTUREUSAGE_GRAPHICS_STORAGE_READ,
                     .width = 64,
                     .height = 64,
                     .layer_count_or_depth = 64,
@@ -284,6 +296,238 @@ const VoxelizePass = struct {
         // to an image format that we can sample
         pass.compute_pass = null;
         _ = command_buffer;
+    }
+};
+
+const DebugVoxelDrawPass = struct {
+    const DrawData = extern struct {
+        iv: [16]f32 align(16),
+        ip: [16]f32 align(16),
+    };
+
+    const Vertex = struct {
+        position: [3]f32,
+    };
+
+    const full_screen_quad = [_]Vertex{
+        .{ .position = .{ -1, 1, 0 } },
+        .{ .position = .{ 1, 1, 0 } },
+        .{ .position = .{ 1, -1, 0 } },
+        .{ .position = .{ -1, 1, 0 } },
+        .{ .position = .{ 1, -1, 0 } },
+        .{ .position = .{ -1, -1, 0 } },
+    };
+
+    device: *sdl.GPUDevice,
+    pipeline: *sdl.GPUGraphicsPipeline,
+
+    backbuffer: *sdl.c.SDL_GPUTexture,
+    vertex_buffer: *sdl.GPUBuffer,
+
+    fn init(
+        gpa: std.mem.Allocator,
+        device: *sdl.c.SDL_GPUDevice,
+    ) !DebugVoxelDrawPass {
+        const vertex_shader = blk: {
+            const file = try std.fs.cwd().openFile(
+                "data/shaders/debug_voxel_draw.vert.spv",
+                .{ .mode = .read_only },
+            );
+            defer file.close();
+            const bytes = try file.reader().readAllAlloc(gpa, 1_000_000);
+            defer gpa.free(bytes);
+
+            break :blk try sdl.createGPUShader(device, &.{
+                .code_size = bytes.len,
+                .code = bytes.ptr,
+                .entrypoint = "main",
+                .format = sdl.c.SDL_GPU_SHADERFORMAT_SPIRV,
+                .stage = sdl.c.SDL_GPU_SHADERSTAGE_VERTEX,
+                .num_samplers = 0,
+                .num_storage_textures = 0,
+                .num_storage_buffers = 0,
+                .num_uniform_buffers = 1,
+            });
+        };
+        defer sdl.releaseGPUShader(device, vertex_shader);
+
+        const fragment_shader = blk: {
+            const file = try std.fs.cwd().openFile(
+                "data/shaders/debug_voxel_draw.frag.spv",
+                .{ .mode = .read_only },
+            );
+            defer file.close();
+            const bytes = try file.reader().readAllAlloc(gpa, 1_000_000);
+            defer gpa.free(bytes);
+
+            break :blk try sdl.createGPUShader(device, &.{
+                .code_size = bytes.len,
+                .code = bytes.ptr,
+                .entrypoint = "main",
+                .format = sdl.c.SDL_GPU_SHADERFORMAT_SPIRV,
+                .stage = sdl.c.SDL_GPU_SHADERSTAGE_FRAGMENT,
+                .num_samplers = 0,
+                .num_storage_textures = 1, // or 4 maybe?
+                .num_storage_buffers = 0,
+                .num_uniform_buffers = 0,
+            });
+        };
+        defer sdl.releaseGPUShader(device, fragment_shader);
+
+        const vertex_buffer_descriptions = [_]sdl.c.SDL_GPUVertexBufferDescription{.{
+            .slot = 0,
+            .pitch = @sizeOf(Vertex),
+            .input_rate = sdl.c.SDL_GPU_VERTEXINPUTRATE_VERTEX,
+            .instance_step_rate = 0,
+        }};
+        const vertex_attributes = [_]sdl.c.SDL_GPUVertexAttribute{.{
+            .buffer_slot = 0,
+            .format = sdl.c.SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3,
+            .location = 0,
+            .offset = @offsetOf(Vertex, "position"),
+        }};
+
+        const color_target_descriptions = [_]sdl.c.SDL_GPUColorTargetDescription{.{
+            .format = sdl.c.SDL_GPU_TEXTUREFORMAT_R16G16B16A16_FLOAT,
+            .blend_state = .{},
+        }};
+        const pipeline_create_info = sdl.c.SDL_GPUGraphicsPipelineCreateInfo{
+            .vertex_shader = vertex_shader,
+            .fragment_shader = fragment_shader,
+            .vertex_input_state = .{
+                .vertex_buffer_descriptions = &vertex_buffer_descriptions[0],
+                .num_vertex_buffers = vertex_buffer_descriptions.len,
+                .vertex_attributes = &vertex_attributes[0],
+                .num_vertex_attributes = vertex_attributes.len,
+            },
+            .primitive_type = sdl.c.SDL_GPU_PRIMITIVETYPE_TRIANGLELIST,
+            .rasterizer_state = .{},
+            .multisample_state = .{},
+            .depth_stencil_state = .{},
+            .target_info = .{
+                .color_target_descriptions = &color_target_descriptions[0],
+                .num_color_targets = color_target_descriptions.len,
+            },
+        };
+        const pipeline = sdl.c.SDL_CreateGPUGraphicsPipeline(
+            device,
+            &pipeline_create_info,
+        ) orelse {
+            log.err("SDL_CreateGPUGraphicsPipeline: {s}", .{sdl.c.SDL_GetError()});
+            return error.Sdl;
+        };
+        errdefer sdl.c.SDL_ReleaseGPUGraphicsPipeline(device, pipeline);
+
+        const width = 1920;
+        const height = 1080;
+        const backbuffer = try sdl.createGPUTexture(device, &.{
+            .type = sdl.c.SDL_GPU_TEXTURETYPE_2D,
+            .format = sdl.c.SDL_GPU_TEXTUREFORMAT_R16G16B16A16_FLOAT,
+            .usage = sdl.c.SDL_GPU_TEXTUREUSAGE_COLOR_TARGET | sdl.c.SDL_GPU_TEXTUREUSAGE_SAMPLER,
+            .width = width,
+            .height = height,
+            .layer_count_or_depth = 1,
+            .num_levels = 1,
+            .sample_count = sdl.c.SDL_GPU_SAMPLECOUNT_1,
+        });
+        errdefer sdl.c.SDL_ReleaseGPUTexture(device, backbuffer);
+
+        const sizeof_vertices: u32 = @intCast(full_screen_quad.len * @sizeOf(Vertex));
+
+        const vertex_buffer = try sdl.createGPUBuffer(device, &.{
+            .usage = sdl.c.SDL_GPU_BUFFERUSAGE_VERTEX | sdl.c.SDL_GPU_BUFFERUSAGE_COMPUTE_STORAGE_READ,
+            .size = sizeof_vertices,
+        });
+        errdefer sdl.releaseGPUBuffer(device, vertex_buffer);
+
+        const transfer_buffer = try sdl.createGPUTransferBuffer(device, &.{
+            .usage = sdl.c.SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD,
+            .size = sizeof_vertices,
+        });
+        defer sdl.releaseGPUTransferBuffer(device, transfer_buffer);
+
+        const command_buffer = try sdl.acquireGPUCommandBuffer(device);
+
+        const bytes: [*]u8 = @alignCast(@ptrCast(
+            try sdl.mapGPUTransferBuffer(device, transfer_buffer, true),
+        ));
+        @memcpy(@as([*]Vertex, @alignCast(@ptrCast(bytes))), &full_screen_quad);
+        sdl.unmapGPUTransferBuffer(device, transfer_buffer);
+
+        const copy_pass = try sdl.beginGPUCopyPass(command_buffer);
+        sdl.uploadToGPUBuffer(copy_pass, &.{
+            .transfer_buffer = transfer_buffer,
+            .offset = 0,
+        }, &.{
+            .buffer = vertex_buffer,
+            .offset = 0,
+            .size = sizeof_vertices,
+        }, false);
+        sdl.endGPUCopyPass(copy_pass);
+
+        try sdl.submitGPUCommandBuffer(command_buffer);
+
+        return .{
+            .device = device,
+            .pipeline = pipeline,
+            .backbuffer = backbuffer,
+            .vertex_buffer = vertex_buffer,
+        };
+    }
+
+    fn deinit(pass: *DebugVoxelDrawPass) void {
+        sdl.c.SDL_ReleaseGPUBuffer(pass.device, pass.vertex_buffer);
+        sdl.c.SDL_ReleaseGPUTexture(pass.device, pass.backbuffer);
+        sdl.c.SDL_ReleaseGPUGraphicsPipeline(pass.device, pass.pipeline);
+        pass.* = undefined;
+    }
+
+    fn run(
+        pass: *DebugVoxelDrawPass,
+        command_buffer: *sdl.GPUCommandBuffer,
+        cascades: []*sdl.GPUTexture,
+        camera_v: zm.Mat,
+        camera_p: zm.Mat,
+    ) void {
+        const clear_color: sdl.c.SDL_FColor = .{ .r = 0.05, .g = 0.05, .b = 0.05, .a = 1.0 };
+        const color_target_infos = [_]sdl.c.SDL_GPUColorTargetInfo{.{
+            .texture = pass.backbuffer,
+            .clear_color = clear_color,
+            .load_op = sdl.c.SDL_GPU_LOADOP_CLEAR,
+        }};
+        const render_pass = sdl.c.SDL_BeginGPURenderPass(
+            command_buffer,
+            &color_target_infos[0],
+            color_target_infos.len,
+            null,
+        );
+        sdl.c.SDL_BindGPUGraphicsPipeline(render_pass, pass.pipeline);
+        const vertex_buffers = [_]sdl.c.SDL_GPUBufferBinding{
+            .{ .buffer = pass.vertex_buffer, .offset = 0 },
+        };
+        sdl.c.SDL_BindGPUVertexBuffers(
+            render_pass,
+            0,
+            &vertex_buffers[0],
+            vertex_buffers.len,
+        );
+        sdl.c.SDL_PushGPUVertexUniformData(
+            command_buffer,
+            0,
+            &DrawData{
+                .iv = zm.matToArr(zm.inverse(camera_v)),
+                .ip = zm.matToArr(zm.inverse(camera_p)),
+            },
+            @sizeOf(DrawData),
+        );
+        sdl.c.SDL_BindGPUFragmentStorageTextures(
+            render_pass,
+            0,
+            cascades.ptr,
+            @intCast(cascades.len),
+        );
+        sdl.c.SDL_DrawGPUPrimitives(render_pass, 6, 1, 0, 0);
+        sdl.c.SDL_EndGPURenderPass(render_pass);
     }
 };
 
@@ -536,12 +780,12 @@ const DrawPass = struct {
 };
 
 const PresentPass = struct {
-    const PresentVertex = struct {
+    const Vertex = struct {
         position: [3]f32,
         texcoords: [2]f32,
     };
 
-    const full_screen_quad = [_]PresentVertex{
+    const full_screen_quad = [_]Vertex{
         .{ .position = .{ -1, 1, 0 }, .texcoords = .{ 0, 0 } },
         .{ .position = .{ 1, 1, 0 }, .texcoords = .{ 1, 0 } },
         .{ .position = .{ 1, -1, 0 }, .texcoords = .{ 1, 1 } },
@@ -616,7 +860,7 @@ const PresentPass = struct {
 
         const vertex_buffer_descriptions = [_]sdl.c.SDL_GPUVertexBufferDescription{.{
             .slot = 0,
-            .pitch = @sizeOf(PresentVertex),
+            .pitch = @sizeOf(Vertex),
             .input_rate = sdl.c.SDL_GPU_VERTEXINPUTRATE_VERTEX,
             .instance_step_rate = 0,
         }};
@@ -624,12 +868,12 @@ const PresentPass = struct {
             .buffer_slot = 0,
             .format = sdl.c.SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3,
             .location = 0,
-            .offset = @offsetOf(PresentVertex, "position"),
+            .offset = @offsetOf(Vertex, "position"),
         }, .{
             .buffer_slot = 0,
             .format = sdl.c.SDL_GPU_VERTEXELEMENTFORMAT_FLOAT2,
             .location = 1,
-            .offset = @offsetOf(PresentVertex, "texcoords"),
+            .offset = @offsetOf(Vertex, "texcoords"),
         } };
 
         const color_target_descriptions = [_]sdl.c.SDL_GPUColorTargetDescription{.{
@@ -665,19 +909,19 @@ const PresentPass = struct {
 
         const vertex_buffer = try sdl.createGPUBuffer(device, &.{
             .usage = sdl.c.SDL_GPU_BUFFERUSAGE_VERTEX,
-            .size = 6 * @sizeOf(PresentVertex),
+            .size = 6 * @sizeOf(Vertex),
         });
         errdefer sdl.releaseGPUBuffer(device, vertex_buffer);
 
         const transfer_buffer = try sdl.createGPUTransferBuffer(device, &.{
             .usage = sdl.c.SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD,
-            .size = 6 * @sizeOf(PresentVertex),
+            .size = 6 * @sizeOf(Vertex),
         });
         defer sdl.releaseGPUTransferBuffer(device, transfer_buffer);
 
         const command_buffer = try sdl.acquireGPUCommandBuffer(device);
 
-        const bytes: [*]PresentVertex = @alignCast(@ptrCast(
+        const bytes: [*]Vertex = @alignCast(@ptrCast(
             try sdl.mapGPUTransferBuffer(device, transfer_buffer, true),
         ));
         @memcpy(bytes, &full_screen_quad);
@@ -690,7 +934,7 @@ const PresentPass = struct {
         }, &.{
             .buffer = vertex_buffer,
             .offset = 0,
-            .size = @sizeOf(PresentVertex) * 6,
+            .size = @sizeOf(Vertex) * 6,
         }, false);
         sdl.endGPUCopyPass(copy_pass);
 
@@ -819,7 +1063,7 @@ const Camera = struct {
         if (input.peek(.down).held) camera.pos -= up * zm.f32x4s(move_speed * tick);
     }
 
-    fn vp(camera: Camera, alpha: f32) zm.Mat {
+    fn v(camera: Camera, alpha: f32) zm.Mat {
         const pos = zm.lerp(camera.prev_pos, camera.pos, alpha);
         const yaw = (1 - alpha) * camera.prev_yaw + alpha * camera.yaw;
         const pitch = (1 - alpha) * camera.prev_pitch + alpha * camera.pitch;
@@ -831,10 +1075,19 @@ const Camera = struct {
             0.0,
         ));
 
+        return zm.lookAtRh(pos, pos + facing, up);
+    }
+
+    fn p(camera: Camera, alpha: f32) zm.Mat {
+        _ = camera;
+        _ = alpha;
+        return perspectiveFovRhInv(std.math.degreesToRadians(69), 16.0 / 9.0, 0.1, 1e5);
+    }
+
+    fn vp(camera: Camera, alpha: f32) zm.Mat {
         return zm.mul(
-            zm.lookAtRh(pos, pos + facing, up),
-            // zm.perspectiveFovRh(std.math.degreesToRadians(69), 4.0 / 3.0, 0.01, 100.0),
-            perspectiveFovRhInv(std.math.degreesToRadians(69), 16.0 / 9.0, 0.1, 1e5),
+            camera.v(alpha),
+            camera.p(alpha),
         );
     }
 };
