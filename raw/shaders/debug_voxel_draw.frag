@@ -10,7 +10,7 @@ layout(location = 0) out vec4 out_color;
 // layout(r32i, set = 2, binding = 2) uniform uimage3D cascade2;
 // layout(r32i, set = 2, binding = 3) uniform uimage3D cascade3;
 
-layout(r32ui, set = 2, binding = 0) uniform uimage3D cascades[4];
+layout(r32ui, set = 2, binding = 0) uniform readonly uimage3D cascades[4];
 
 vec4 unpackRGBA(uint packed) {
     return vec4(
@@ -57,7 +57,7 @@ void main() {
     vec4 acc = vec4(0.0, 0.0, 0.0, 0.0);
     float t_entry = 0;
 
-    for (int i = 0; i < 8; ++i) {
+    for (int i = 0; i < 1024; ++i) {
         float t_exit = t_entry;
         if (t_max.x < t_max.y) {
             if (t_max.x < t_max.z) {
