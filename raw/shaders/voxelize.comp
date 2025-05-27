@@ -26,16 +26,24 @@ void main() {
     uint ix_triangle = gl_GlobalInvocationID.x;
     if (ix_triangle >= voxelize_data.n_triangles) return;
 
-    vec3 p0 = vertex_buffer.vertices[ix_triangle * 3 + 0].position;
-    vec3 p1 = vertex_buffer.vertices[ix_triangle * 3 + 1].position;
-    vec3 p2 = vertex_buffer.vertices[ix_triangle * 3 + 2].position;
+    vec3 p0 = (voxelize_data.model_matrix * vec4(vertex_buffer.vertices[ix_triangle * 3 + 0].position, 1.0)).xyz;
+    vec3 p1 = (voxelize_data.model_matrix * vec4(vertex_buffer.vertices[ix_triangle * 3 + 1].position, 1.0)).xyz;
+    vec3 p2 = (voxelize_data.model_matrix * vec4(vertex_buffer.vertices[ix_triangle * 3 + 2].position, 1.0)).xyz;
 
     // time to write a software rasterizer i guess ._.
 
-    // testcube
-    for (int x = 0; x < 2; ++x) {
-        for (int y = 0; y < 3; ++y) {
-            for (int z = 0; z < 4; ++z) {
+    // try to fill the aabb of each triangle
+    vec3 lower_bound = min(min(p0, p1), p2);
+    vec3 upper_bound = max(max(p0, p1), p2);
+    ivec3 voxel_lower_bound = ivec3(floor(lower_bound / 0.125));
+    ivec3 voxel_upper_bound = ivec3(floor(upper_bound / 0.125));
+    for (int x = voxel_lower_bound.x; x <= voxel_upper_bound.x; ++x) {
+        if (x < -32 || x >= 32) continue;
+        for (int y = voxel_lower_bound.y; y <= voxel_upper_bound.y; ++y) {
+            if (y < -32 || y >= 32) continue;
+            for (int z = voxel_lower_bound.z; z <= voxel_upper_bound.z; ++z) {
+                if (z < -32 || z >= 32) continue;
+                
                 uint current;
                 uint new;
                 uint original;

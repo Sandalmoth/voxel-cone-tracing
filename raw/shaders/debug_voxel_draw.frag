@@ -35,8 +35,9 @@ float voxelSize(int cascade) {
 void main() {
     out_color = vec4(ray_dir, 1.0);
 
-    int cascade = cascadeAt(ray_origin);
-    float step_size = voxelSize(cascade);
+    // int cascade = cascadeAt(ray_origin);
+    // float step_size = voxelSize(cascade);
+    float step_size = 0.125;
     ivec3 voxel_pos = ivec3(floor(ray_origin / step_size));
     ivec3 step = ivec3(sign(ray_dir));
     vec3 dt = abs(step_size / ray_dir);
@@ -85,11 +86,11 @@ void main() {
             }
         }
 
-        if (voxel_pos.x < -32 || voxel_pos.x >= 32 ||
-            voxel_pos.y < -32 || voxel_pos.y >= 32 ||
-            voxel_pos.z < -32 || voxel_pos.z >= 32) {
-            break;
-        }
+        // if (voxel_pos.x < -32 || voxel_pos.x >= 32 ||
+        //     voxel_pos.y < -32 || voxel_pos.y >= 32 ||
+        //     voxel_pos.z < -32 || voxel_pos.z >= 32) {
+        //     break;
+        // }
 
         vec4 voxel_color = unpackRGBA(imageLoad(cascade0, voxel_pos + 32).r);
         acc.rgb += voxel_color.rgb * voxel_color.a * (1.0 - acc.a);
