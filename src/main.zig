@@ -73,7 +73,10 @@ pub fn main() !void {
     try input.map.put(.{ .keyboard = sdl.c.SDL_SCANCODE_A }, .left);
     try input.map.put(.{ .keyboard = sdl.c.SDL_SCANCODE_SPACE }, .up);
     try input.map.put(.{ .keyboard = sdl.c.SDL_SCANCODE_LCTRL }, .down);
+    try input.map.put(.{ .keyboard = sdl.c.SDL_SCANCODE_TAB }, .toggle_debug_view);
     defer input.deinit();
+
+    var debug_view: bool = false;
 
     var camera = Camera{
         .pos = zm.f32x4(0.0, 0.0, 0.0, 1.0),
@@ -107,6 +110,7 @@ pub fn main() !void {
 
         while (lag >= tick_ns) {
             camera.update(&input);
+            if (input.peek(.toggle_debug_view).pressed) debug_view = !debug_view;
 
             input.decay();
             lag -= tick_ns;
@@ -129,7 +133,7 @@ pub fn main() !void {
                 alpha,
             );
         }
-        if (false) {
+        if (!debug_view) {
             {
                 draw_pass.begin(command_buffer);
                 defer draw_pass.end(command_buffer);
@@ -524,7 +528,7 @@ const DebugVoxelDrawPass = struct {
             render_pass,
             0,
             cascades.ptr,
-            @intCast(cascades.len),
+            1, //@intCast(cascades.len),
         );
         sdl.c.SDL_DrawGPUPrimitives(render_pass, 6, 1, 0, 0);
         sdl.c.SDL_EndGPURenderPass(render_pass);
@@ -1007,6 +1011,7 @@ const PresentPass = struct {
         const sampler_bindings = [_]sdl.c.SDL_GPUTextureSamplerBinding{
             .{ .texture = backbuffer, .sampler = pass.sampler },
         };
+        // std.debug.print("{}\n", .{sampler_bindings[0]});
         sdl.c.SDL_BindGPUFragmentSamplers(
             render_pass,
             0,

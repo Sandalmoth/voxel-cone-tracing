@@ -34,15 +34,15 @@ void main() {
 
     // testcube
     for (int x = 0; x < 2; ++x) {
-        for (int y = 0; y < 2; ++y) {
-            for (int z = 0; z < 2; ++z) {
+        for (int y = 0; y < 3; ++y) {
+            for (int z = 0; z < 4; ++z) {
                 uint current;
                 uint new;
                 uint original;
                 do {
-                    current = imageLoad(cascade, ivec3(x, y, z) + 31).r;
-                    new = 0xFFFFFFFFu;
-                    original = imageAtomicCompSwap(cascade, ivec3(x, y, z) + 31, current, new);
+                    current = imageLoad(cascade, ivec3(x, y, z) + 32).r;
+                    new = 0xFFFFFFAAu;
+                    original = imageAtomicCompSwap(cascade, ivec3(x, y, z) + 32, current, new);
                 } while (original != current);
             }
         }
