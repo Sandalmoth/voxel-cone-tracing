@@ -216,7 +216,7 @@ const VoxelizePass = struct {
                     .type = sdl.c.SDL_GPU_TEXTURETYPE_3D,
                     .format = sdl.c.SDL_GPU_TEXTUREFORMAT_R32_UINT,
                     .usage = sdl.c.SDL_GPU_TEXTUREUSAGE_COMPUTE_STORAGE_SIMULTANEOUS_READ_WRITE |
-                        sdl.c.SDL_GPU_TEXTUREUSAGE_GRAPHICS_STORAGE_READ,
+                        sdl.c.SDL_GPU_TEXTUREUSAGE_SAMPLER,
                     .width = 64,
                     .height = 64,
                     .layer_count_or_depth = 64,
@@ -327,6 +327,7 @@ const DebugVoxelDrawPass = struct {
 
     backbuffer: *sdl.c.SDL_GPUTexture,
     vertex_buffer: *sdl.GPUBuffer,
+    sampler: *sdl.GPUSampler,
 
     fn init(
         gpa: std.mem.Allocator,
@@ -370,8 +371,8 @@ const DebugVoxelDrawPass = struct {
                 .entrypoint = "main",
                 .format = sdl.c.SDL_GPU_SHADERFORMAT_SPIRV,
                 .stage = sdl.c.SDL_GPU_SHADERSTAGE_FRAGMENT,
-                .num_samplers = 0,
-                .num_storage_textures = 1, // or 4 maybe?
+                .num_samplers = 1,
+                .num_storage_textures = 0,
                 .num_storage_buffers = 0,
                 .num_uniform_buffers = 0,
             });
@@ -471,17 +472,30 @@ const DebugVoxelDrawPass = struct {
 
         try sdl.submitGPUCommandBuffer(command_buffer);
 
+        const sampler = sdl.c.SDL_CreateGPUSampler(device, &.{
+            .min_filter = sdl.c.SDL_GPU_FILTER_NEAREST,
+            .mag_filter = sdl.c.SDL_GPU_FILTER_NEAREST,
+            .address_mode_u = sdl.c.SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE,
+            .address_mode_v = sdl.c.SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE,
+        }) orelse {
+            log.err("SDL_CreateGPUSampler: {s}", .{sdl.c.SDL_GetError()});
+            return error.Sdl;
+        };
+        errdefer sdl.c.SDL_ReleaseGPUSampler(device, sampler);
+
         return .{
             .device = device,
             .pipeline = pipeline,
             .backbuffer = backbuffer,
             .vertex_buffer = vertex_buffer,
+            .sampler = sampler,
         };
     }
 
     fn deinit(pass: *DebugVoxelDrawPass) void {
-        sdl.c.SDL_ReleaseGPUBuffer(pass.device, pass.vertex_buffer);
-        sdl.c.SDL_ReleaseGPUTexture(pass.device, pass.backbuffer);
+        sdl.c.SDL_ReleaseGPUSampler(pass.device, pass.sampler);
+        sdl.releaseGPUBuffer(pass.device, pass.vertex_buffer);
+        sdl.releaseGPUTexture(pass.device, pass.backbuffer);
         sdl.c.SDL_ReleaseGPUGraphicsPipeline(pass.device, pass.pipeline);
         pass.* = undefined;
     }
@@ -524,11 +538,20 @@ const DebugVoxelDrawPass = struct {
             },
             @sizeOf(DrawData),
         );
-        sdl.c.SDL_BindGPUFragmentStorageTextures(
+        // sdl.c.SDL_BindGPUFragmentStorageTextures(
+        //     render_pass,
+        //     0,
+        //     cascades.ptr,
+        //     1, //@intCast(cascades.len),
+        // );
+        const sampler_bindings = [_]sdl.c.SDL_GPUTextureSamplerBinding{
+            .{ .texture = cascades[0], .sampler = pass.sampler },
+        };
+        sdl.c.SDL_BindGPUFragmentSamplers(
             render_pass,
             0,
-            cascades.ptr,
-            1, //@intCast(cascades.len),
+            &sampler_bindings[0],
+            sampler_bindings.len,
         );
         sdl.c.SDL_DrawGPUPrimitives(render_pass, 6, 1, 0, 0);
         sdl.c.SDL_EndGPURenderPass(render_pass);

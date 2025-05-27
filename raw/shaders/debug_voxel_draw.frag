@@ -5,7 +5,7 @@ layout(location = 1) in vec3 ray_dir;
 
 layout(location = 0) out vec4 out_color;
 
-layout(r32ui, set = 2, binding = 0) uniform readonly uimage3D cascade0;
+layout(set = 2, binding = 0) uniform usampler3D cascade0;
 
 vec4 unpackRGBA(uint packed) {
     return vec4(
@@ -92,7 +92,7 @@ void main() {
         //     break;
         // }
 
-        vec4 voxel_color = unpackRGBA(imageLoad(cascade0, voxel_pos + 32).r);
+        vec4 voxel_color = unpackRGBA(texelFetch(cascade0, voxel_pos + 32, 0).r);
         acc.rgb += voxel_color.rgb * voxel_color.a * (1.0 - acc.a);
         acc.a += voxel_color.a * (1.0 - acc.a);
 
