@@ -12,6 +12,12 @@ pub const Vertex = extern struct {
     normal: [3]f32 align(16),
 };
 
+comptime {
+    std.debug.assert(@offsetOf(Vertex, "position") == 0);
+    std.debug.assert(@offsetOf(Vertex, "normal") == 16);
+    std.debug.assert(@sizeOf(Vertex) == 32);
+}
+
 const Model = struct {
     vertex_buffer: *sdl.c.SDL_GPUBuffer,
     index_buffer: *sdl.c.SDL_GPUBuffer,
@@ -62,11 +68,12 @@ pub fn init(gpa: std.mem.Allocator, device: *sdl.c.SDL_GPUDevice) !Scene {
                     @as(f32, @floatFromInt(z)) - 5.5 + rand.float(f32),
                     1,
                 );
-                const rotation = zm.quatFromRollPitchYaw(
-                    2 * std.math.pi * rand.float(f32),
-                    2 * std.math.pi * rand.float(f32),
-                    2 * std.math.pi * rand.float(f32),
-                );
+                const rotation = zm.qidentity();
+                // const rotation = zm.quatFromRollPitchYaw(
+                //     2 * std.math.pi * rand.float(f32),
+                //     2 * std.math.pi * rand.float(f32),
+                //     2 * std.math.pi * rand.float(f32),
+                // );
                 const scale = zm.f32x4s(0.5 * (rand.float(f32) + 0.1));
                 try scene.objects.append(gpa, .{
                     .model = scene.cube,

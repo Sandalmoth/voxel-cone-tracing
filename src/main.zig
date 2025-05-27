@@ -169,6 +169,10 @@ const VoxelizePass = struct {
         n_triangles: u32,
     };
 
+    comptime {
+        std.debug.assert(@offsetOf(VoxelizeData, "n_triangles") == 64);
+    }
+
     const n_cascades = 4;
 
     device: *sdl.GPUDevice,
