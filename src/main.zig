@@ -286,10 +286,12 @@ const VoxelizePass = struct {
             0,
             &VoxelizeData{
                 .model_matrix = zm.matToArr(object.transform(alpha)),
+                // .model_matrix = zm.matToArr(zm.identity()),
                 .n_triangles = object.model.n_indices / 3,
             },
             @sizeOf(VoxelizeData),
         );
+        // _ = alpha;
         sdl.c.SDL_DispatchGPUCompute(
             pass.compute_pass,
             (object.model.n_indices / 3 + 63) / 64,

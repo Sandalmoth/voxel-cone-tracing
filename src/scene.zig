@@ -7,16 +7,11 @@ const Scene = @This();
 
 const log = std.log.scoped(.scene);
 
+// this must match std430
 pub const Vertex = extern struct {
-    position: [3]f32,
-    normal: [3]f32,
+    position: [3]f32 align(16),
+    normal: [3]f32 align(16),
 };
-
-comptime {
-    std.debug.assert(@offsetOf(Vertex, "position") == 0);
-    std.debug.assert(@offsetOf(Vertex, "normal") == 12);
-    std.debug.assert(@sizeOf(Vertex) == 24);
-}
 
 const Model = struct {
     vertex_buffer: *sdl.c.SDL_GPUBuffer,
@@ -63,9 +58,9 @@ pub fn init(gpa: std.mem.Allocator, device: *sdl.c.SDL_GPUDevice) !Scene {
         for (0..10) |y| {
             for (0..10) |z| {
                 const position = zm.f32x4(
-                    2 * @as(f32, @floatFromInt(x)) - 5.5 + rand.float(f32),
-                    2 * @as(f32, @floatFromInt(y)) - 5.5 + rand.float(f32),
-                    2 * @as(f32, @floatFromInt(z)) - 5.5 + rand.float(f32),
+                    2 * (@as(f32, @floatFromInt(x)) - 5.5 + rand.float(f32)),
+                    2 * (@as(f32, @floatFromInt(y)) - 5.5 + rand.float(f32)),
+                    2 * (@as(f32, @floatFromInt(z)) - 5.5 + rand.float(f32)),
                     1,
                 );
                 const rotation = zm.quatFromRollPitchYaw(
@@ -73,7 +68,8 @@ pub fn init(gpa: std.mem.Allocator, device: *sdl.c.SDL_GPUDevice) !Scene {
                     2 * std.math.pi * rand.float(f32),
                     2 * std.math.pi * rand.float(f32),
                 );
-                const scale = zm.f32x4s(0.5 * (rand.float(f32) + 0.1));
+                // const rotation = zm.qidentity();
+                const scale = zm.f32x4s(0.5 * (rand.float(f32) + 1.0));
                 try scene.objects.append(gpa, .{
                     .model = scene.cube,
                     .position = position,
