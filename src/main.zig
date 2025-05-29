@@ -1116,7 +1116,7 @@ const Camera = struct {
 
     const up = zm.f32x4(0.0, 1.0, 0.0, 0.0);
     const mouse_sensitivity = 0.3;
-    const move_speed = 3;
+    const move_speed = 30;
 
     fn update(camera: *Camera, input: *Input) void {
         // mouse-look camera

@@ -46,7 +46,6 @@ void main() {
     out_color = vec4(ray_dir, 1.0);
 
     vec3 pos = ray_origin;
-    vec3 step = 0.05 * ray_dir;
     
     vec4 acc = vec4(0.0, 0.0, 0.0, 0.0);
 

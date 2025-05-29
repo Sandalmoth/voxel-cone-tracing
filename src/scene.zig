@@ -70,13 +70,13 @@ pub fn init(gpa: std.mem.Allocator, device: *sdl.c.SDL_GPUDevice) !Scene {
     var rng = std.Random.DefaultPrng.init(@bitCast(std.time.microTimestamp()));
     const rand = rng.random();
 
-    for (0..20) |x| {
-        for (0..20) |y| {
-            for (0..20) |z| {
+    for (0..100) |x| {
+        for (0..3) |y| {
+            for (0..3) |z| {
                 const position = zm.f32x4(
-                    5 * (@as(f32, @floatFromInt(x)) - 10.5 + rand.float(f32)),
-                    5 * (@as(f32, @floatFromInt(y)) - 10.5 + rand.float(f32)),
-                    5 * (@as(f32, @floatFromInt(z)) - 10.5 + rand.float(f32)),
+                    10 * (@as(f32, @floatFromInt(x)) - 1.5 + rand.float(f32)),
+                    10 * (@as(f32, @floatFromInt(y)) - 1.5 + rand.float(f32)),
+                    10 * (@as(f32, @floatFromInt(z)) - 1.5 + rand.float(f32)),
                     1,
                 );
                 const rotation = zm.quatFromRollPitchYaw(
@@ -85,7 +85,7 @@ pub fn init(gpa: std.mem.Allocator, device: *sdl.c.SDL_GPUDevice) !Scene {
                     2 * std.math.pi * rand.float(f32),
                 );
                 // const rotation = zm.qidentity();
-                const scale = zm.f32x4s(0.5 * (rand.float(f32) + 1.0));
+                const scale = zm.f32x4s(2.0 * (rand.float(f32) + 0.5));
                 const angular_velocity = zm.quatFromRollPitchYaw(
                     std.math.pi * rand.float(f32),
                     std.math.pi * rand.float(f32),
