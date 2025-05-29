@@ -189,4 +189,10 @@ void main() {
             }
         }
     }
+
+    // TODO
+    // if we are not at cascade 0
+    // then for the part that overlaps the previous cascade
+    // we should set the voxels based on the prior cascade (with alpha)
+    // instead of the direct voxelization
 }

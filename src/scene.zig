@@ -70,13 +70,13 @@ pub fn init(gpa: std.mem.Allocator, device: *sdl.c.SDL_GPUDevice) !Scene {
     var rng = std.Random.DefaultPrng.init(@bitCast(std.time.microTimestamp()));
     const rand = rng.random();
 
-    for (0..10) |x| {
-        for (0..10) |y| {
-            for (0..10) |z| {
+    for (0..20) |x| {
+        for (0..20) |y| {
+            for (0..20) |z| {
                 const position = zm.f32x4(
-                    2 * (@as(f32, @floatFromInt(x)) - 5.5 + rand.float(f32)),
-                    2 * (@as(f32, @floatFromInt(y)) - 5.5 + rand.float(f32)),
-                    2 * (@as(f32, @floatFromInt(z)) - 5.5 + rand.float(f32)),
+                    5 * (@as(f32, @floatFromInt(x)) - 10.5 + rand.float(f32)),
+                    5 * (@as(f32, @floatFromInt(y)) - 10.5 + rand.float(f32)),
+                    5 * (@as(f32, @floatFromInt(z)) - 10.5 + rand.float(f32)),
                     1,
                 );
                 const rotation = zm.quatFromRollPitchYaw(
