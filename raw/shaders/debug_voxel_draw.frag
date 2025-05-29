@@ -90,11 +90,11 @@ void main() {
             }
         }
 
-        // if (voxel_pos.x < -32 || voxel_pos.x >= 32 ||
-        //     voxel_pos.y < -32 || voxel_pos.y >= 32 ||
-        //     voxel_pos.z < -32 || voxel_pos.z >= 32) {
-        //     break;
-        // }
+        if (voxel_pos.x < -32 || voxel_pos.x >= 32 ||
+            voxel_pos.y < -32 || voxel_pos.y >= 32 ||
+            voxel_pos.z < -32 || voxel_pos.z >= 32) {
+            break;
+        }
 
         // vec4 voxel_color = unpackRGBA(texelFetch(cascades, voxel_pos + 32, 0).r);
         uint packed = voxelFetch(voxel_pos + 32, 0);

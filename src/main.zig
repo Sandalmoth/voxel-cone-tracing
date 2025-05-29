@@ -167,10 +167,12 @@ pub fn main() !void {
 const VoxelizePass = struct {
     const n_cascades = 8;
 
+    // every time i get these layouts wrong
+    // why is it so impossible
     const VoxelizeData = extern struct {
         model_matrix: [16]f32 align(16),
         n_triangles: u32 align(16),
-        ix_cascade: u32 align(16),
+        ix_cascade: u32,
     };
 
     comptime {
