@@ -149,7 +149,7 @@ pub fn main() !void {
         } else {
             debug_voxel_draw_pass.run(
                 command_buffer,
-                &voxelize_pass.cascades,
+                voxelize_pass.cascades,
                 camera.v(alpha),
                 camera.p(alpha),
             );
@@ -164,22 +164,26 @@ pub fn main() !void {
 }
 
 const VoxelizePass = struct {
+    const n_cascades = 8;
+
     const VoxelizeData = extern struct {
         model_matrix: [16]f32 align(16),
-        n_triangles: u32,
+        n_triangles: u32 align(16),
+        ix_cascade: u32 align(16),
     };
 
     comptime {
         std.debug.assert(@offsetOf(VoxelizeData, "n_triangles") == 64);
     }
 
-    const n_cascades = 4;
-
     device: *sdl.GPUDevice,
     pipeline: *sdl.GPUComputePipeline,
+    clear_pipeline: *sdl.GPUComputePipeline,
     compute_pass: ?*sdl.GPUComputePass,
 
-    cascades: [n_cascades]*sdl.GPUTexture,
+    cascades: *sdl.GPUTexture,
+    ix_cascade: u32,
+    cascade_counter: i32,
 
     fn init(
         gpa: std.mem.Allocator,
@@ -212,49 +216,94 @@ const VoxelizePass = struct {
         };
         errdefer sdl.releaseGPUComputePipeline(device, pipeline);
 
-        var cascades: [n_cascades]*sdl.GPUTexture = undefined;
-        {
-            var i: usize = 0;
-            while (i < n_cascades) : (i += 1) {
-                cascades[i] = try sdl.createGPUTexture(device, &.{
-                    .type = sdl.c.SDL_GPU_TEXTURETYPE_3D,
-                    .format = sdl.c.SDL_GPU_TEXTUREFORMAT_R32_UINT,
-                    .usage = sdl.c.SDL_GPU_TEXTUREUSAGE_COMPUTE_STORAGE_SIMULTANEOUS_READ_WRITE |
-                        sdl.c.SDL_GPU_TEXTUREUSAGE_SAMPLER,
-                    .width = 64,
-                    .height = 64,
-                    .layer_count_or_depth = 64,
-                    .num_levels = 1,
-                    .sample_count = sdl.c.SDL_GPU_SAMPLECOUNT_1,
-                });
-                errdefer while (i > 0) : (i -= 1) sdl.releaseGPUTexture(device, cascades[i - 1]);
-            }
-        }
+        const clear_pipeline = blk: {
+            const file = try std.fs.cwd().openFile(
+                "data/shaders/clear_cascade.comp.spv",
+                .{ .mode = .read_only },
+            );
+            defer file.close();
+            const bytes = try file.reader().readAllAlloc(gpa, 1_000_000);
+            defer gpa.free(bytes);
+
+            break :blk try sdl.createGPUComputePipeline(device, &.{
+                .code_size = bytes.len,
+                .code = bytes.ptr,
+                .entrypoint = "main",
+                .format = sdl.c.SDL_GPU_SHADERFORMAT_SPIRV,
+                .num_samplers = 0,
+                .num_readonly_storage_textures = 0,
+                .num_readonly_storage_buffers = 0,
+                .num_readwrite_storage_textures = 1,
+                .num_readwrite_storage_buffers = 0,
+                .num_uniform_buffers = 1,
+                .threadcount_x = 1,
+                .threadcount_y = 1,
+                .threadcount_z = 1,
+            });
+        };
+        errdefer sdl.releaseGPUComputePipeline(device, clear_pipeline);
+
+        const cascades = try sdl.createGPUTexture(device, &.{
+            .type = sdl.c.SDL_GPU_TEXTURETYPE_3D,
+            .format = sdl.c.SDL_GPU_TEXTUREFORMAT_R32_UINT,
+            .usage = sdl.c.SDL_GPU_TEXTUREUSAGE_COMPUTE_STORAGE_SIMULTANEOUS_READ_WRITE |
+                sdl.c.SDL_GPU_TEXTUREUSAGE_SAMPLER,
+            .width = 64 * 4,
+            .height = 64,
+            .layer_count_or_depth = 64,
+            .num_levels = 1,
+            .sample_count = sdl.c.SDL_GPU_SAMPLECOUNT_1,
+        });
+        errdefer sdl.releaseGPUTexture(device, cascades);
 
         return .{
             .device = device,
             .pipeline = pipeline,
+            .clear_pipeline = clear_pipeline,
             .compute_pass = null,
             .cascades = cascades,
+            .ix_cascade = 0,
+            .cascade_counter = 0,
         };
     }
 
     fn deinit(pass: *VoxelizePass) void {
-        for (pass.cascades) |cascade| sdl.releaseGPUTexture(pass.device, cascade);
+        sdl.releaseGPUTexture(pass.device, pass.cascades);
+        sdl.releaseGPUComputePipeline(pass.device, pass.clear_pipeline);
         sdl.releaseGPUComputePipeline(pass.device, pass.pipeline);
         pass.* = undefined;
     }
 
     fn begin(pass: *VoxelizePass, command_buffer: *sdl.GPUCommandBuffer) void {
-        // TODO I think we need an entire separate pass here just to clear the cascade
+        pass.updateCascadeIndex();
+
         const storage_texture_bindings = [_]sdl.GPUStorageTextureReadWriteBinding{
             .{
-                .texture = pass.cascades[0],
+                .texture = pass.cascades,
                 .mip_level = 0,
                 .layer = 0,
                 .cycle = false,
             },
         };
+
+        // TODO this is kinda dumb, we should do it better somehow
+        const clear_pass = sdl.c.SDL_BeginGPUComputePass(
+            command_buffer,
+            &storage_texture_bindings[0],
+            storage_texture_bindings.len,
+            null,
+            0,
+        );
+        sdl.c.SDL_BindGPUComputePipeline(clear_pass, pass.clear_pipeline);
+        sdl.c.SDL_PushGPUComputeUniformData(
+            command_buffer,
+            0,
+            &pass.ix_cascade,
+            @sizeOf(u32),
+        );
+        sdl.c.SDL_DispatchGPUCompute(clear_pass, 1, 1, 1);
+        sdl.c.SDL_EndGPUComputePass(clear_pass);
+
         pass.compute_pass = sdl.c.SDL_BeginGPUComputePass(
             command_buffer,
             &storage_texture_bindings[0],
@@ -286,12 +335,11 @@ const VoxelizePass = struct {
             0,
             &VoxelizeData{
                 .model_matrix = zm.matToArr(object.transform(alpha)),
-                // .model_matrix = zm.matToArr(zm.identity()),
                 .n_triangles = object.model.n_indices / 3,
+                .ix_cascade = pass.ix_cascade,
             },
             @sizeOf(VoxelizeData),
         );
-        // _ = alpha;
         sdl.c.SDL_DispatchGPUCompute(
             pass.compute_pass,
             (object.model.n_indices / 3 + 63) / 64,
@@ -302,10 +350,19 @@ const VoxelizePass = struct {
 
     fn end(pass: *VoxelizePass, command_buffer: *sdl.GPUCommandBuffer) void {
         sdl.c.SDL_EndGPUComputePass(pass.compute_pass.?);
-        // TODO I think we need some kind of pass or operation here to convert the cascade
-        // to an image format that we can sample
         pass.compute_pass = null;
         _ = command_buffer;
+    }
+
+    fn updateCascadeIndex(pass: *VoxelizePass) void {
+        pass.cascade_counter += 1;
+        pass.cascade_counter = @mod(pass.cascade_counter, std.math.pow(i32, 2, n_cascades));
+
+        if (pass.cascade_counter == 0) {
+            pass.ix_cascade = n_cascades - 1;
+        } else {
+            pass.ix_cascade = 31 - @clz(pass.cascade_counter & -pass.cascade_counter);
+        }
     }
 };
 
@@ -509,7 +566,7 @@ const DebugVoxelDrawPass = struct {
     fn run(
         pass: *DebugVoxelDrawPass,
         command_buffer: *sdl.GPUCommandBuffer,
-        cascades: []*sdl.GPUTexture,
+        cascades: *sdl.GPUTexture,
         camera_v: zm.Mat,
         camera_p: zm.Mat,
     ) void {
@@ -544,14 +601,8 @@ const DebugVoxelDrawPass = struct {
             },
             @sizeOf(DrawData),
         );
-        // sdl.c.SDL_BindGPUFragmentStorageTextures(
-        //     render_pass,
-        //     0,
-        //     cascades.ptr,
-        //     1, //@intCast(cascades.len),
-        // );
         const sampler_bindings = [_]sdl.c.SDL_GPUTextureSamplerBinding{
-            .{ .texture = cascades[0], .sampler = pass.sampler },
+            .{ .texture = cascades, .sampler = pass.sampler },
         };
         sdl.c.SDL_BindGPUFragmentSamplers(
             render_pass,
@@ -1040,7 +1091,6 @@ const PresentPass = struct {
         const sampler_bindings = [_]sdl.c.SDL_GPUTextureSamplerBinding{
             .{ .texture = backbuffer, .sampler = pass.sampler },
         };
-        // std.debug.print("{}\n", .{sampler_bindings[0]});
         sdl.c.SDL_BindGPUFragmentSamplers(
             render_pass,
             0,

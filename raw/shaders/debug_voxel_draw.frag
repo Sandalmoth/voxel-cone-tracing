@@ -5,7 +5,7 @@ layout(location = 1) in vec3 ray_dir;
 
 layout(location = 0) out vec4 out_color;
 
-layout(set = 2, binding = 0) uniform usampler3D cascade0;
+layout(set = 2, binding = 0) uniform usampler3D cascades;
 
 vec4 unpackRGBA(uint packed) {
     return vec4(
@@ -14,6 +14,10 @@ vec4 unpackRGBA(uint packed) {
         float((packed >> 8) & 0xFFu) / 255.0,
         float((packed >> 0) & 0xFFu) / 255.0
     );
+}
+
+uint voxelFetch(ivec3 voxel_pos, int cascade) {
+    return texelFetch(cascades, ivec3(voxel_pos.x + 64 * cascade, voxel_pos.yz), 0).r;
 }
 
 int cascadeAt(vec3 pos) {
@@ -92,9 +96,14 @@ void main() {
         //     break;
         // }
 
-        vec4 voxel_color = unpackRGBA(texelFetch(cascade0, voxel_pos + 32, 0).r);
-        acc.rgb += voxel_color.rgb * voxel_color.a * (1.0 - acc.a);
-        acc.a += voxel_color.a * (1.0 - acc.a);
+        // vec4 voxel_color = unpackRGBA(texelFetch(cascades, voxel_pos + 32, 0).r);
+        uint packed = voxelFetch(voxel_pos + 32, 0);
+        vec4 voxel_color = unpackRGBA(packed);
+        float a = ((packed & 0xFFu) == 0) ? 0.0 : 1.0;
+        // acc.rgb += voxel_color.rgb * voxel_color.a * (1.0 - acc.a);
+        // acc.a += voxel_color.a * (1.0 - acc.a);
+        acc.rgb += voxel_color.rgb * a * (1.0 - acc.a);
+        acc.a += a * (1.0 - acc.a);
 
         if (acc.a > 0.99) break;
     }

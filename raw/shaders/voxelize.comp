@@ -17,10 +17,33 @@ layout(std430, set = 0, binding = 1) readonly buffer IndexBuffer {
 
 layout(r32ui, set = 1, binding = 0) uniform uimage3D cascade;
 
-layout(set = 2, binding = 0) uniform VoxelizeData {
+layout(std140, set = 2, binding = 0) uniform VoxelizeData {
     mat4 model_matrix;
     uint n_triangles;
+    uint ix_cascade;
 } voxelize_data;
+
+uint packRGBA(vec4 color) {
+    vec4 color_scaled = clamp(color * 255.0, 0.0, 255.0);
+    uint r = uint(color_scaled.r);
+    uint g = uint(color_scaled.g);
+    uint b = uint(color_scaled.b);
+    uint a = uint(color_scaled.a);
+    return (r << 24) | (g << 16) | (b << 8) | a;
+}
+
+vec4 unpackRGBA(uint packed) {
+    return vec4(
+        float((packed >> 24) & 0xFFu) / 255.0,
+        float((packed >> 16) & 0xFFu) / 255.0,
+        float((packed >> 8) & 0xFFu) / 255.0,
+        float((packed >> 0) & 0xFFu) / 255.0
+    );
+}
+
+float voxelSize(int cascade) {
+    return 0.125 * float(1 << cascade);
+}
 
 bool intersectVoxelTriangle(vec3 low, vec3 ext, vec3 p0, vec3 p1, vec3 p2) {
     // https://omnigoat.github.io/2015/03/09/box-triangle-intersection/
@@ -127,15 +150,37 @@ void main() {
                 if (ix_triangle == 8 || ix_triangle == 9) color = 0x00FFFFFFu;
                 if (ix_triangle == 10 || ix_triangle == 11) color = 0xFF00FFFFu;
                 
-                uint current;
-                uint new;
-                uint original;
+                uint current_packed;
+                uint new_packed;
+                uint original_packed;
                 do {
-                    current = imageLoad(cascade, ivec3(x, y, z) + 32).r;
-                    // new = 0xFFFFFFAAu;
-                    new = color;
-                    original = imageAtomicCompSwap(cascade, ivec3(x, y, z) + 32, current, new);
-                } while (original != current);
+                    current_packed = imageLoad(cascade, ivec3(x, y, z) + 32).r;
+                    vec3 current_rgb = unpackRGBA(current_packed).rgb;
+                    uint current_count = current_packed & 0xFFu;
+                    vec3 sample_rgb = unpackRGBA(color).rgb;
+
+                    vec3 new_rgb;
+                    uint new_count;
+
+                    if (current_count < 255) {
+                        new_rgb = (current_rgb * float(current_count) + sample_rgb) /
+                                  float(current_count + 1);
+                        new_count = current_count + 1;
+                    } else {
+                        new_rgb = current_rgb;
+                        new_count = current_count;
+                    }
+
+                    new_packed = packRGBA(vec4(clamp(new_rgb, 0.0, 1.0), 0.0));
+                    new_packed = (new_packed & 0xFFFFFF00u) | (new_count & 0xFFu);
+
+                    original_packed = imageAtomicCompSwap(
+                        cascade,
+                        ivec3(x, y, z) + 32,
+                        current_packed,
+                        new_packed
+                    );
+                } while (original_packed != current_packed);
             }
         }
     }
