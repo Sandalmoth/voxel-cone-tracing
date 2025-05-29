@@ -120,20 +120,31 @@ pub fn main() !void {
 
         const alpha = @as(f32, @floatFromInt(lag)) / @as(f32, @floatFromInt(tick_ns));
 
-        const command_buffer = sdl.c.SDL_AcquireGPUCommandBuffer(gpu_device) orelse {
+        const voxelize_command_buffer = sdl.c.SDL_AcquireGPUCommandBuffer(gpu_device) orelse {
             log.err("SDL_AcquireGPUCommandBuffer: {s}", .{sdl.c.SDL_GetError()});
             return error.Sdl;
         };
 
         {
-            voxelize_pass.begin(command_buffer);
-            defer voxelize_pass.end(command_buffer);
+            voxelize_pass.begin(voxelize_command_buffer);
+            defer voxelize_pass.end(voxelize_command_buffer);
             for (scene.objects.items) |object| voxelize_pass.voxelizeObject(
-                command_buffer,
+                voxelize_command_buffer,
                 object,
                 alpha,
             );
         }
+
+        if (!sdl.c.SDL_SubmitGPUCommandBuffer(voxelize_command_buffer)) {
+            log.err("SDL_SubmitGPUCommandBuffer: {s}", .{sdl.c.SDL_GetError()});
+            return error.Sdl;
+        }
+
+        const command_buffer = sdl.c.SDL_AcquireGPUCommandBuffer(gpu_device) orelse {
+            log.err("SDL_AcquireGPUCommandBuffer: {s}", .{sdl.c.SDL_GetError()});
+            return error.Sdl;
+        };
+
         if (!debug_view) {
             {
                 draw_pass.begin(command_buffer);
