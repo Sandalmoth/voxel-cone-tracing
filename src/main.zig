@@ -111,6 +111,7 @@ pub fn main() !void {
         while (lag >= tick_ns) {
             camera.update(&input);
             if (input.peek(.toggle_debug_view).pressed) debug_view = !debug_view;
+            for (scene.objects.items) |*object| object.update(tick);
 
             input.decay();
             lag -= tick_ns;
@@ -248,7 +249,7 @@ const VoxelizePass = struct {
             .format = sdl.c.SDL_GPU_TEXTUREFORMAT_R32_UINT,
             .usage = sdl.c.SDL_GPU_TEXTUREUSAGE_COMPUTE_STORAGE_SIMULTANEOUS_READ_WRITE |
                 sdl.c.SDL_GPU_TEXTUREUSAGE_SAMPLER,
-            .width = 64 * 4,
+            .width = 64 * n_cascades,
             .height = 64,
             .layer_count_or_depth = 64,
             .num_levels = 1,

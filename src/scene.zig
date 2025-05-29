@@ -28,6 +28,8 @@ pub const Object = struct {
     prev_rotation: zm.Quat,
     prev_scale: zm.Vec,
 
+    angular_velocity: zm.Quat,
+
     pub fn transform(object: Object, alpha: f32) zm.Mat {
         const position = zm.lerp(object.prev_position, object.prev_position, alpha);
         const rotation = zm.slerp(object.prev_rotation, object.rotation, alpha);
@@ -38,6 +40,20 @@ pub const Object = struct {
                 zm.matFromQuat(rotation),
                 zm.translationV(position),
             ),
+        );
+    }
+
+    pub fn update(object: *Object, tick: f32) void {
+        object.prev_rotation = object.rotation;
+
+        var axis: zm.Vec = undefined;
+        var angle: f32 = undefined;
+        zm.quatToAxisAngle(object.angular_velocity, &axis, &angle);
+        angle *= tick;
+
+        object.rotation = zm.qmul(
+            zm.quatFromAxisAngle(axis, angle),
+            object.rotation,
         );
     }
 };
@@ -70,6 +86,11 @@ pub fn init(gpa: std.mem.Allocator, device: *sdl.c.SDL_GPUDevice) !Scene {
                 );
                 // const rotation = zm.qidentity();
                 const scale = zm.f32x4s(0.5 * (rand.float(f32) + 1.0));
+                const angular_velocity = zm.quatFromRollPitchYaw(
+                    std.math.pi * rand.float(f32),
+                    std.math.pi * rand.float(f32),
+                    std.math.pi * rand.float(f32),
+                );
                 try scene.objects.append(gpa, .{
                     .model = scene.cube,
                     .position = position,
@@ -78,6 +99,7 @@ pub fn init(gpa: std.mem.Allocator, device: *sdl.c.SDL_GPUDevice) !Scene {
                     .prev_position = position,
                     .prev_rotation = rotation,
                     .prev_scale = scale,
+                    .angular_velocity = angular_velocity,
                 });
             }
         }
