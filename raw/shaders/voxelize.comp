@@ -15,7 +15,14 @@ layout(std430, set = 0, binding = 1) readonly buffer IndexBuffer {
     uint indices[];
 } index_buffer;
 
-layout(r32ui, set = 1, binding = 0) uniform uimage3D cascade;
+layout(r32ui, set = 1, binding = 0) uniform uimage3D cascades;
+
+// r32ui -> Half2x16  weight coverage
+// r32ui -> Half2x16  r emissive_r
+// r32ui -> Half2x16  g emissive_g
+// r32ui -> Half2x16  b emissive_b
+// r32ui -> Half2x16  normal_x normal_y
+// r32ui -> Half2x16  normal_z
 
 layout(std140, set = 2, binding = 0) uniform VoxelizeData {
     mat4 model_matrix;
@@ -144,20 +151,21 @@ void main() {
                     continue;
                 }
 
-                uint color = 0xFFFFFFFFu;
-                if (ix_triangle == 0 || ix_triangle == 1) color = 0xFF0000FFu;
-                if (ix_triangle == 2 || ix_triangle == 3) color = 0x00FF00FFu;
-                if (ix_triangle == 4 || ix_triangle == 5) color = 0x0000FFFFu;
-                if (ix_triangle == 6 || ix_triangle == 7) color = 0xFFFF00FFu;
-                if (ix_triangle == 8 || ix_triangle == 9) color = 0x00FFFFFFu;
-                if (ix_triangle == 10 || ix_triangle == 11) color = 0xFF00FFFFu;
+                // uint color = 0xFFFFFFFFu;
+                // if (ix_triangle == 0 || ix_triangle == 1) color = 0xFF0000FFu;
+                // if (ix_triangle == 2 || ix_triangle == 3) color = 0x00FF00FFu;
+                // if (ix_triangle == 4 || ix_triangle == 5) color = 0x0000FFFFu;
+                // if (ix_triangle == 6 || ix_triangle == 7) color = 0xFFFF00FFu;
+                // if (ix_triangle == 8 || ix_triangle == 9) color = 0x00FFFFFFu;
+                // if (ix_triangle == 10 || ix_triangle == 11) color = 0xFF00FFFFu;
+                uint color = packRGBA(vec4(0.5 * (1.0 + vertex_buffer.vertices[i0].normal), 1.0));
                 
                 uint current_packed;
                 uint new_packed;
                 uint original_packed;
                 do {
                     current_packed = imageLoad(
-                        cascade,
+                        cascades,
                         ivec3(x + 64 * voxelize_data.ix_cascade, y, z) + 32
                     ).r;
                     vec3 current_rgb = unpackRGBA(current_packed).rgb;
@@ -172,15 +180,16 @@ void main() {
                                   float(current_count + 1);
                         new_count = current_count + 1;
                     } else {
-                        new_rgb = current_rgb;
-                        new_count = current_count;
+                        break;
+                        // new_rgb = current_rgb;
+                        // new_count = current_count;
                     }
 
                     new_packed = packRGBA(vec4(clamp(new_rgb, 0.0, 1.0), 0.0));
                     new_packed = (new_packed & 0xFFFFFF00u) | (new_count & 0xFFu);
 
                     original_packed = imageAtomicCompSwap(
-                        cascade,
+                        cascades,
                         ivec3(x + 64 * voxelize_data.ix_cascade, y, z) + 32,
                         current_packed,
                         new_packed

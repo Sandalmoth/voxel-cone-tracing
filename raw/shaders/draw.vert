@@ -15,5 +15,5 @@ layout(set = 1, binding = 0) uniform DrawData {
 
 void main() {
     gl_Position = draw_data.mvp_matrix * vec4(pos, 1.0); 
-    frag_normal = mat3(draw_data.normal_matrix) * normal;
+    frag_normal = normalize(mat3(draw_data.normal_matrix) * normal);
 }

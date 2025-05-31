@@ -49,7 +49,7 @@ void main() {
     
     vec4 acc = vec4(0.0, 0.0, 0.0, 0.0);
 
-    for (int i = 0; i < 1024; ++i) {
+    for (int i = 0; i < 512; ++i) {
         pos += 0.5 * voxelSize(cascadeAt(pos)) * ray_dir;
         uint packed = voxelAt(pos);
         vec4 voxel_color = unpackRGBA(packed);

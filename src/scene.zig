@@ -138,6 +138,41 @@ pub fn init(gpa: std.mem.Allocator, device: *sdl.c.SDL_GPUDevice) !Scene {
         });
     }
 
+    for (0..3) |x| {
+        for (0..3) |y| {
+            for (0..3) |z| {
+                const position = zm.f32x4(
+                    100 * (@as(f32, @floatFromInt(x)) - 1.5 + rand.float(f32)),
+                    100 * (@as(f32, @floatFromInt(y)) - 1.5 + rand.float(f32)),
+                    100 * (@as(f32, @floatFromInt(z)) - 1.5 + rand.float(f32)),
+                    1,
+                );
+                const rotation = zm.quatFromRollPitchYaw(
+                    2 * std.math.pi * rand.float(f32),
+                    2 * std.math.pi * rand.float(f32),
+                    2 * std.math.pi * rand.float(f32),
+                );
+                // const rotation = zm.qidentity();
+                const scale = zm.f32x4s(50.0 * (rand.float(f32) + 0.5));
+                const angular_velocity = zm.quatFromRollPitchYaw(
+                    std.math.pi * rand.float(f32),
+                    std.math.pi * rand.float(f32),
+                    std.math.pi * rand.float(f32),
+                );
+                try scene.objects.append(gpa, .{
+                    .model = scene.bunny,
+                    .position = position,
+                    .rotation = rotation,
+                    .scale = scale,
+                    .prev_position = position,
+                    .prev_rotation = rotation,
+                    .prev_scale = scale,
+                    .angular_velocity = angular_velocity,
+                });
+            }
+        }
+    }
+
     return scene;
 }
 
