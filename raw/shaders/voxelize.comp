@@ -15,38 +15,37 @@ layout(std430, set = 0, binding = 1) readonly buffer IndexBuffer {
     uint indices[];
 } index_buffer;
 
-layout(r32ui, set = 1, binding = 0) uniform uimage3D cascades;
+layout(r32ui, set = 1, binding = 0) uniform uimage3D target_weight_coverage;
+layout(r32ui, set = 1, binding = 1) uniform uimage3D target_diffuse_emissive_r;
+layout(r32ui, set = 1, binding = 2) uniform uimage3D target_diffuse_emissive_g;
+layout(r32ui, set = 1, binding = 3) uniform uimage3D target_diffuse_emissive_b;
+layout(r32ui, set = 1, binding = 4) uniform uimage3D target_normal_xy;
+layout(r32ui, set = 1, binding = 5) uniform uimage3D target_normal_z_pad;
 
+// voxelize into
 // r32ui -> Half2x16  weight coverage
 // r32ui -> Half2x16  r emissive_r
 // r32ui -> Half2x16  g emissive_g
 // r32ui -> Half2x16  b emissive_b
 // r32ui -> Half2x16  normal_x normal_y
 // r32ui -> Half2x16  normal_z
+// each 64 x 64 x 64
+// average into
+// r16  occupancy
+// rgba8  diffuse
+// rgba8_snorm  normal
+// r11g11b10  emissive
+// each part of a (64 x 64 x 64) x 8 cascade texture
+// except occupancy which is (64 x 64 x 64) x 8 x 2
+// compute lighting into
+// r11g11b10  radiance
+// each part of a (64 x 64 x 64) x 8 x 2 cascade texture
 
 layout(std140, set = 2, binding = 0) uniform VoxelizeData {
     mat4 model_matrix;
     uint n_triangles;
     uint ix_cascade;
 } voxelize_data;
-
-uint packRGBA(vec4 color) {
-    vec4 color_scaled = clamp(color * 255.0, 0.0, 255.0);
-    uint r = uint(color_scaled.r);
-    uint g = uint(color_scaled.g);
-    uint b = uint(color_scaled.b);
-    uint a = uint(color_scaled.a);
-    return (r << 24) | (g << 16) | (b << 8) | a;
-}
-
-vec4 unpackRGBA(uint packed) {
-    return vec4(
-        float((packed >> 24) & 0xFFu) / 255.0,
-        float((packed >> 16) & 0xFFu) / 255.0,
-        float((packed >> 8) & 0xFFu) / 255.0,
-        float((packed >> 0) & 0xFFu) / 255.0
-    );
-}
 
 float voxelSize(uint cascade) {
     return 0.125 * float(1 << cascade);
@@ -114,6 +113,10 @@ bool intersectVoxelTriangle(vec3 low, vec3 ext, vec3 p0, vec3 p1, vec3 p2) {
     return true;
 }
 
+float triangleArea(vec3 p0, vec3 p1, vec3 p2) {
+    return 0.5 * length(cross(p1 - p0, p2 - p0));
+}
+
 void main() {
     uint ix_triangle = gl_GlobalInvocationID.x;
     if (ix_triangle >= voxelize_data.n_triangles) return;
@@ -130,8 +133,14 @@ void main() {
     vec3 p0 = (voxelize_data.model_matrix * vec4(p0_model, 1.0)).xyz;
     vec3 p1 = (voxelize_data.model_matrix * vec4(p1_model, 1.0)).xyz;
     vec3 p2 = (voxelize_data.model_matrix * vec4(p2_model, 1.0)).xyz;
+    vec3 normal = normalize(
+        vertex_buffer.vertices[i0].normal +
+        vertex_buffer.vertices[i1].normal +
+        vertex_buffer.vertices[i2].normal
+    );
 
     float voxel_size = voxelSize(voxelize_data.ix_cascade);
+    float coverage = 0.25 * clamp(triangleArea(p0, p1, p2) / (voxel_size * voxel_size), 0, 4.0);
     
     // iterate over the triangle aabb and test for intersection with each voxel
     vec3 lower_bound = min(min(p0, p1), p2);
@@ -140,57 +149,104 @@ void main() {
     ivec3 voxel_upper_bound = ivec3(floor(upper_bound / voxel_size));
     for (int x = voxel_lower_bound.x; x <= voxel_upper_bound.x; ++x) {
         if (x < -32 || x >= 32) continue;
+        // if (voxelize_data.ix_cascade > 0 && x >= -16 && x < 16) continue;
         for (int y = voxel_lower_bound.y; y <= voxel_upper_bound.y; ++y) {
             if (y < -32 || y >= 32) continue;
+            // if (voxelize_data.ix_cascade > 0 && y >= -16 && y < 16) continue;
             for (int z = voxel_lower_bound.z; z <= voxel_upper_bound.z; ++z) {
                 if (z < -32 || z >= 32) continue;
+                // if (voxelize_data.ix_cascade > 0 && z >= -16 && z < 16) continue;
 
                 vec3 low = voxel_size * vec3(x, y, z);
                 vec3 ext = vec3(voxel_size, voxel_size, voxel_size);
                 if (!intersectVoxelTriangle(low, ext, p0, p1, p2)) {
                     continue;
                 }
+                ivec3 voxel_pos = ivec3(x, y, z) + 32;
 
-                // uint color = 0xFFFFFFFFu;
-                // if (ix_triangle == 0 || ix_triangle == 1) color = 0xFF0000FFu;
-                // if (ix_triangle == 2 || ix_triangle == 3) color = 0x00FF00FFu;
-                // if (ix_triangle == 4 || ix_triangle == 5) color = 0x0000FFFFu;
-                // if (ix_triangle == 6 || ix_triangle == 7) color = 0xFFFF00FFu;
-                // if (ix_triangle == 8 || ix_triangle == 9) color = 0x00FFFFFFu;
-                // if (ix_triangle == 10 || ix_triangle == 11) color = 0xFF00FFFFu;
-                uint color = packRGBA(vec4(0.5 * (1.0 + vertex_buffer.vertices[i0].normal), 1.0));
-                
                 uint current_packed;
                 uint new_packed;
                 uint original_packed;
+
                 do {
-                    current_packed = imageLoad(
-                        cascades,
-                        ivec3(x + 64 * voxelize_data.ix_cascade, y, z) + 32
-                    ).r;
-                    vec3 current_rgb = unpackRGBA(current_packed).rgb;
-                    uint current_count = current_packed & 0xFFu;
-                    vec3 sample_rgb = unpackRGBA(color).rgb;
-
-                    vec3 new_rgb;
-                    uint new_count;
-
-                    if (current_count < 255) {
-                        new_rgb = (current_rgb * float(current_count) + sample_rgb) /
-                                  float(current_count + 1);
-                        new_count = current_count + 1;
-                    } else {
-                        break;
-                        // new_rgb = current_rgb;
-                        // new_count = current_count;
-                    }
-
-                    new_packed = packRGBA(vec4(clamp(new_rgb, 0.0, 1.0), 0.0));
-                    new_packed = (new_packed & 0xFFFFFF00u) | (new_count & 0xFFu);
-
+                    current_packed = imageLoad(target_weight_coverage, voxel_pos).r;
+                    // vec2 data = unpackHalf2x16(current_packed);
+                    // new_packed = packHalf2x16(vec2(data.x + 1.0, max(data.y, coverage)));
+                    new_packed = packHalf2x16(
+                        unpackHalf2x16(current_packed) + vec2(1.0, coverage)
+                        // unpackHalf2x16(current_packed) + vec2(1.0, 0.0)
+                    );
                     original_packed = imageAtomicCompSwap(
-                        cascades,
-                        ivec3(x + 64 * voxelize_data.ix_cascade, y, z) + 32,
+                        target_weight_coverage,
+                        voxel_pos,
+                        current_packed,
+                        new_packed
+                    );
+                } while (original_packed != current_packed);
+
+                do {
+                    current_packed = imageLoad(target_diffuse_emissive_r, voxel_pos).r;
+                    new_packed = packHalf2x16(
+                        unpackHalf2x16(current_packed) + vec2(0.5 * (1.0 + normal.r), 0.0)
+                        // unpackHalf2x16(current_packed) + vec2(1.0, 0.0)
+                    );
+                    original_packed = imageAtomicCompSwap(
+                        target_diffuse_emissive_r,
+                        voxel_pos,
+                        current_packed,
+                        new_packed
+                    );
+                } while (original_packed != current_packed);
+
+                do {
+                    current_packed = imageLoad(target_diffuse_emissive_g, voxel_pos).r;
+                    new_packed = packHalf2x16(
+                        unpackHalf2x16(current_packed) + vec2(0.5 * (1.0 + normal.g), 0.0)
+                        // unpackHalf2x16(current_packed) + vec2(1.0, 0.0)
+                    );
+                    original_packed = imageAtomicCompSwap(
+                        target_diffuse_emissive_g,
+                        voxel_pos,
+                        current_packed,
+                        new_packed
+                    );
+                } while (original_packed != current_packed);
+
+                do {
+                    current_packed = imageLoad(target_diffuse_emissive_b, voxel_pos).r;
+                    new_packed = packHalf2x16(
+                        unpackHalf2x16(current_packed) + vec2(0.5 * (1.0 + normal.b), 0.0)
+                        // unpackHalf2x16(current_packed) + vec2(1.0, 0.0)
+                    );
+                    original_packed = imageAtomicCompSwap(
+                        target_diffuse_emissive_b,
+                        voxel_pos,
+                        current_packed,
+                        new_packed
+                    );
+                } while (original_packed != current_packed);
+
+                do {
+                    current_packed = imageLoad(target_normal_xy, voxel_pos).r;
+                    new_packed = packHalf2x16(
+                        unpackHalf2x16(current_packed) + normal.xy
+                    );
+                    original_packed = imageAtomicCompSwap(
+                        target_normal_xy,
+                        voxel_pos,
+                        current_packed,
+                        new_packed
+                    );
+                } while (original_packed != current_packed);
+
+                do {
+                    current_packed = imageLoad(target_normal_z_pad, voxel_pos).r;
+                    new_packed = packHalf2x16(
+                        unpackHalf2x16(current_packed) + vec2(normal.z, 0.0)
+                    );
+                    original_packed = imageAtomicCompSwap(
+                        target_normal_z_pad,
+                        voxel_pos,
                         current_packed,
                         new_packed
                     );
@@ -198,10 +254,4 @@ void main() {
             }
         }
     }
-
-    // TODO
-    // if we are not at cascade 0
-    // then for the part that overlaps the previous cascade
-    // we should set the voxels based on the prior cascade (with alpha)
-    // instead of the direct voxelization
 }

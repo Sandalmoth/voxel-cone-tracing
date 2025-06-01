@@ -161,7 +161,7 @@ pub fn main() !void {
         } else {
             debug_voxel_draw_pass.run(
                 command_buffer,
-                voxelize_pass.cascades,
+                voxelize_pass.cascades.get(.diffuse),
                 camera.v(alpha),
                 camera.p(alpha),
             );
@@ -178,11 +178,19 @@ pub fn main() !void {
 const VoxelizePass = struct {
     const n_cascades = 8;
 
-    // every time i get these layouts wrong
-    // why is it so impossible
     const VoxelizeData = extern struct {
         model_matrix: [16]f32 align(16),
         n_triangles: u32 align(16),
+        ix_cascade: u32,
+    };
+
+    const AverageData = extern struct {
+        ix_temporal: u32,
+        ix_cascade: u32,
+    };
+
+    const LightingData = extern struct {
+        ix_temporal: u32,
         ix_cascade: u32,
     };
 
@@ -190,12 +198,35 @@ const VoxelizePass = struct {
         std.debug.assert(@offsetOf(VoxelizeData, "n_triangles") == 64);
     }
 
+    const Target = enum {
+        weight_coverage,
+        diffuse_emissive_r,
+        diffuse_emissive_g,
+        diffuse_emissive_b,
+        normal_xy,
+        normal_z_pad,
+    };
+
+    const Cascade = enum {
+        coverage,
+        diffuse,
+        emissive,
+        normal,
+        radiance,
+    };
+
     device: *sdl.GPUDevice,
-    pipeline: *sdl.GPUComputePipeline,
     clear_pipeline: *sdl.GPUComputePipeline,
+    voxelize_pipeline: *sdl.GPUComputePipeline,
+    average_pipeline: *sdl.GPUComputePipeline,
+    lighting_pipeline: *sdl.GPUComputePipeline,
+    sampler: *sdl.GPUSampler,
     compute_pass: ?*sdl.GPUComputePass,
 
-    cascades: *sdl.GPUTexture,
+    targets: std.EnumArray(Target, *sdl.GPUTexture),
+    cascades: std.EnumArray(Cascade, *sdl.GPUTexture),
+
+    ix_temporal: u32,
     ix_cascade: u32,
     cascade_counter: i32,
 
@@ -203,7 +234,34 @@ const VoxelizePass = struct {
         gpa: std.mem.Allocator,
         device: *sdl.GPUDevice,
     ) !VoxelizePass {
-        const pipeline = blk: {
+        const clear_pipeline = blk: {
+            const file = try std.fs.cwd().openFile(
+                "data/shaders/clear.comp.spv",
+                .{ .mode = .read_only },
+            );
+            defer file.close();
+            const bytes = try file.reader().readAllAlloc(gpa, 1_000_000);
+            defer gpa.free(bytes);
+
+            break :blk try sdl.createGPUComputePipeline(device, &.{
+                .code_size = bytes.len,
+                .code = bytes.ptr,
+                .entrypoint = "main",
+                .format = sdl.c.SDL_GPU_SHADERFORMAT_SPIRV,
+                .num_samplers = 0,
+                .num_readonly_storage_textures = 0,
+                .num_readonly_storage_buffers = 0,
+                .num_readwrite_storage_textures = 6,
+                .num_readwrite_storage_buffers = 0,
+                .num_uniform_buffers = 0,
+                .threadcount_x = 4,
+                .threadcount_y = 4,
+                .threadcount_z = 4,
+            });
+        };
+        errdefer sdl.releaseGPUComputePipeline(device, clear_pipeline);
+
+        const voxelize_pipeline = blk: {
             const file = try std.fs.cwd().openFile(
                 "data/shaders/voxelize.comp.spv",
                 .{ .mode = .read_only },
@@ -220,7 +278,7 @@ const VoxelizePass = struct {
                 .num_samplers = 0,
                 .num_readonly_storage_textures = 0,
                 .num_readonly_storage_buffers = 2,
-                .num_readwrite_storage_textures = 1,
+                .num_readwrite_storage_textures = 6,
                 .num_readwrite_storage_buffers = 0,
                 .num_uniform_buffers = 1,
                 .threadcount_x = 64,
@@ -228,11 +286,11 @@ const VoxelizePass = struct {
                 .threadcount_z = 1,
             });
         };
-        errdefer sdl.releaseGPUComputePipeline(device, pipeline);
+        errdefer sdl.releaseGPUComputePipeline(device, voxelize_pipeline);
 
-        const clear_pipeline = blk: {
+        const average_pipeline = blk: {
             const file = try std.fs.cwd().openFile(
-                "data/shaders/clear_cascade.comp.spv",
+                "data/shaders/average.comp.spv",
                 .{ .mode = .read_only },
             );
             defer file.close();
@@ -244,22 +302,96 @@ const VoxelizePass = struct {
                 .code = bytes.ptr,
                 .entrypoint = "main",
                 .format = sdl.c.SDL_GPU_SHADERFORMAT_SPIRV,
-                .num_samplers = 0,
+                .num_samplers = 6,
+                .num_readonly_storage_textures = 0,
+                .num_readonly_storage_buffers = 0,
+                .num_readwrite_storage_textures = 4,
+                .num_readwrite_storage_buffers = 0,
+                .num_uniform_buffers = 1,
+                .threadcount_x = 4,
+                .threadcount_y = 4,
+                .threadcount_z = 4,
+            });
+        };
+        errdefer sdl.releaseGPUComputePipeline(device, average_pipeline);
+
+        const lighting_pipeline = blk: {
+            const file = try std.fs.cwd().openFile(
+                "data/shaders/lighting.comp.spv",
+                .{ .mode = .read_only },
+            );
+            defer file.close();
+            const bytes = try file.reader().readAllAlloc(gpa, 1_000_000);
+            defer gpa.free(bytes);
+
+            break :blk try sdl.createGPUComputePipeline(device, &.{
+                .code_size = bytes.len,
+                .code = bytes.ptr,
+                .entrypoint = "main",
+                .format = sdl.c.SDL_GPU_SHADERFORMAT_SPIRV,
+                .num_samplers = 4,
                 .num_readonly_storage_textures = 0,
                 .num_readonly_storage_buffers = 0,
                 .num_readwrite_storage_textures = 1,
                 .num_readwrite_storage_buffers = 0,
                 .num_uniform_buffers = 1,
-                .threadcount_x = 1,
-                .threadcount_y = 1,
-                .threadcount_z = 1,
+                .threadcount_x = 4,
+                .threadcount_y = 4,
+                .threadcount_z = 4,
             });
         };
-        errdefer sdl.releaseGPUComputePipeline(device, clear_pipeline);
+        errdefer sdl.releaseGPUComputePipeline(device, lighting_pipeline);
 
-        const cascades = try sdl.createGPUTexture(device, &.{
+        var targets = std.EnumArray(Target, *sdl.GPUTexture).initUndefined();
+        var cascades = std.EnumArray(Cascade, *sdl.GPUTexture).initUndefined();
+
+        // if zig allows this, why not have local functions :|
+        const TextureBuilder = struct {
+            fn createTarget(dev: *sdl.GPUDevice) !*sdl.GPUTexture {
+                return sdl.createGPUTexture(dev, &.{
+                    .type = sdl.c.SDL_GPU_TEXTURETYPE_3D,
+                    .format = sdl.c.SDL_GPU_TEXTUREFORMAT_R32_UINT,
+                    .usage = sdl.c.SDL_GPU_TEXTUREUSAGE_COMPUTE_STORAGE_SIMULTANEOUS_READ_WRITE |
+                        sdl.c.SDL_GPU_TEXTUREUSAGE_SAMPLER,
+                    .width = 64,
+                    .height = 64,
+                    .layer_count_or_depth = 64,
+                    .num_levels = 1,
+                    .sample_count = sdl.c.SDL_GPU_SAMPLECOUNT_1,
+                });
+            }
+        };
+
+        // NOTE at some point we should make sure we only use always-supported formats if possible
+        targets.set(.weight_coverage, try TextureBuilder.createTarget(device));
+        errdefer sdl.releaseGPUTexture(device, targets.get(.weight_coverage));
+        targets.set(.diffuse_emissive_r, try TextureBuilder.createTarget(device));
+        errdefer sdl.releaseGPUTexture(device, targets.get(.diffuse_emissive_r));
+        targets.set(.diffuse_emissive_g, try TextureBuilder.createTarget(device));
+        errdefer sdl.releaseGPUTexture(device, targets.get(.diffuse_emissive_g));
+        targets.set(.diffuse_emissive_b, try TextureBuilder.createTarget(device));
+        errdefer sdl.releaseGPUTexture(device, targets.get(.diffuse_emissive_b));
+        targets.set(.normal_xy, try TextureBuilder.createTarget(device));
+        errdefer sdl.releaseGPUTexture(device, targets.get(.normal_xy));
+        targets.set(.normal_z_pad, try TextureBuilder.createTarget(device));
+        errdefer sdl.releaseGPUTexture(device, targets.get(.normal_z_pad));
+
+        cascades.set(.coverage, try sdl.createGPUTexture(device, &.{
             .type = sdl.c.SDL_GPU_TEXTURETYPE_3D,
-            .format = sdl.c.SDL_GPU_TEXTUREFORMAT_R32_UINT,
+            .format = sdl.c.SDL_GPU_TEXTUREFORMAT_R16_UNORM,
+            .usage = sdl.c.SDL_GPU_TEXTUREUSAGE_COMPUTE_STORAGE_SIMULTANEOUS_READ_WRITE |
+                sdl.c.SDL_GPU_TEXTUREUSAGE_SAMPLER,
+            .width = 64 * n_cascades,
+            .height = 64 * 2,
+            .layer_count_or_depth = 64,
+            .num_levels = 1,
+            .sample_count = sdl.c.SDL_GPU_SAMPLECOUNT_1,
+        }));
+        errdefer sdl.releaseGPUTexture(device, cascades.get(.coverage));
+
+        cascades.set(.diffuse, try sdl.createGPUTexture(device, &.{
+            .type = sdl.c.SDL_GPU_TEXTURETYPE_3D,
+            .format = sdl.c.SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM,
             .usage = sdl.c.SDL_GPU_TEXTUREUSAGE_COMPUTE_STORAGE_SIMULTANEOUS_READ_WRITE |
                 sdl.c.SDL_GPU_TEXTUREUSAGE_SAMPLER,
             .width = 64 * n_cascades,
@@ -267,65 +399,124 @@ const VoxelizePass = struct {
             .layer_count_or_depth = 64,
             .num_levels = 1,
             .sample_count = sdl.c.SDL_GPU_SAMPLECOUNT_1,
-        });
-        errdefer sdl.releaseGPUTexture(device, cascades);
+        }));
+        errdefer sdl.releaseGPUTexture(device, cascades.get(.diffuse));
+
+        cascades.set(.emissive, try sdl.createGPUTexture(device, &.{
+            .type = sdl.c.SDL_GPU_TEXTURETYPE_3D,
+            .format = sdl.c.SDL_GPU_TEXTUREFORMAT_R11G11B10_UFLOAT,
+            .usage = sdl.c.SDL_GPU_TEXTUREUSAGE_COMPUTE_STORAGE_SIMULTANEOUS_READ_WRITE |
+                sdl.c.SDL_GPU_TEXTUREUSAGE_SAMPLER,
+            .width = 64 * n_cascades,
+            .height = 64,
+            .layer_count_or_depth = 64,
+            .num_levels = 1,
+            .sample_count = sdl.c.SDL_GPU_SAMPLECOUNT_1,
+        }));
+        errdefer sdl.releaseGPUTexture(device, cascades.get(.emissive));
+
+        cascades.set(.normal, try sdl.createGPUTexture(device, &.{
+            .type = sdl.c.SDL_GPU_TEXTURETYPE_3D,
+            .format = sdl.c.SDL_GPU_TEXTUREFORMAT_R8G8B8A8_SNORM,
+            .usage = sdl.c.SDL_GPU_TEXTUREUSAGE_COMPUTE_STORAGE_SIMULTANEOUS_READ_WRITE |
+                sdl.c.SDL_GPU_TEXTUREUSAGE_SAMPLER,
+            .width = 64 * n_cascades,
+            .height = 64,
+            .layer_count_or_depth = 64,
+            .num_levels = 1,
+            .sample_count = sdl.c.SDL_GPU_SAMPLECOUNT_1,
+        }));
+        errdefer sdl.releaseGPUTexture(device, cascades.get(.normal));
+
+        cascades.set(.radiance, try sdl.createGPUTexture(device, &.{
+            .type = sdl.c.SDL_GPU_TEXTURETYPE_3D,
+            .format = sdl.c.SDL_GPU_TEXTUREFORMAT_R11G11B10_UFLOAT,
+            .usage = sdl.c.SDL_GPU_TEXTUREUSAGE_COMPUTE_STORAGE_SIMULTANEOUS_READ_WRITE |
+                sdl.c.SDL_GPU_TEXTUREUSAGE_SAMPLER,
+            .width = 64 * n_cascades,
+            .height = 64 * 2,
+            .layer_count_or_depth = 64,
+            .num_levels = 1,
+            .sample_count = sdl.c.SDL_GPU_SAMPLECOUNT_1,
+        }));
+        errdefer sdl.releaseGPUTexture(device, cascades.get(.radiance));
+
+        const sampler = sdl.c.SDL_CreateGPUSampler(device, &.{
+            .min_filter = sdl.c.SDL_GPU_FILTER_NEAREST,
+            .mag_filter = sdl.c.SDL_GPU_FILTER_NEAREST,
+            .address_mode_u = sdl.c.SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE,
+            .address_mode_v = sdl.c.SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE,
+        }) orelse {
+            log.err("SDL_CreateGPUSampler: {s}", .{sdl.c.SDL_GetError()});
+            return error.Sdl;
+        };
+        errdefer sdl.c.SDL_ReleaseGPUSampler(device, sampler);
 
         return .{
             .device = device,
-            .pipeline = pipeline,
             .clear_pipeline = clear_pipeline,
+            .voxelize_pipeline = voxelize_pipeline,
+            .average_pipeline = average_pipeline,
+            .lighting_pipeline = lighting_pipeline,
+            .sampler = sampler,
             .compute_pass = null,
+            .targets = targets,
             .cascades = cascades,
+            .ix_temporal = 0,
             .ix_cascade = 0,
             .cascade_counter = 0,
         };
     }
 
     fn deinit(pass: *VoxelizePass) void {
-        sdl.releaseGPUTexture(pass.device, pass.cascades);
+        sdl.c.SDL_ReleaseGPUSampler(pass.device, pass.sampler);
+        for (pass.cascades.values) |cascade| sdl.releaseGPUTexture(pass.device, cascade);
+        for (pass.targets.values) |target| sdl.releaseGPUTexture(pass.device, target);
+        sdl.releaseGPUComputePipeline(pass.device, pass.lighting_pipeline);
+        sdl.releaseGPUComputePipeline(pass.device, pass.average_pipeline);
+        sdl.releaseGPUComputePipeline(pass.device, pass.voxelize_pipeline);
         sdl.releaseGPUComputePipeline(pass.device, pass.clear_pipeline);
-        sdl.releaseGPUComputePipeline(pass.device, pass.pipeline);
         pass.* = undefined;
     }
 
     fn begin(pass: *VoxelizePass, command_buffer: *sdl.GPUCommandBuffer) void {
         pass.updateCascadeIndex();
 
-        const storage_texture_bindings = [_]sdl.GPUStorageTextureReadWriteBinding{
-            .{
-                .texture = pass.cascades,
-                .mip_level = 0,
-                .layer = 0,
-                .cycle = false,
-            },
+        const storage_texture_bindings_0 = [_]sdl.GPUStorageTextureReadWriteBinding{
+            .{ .texture = pass.targets.get(.weight_coverage), .cycle = true },
+            .{ .texture = pass.targets.get(.diffuse_emissive_r), .cycle = true },
+            .{ .texture = pass.targets.get(.diffuse_emissive_g), .cycle = true },
+            .{ .texture = pass.targets.get(.diffuse_emissive_b), .cycle = true },
+            .{ .texture = pass.targets.get(.normal_xy), .cycle = true },
+            .{ .texture = pass.targets.get(.normal_z_pad), .cycle = true },
         };
-
-        // TODO this is kinda dumb, we should do it better somehow
         const clear_pass = sdl.c.SDL_BeginGPUComputePass(
             command_buffer,
-            &storage_texture_bindings[0],
-            storage_texture_bindings.len,
+            &storage_texture_bindings_0[0],
+            storage_texture_bindings_0.len,
             null,
             0,
         );
         sdl.c.SDL_BindGPUComputePipeline(clear_pass, pass.clear_pipeline);
-        sdl.c.SDL_PushGPUComputeUniformData(
-            command_buffer,
-            0,
-            &pass.ix_cascade,
-            @sizeOf(u32),
-        );
-        sdl.c.SDL_DispatchGPUCompute(clear_pass, 1, 1, 1);
+        sdl.c.SDL_DispatchGPUCompute(clear_pass, 16, 16, 16);
         sdl.c.SDL_EndGPUComputePass(clear_pass);
 
+        const storage_texture_bindings_1 = [_]sdl.GPUStorageTextureReadWriteBinding{
+            .{ .texture = pass.targets.get(.weight_coverage) },
+            .{ .texture = pass.targets.get(.diffuse_emissive_r) },
+            .{ .texture = pass.targets.get(.diffuse_emissive_g) },
+            .{ .texture = pass.targets.get(.diffuse_emissive_b) },
+            .{ .texture = pass.targets.get(.normal_xy) },
+            .{ .texture = pass.targets.get(.normal_z_pad) },
+        };
         pass.compute_pass = sdl.c.SDL_BeginGPUComputePass(
             command_buffer,
-            &storage_texture_bindings[0],
-            storage_texture_bindings.len,
+            &storage_texture_bindings_1[0],
+            storage_texture_bindings_1.len,
             null,
             0,
         );
-        sdl.c.SDL_BindGPUComputePipeline(pass.compute_pass.?, pass.pipeline);
+        sdl.c.SDL_BindGPUComputePipeline(pass.compute_pass.?, pass.voxelize_pipeline);
     }
 
     fn voxelizeObject(
@@ -365,7 +556,46 @@ const VoxelizePass = struct {
     fn end(pass: *VoxelizePass, command_buffer: *sdl.GPUCommandBuffer) void {
         sdl.c.SDL_EndGPUComputePass(pass.compute_pass.?);
         pass.compute_pass = null;
-        _ = command_buffer;
+
+        const storage_texture_bindings_0 = [_]sdl.GPUStorageTextureReadWriteBinding{
+            .{ .texture = pass.cascades.get(.coverage) },
+            .{ .texture = pass.cascades.get(.diffuse) },
+            .{ .texture = pass.cascades.get(.emissive) },
+            .{ .texture = pass.cascades.get(.normal) },
+        };
+        const average_pass = sdl.c.SDL_BeginGPUComputePass(
+            command_buffer,
+            &storage_texture_bindings_0[0],
+            storage_texture_bindings_0.len,
+            null,
+            0,
+        );
+        sdl.c.SDL_BindGPUComputePipeline(average_pass, pass.average_pipeline);
+        const texture_sampler_bindings_0 = [_]sdl.c.struct_SDL_GPUTextureSamplerBinding{
+            .{ .texture = pass.targets.get(.weight_coverage), .sampler = pass.sampler },
+            .{ .texture = pass.targets.get(.diffuse_emissive_r), .sampler = pass.sampler },
+            .{ .texture = pass.targets.get(.diffuse_emissive_g), .sampler = pass.sampler },
+            .{ .texture = pass.targets.get(.diffuse_emissive_b), .sampler = pass.sampler },
+            .{ .texture = pass.targets.get(.normal_xy), .sampler = pass.sampler },
+            .{ .texture = pass.targets.get(.normal_z_pad), .sampler = pass.sampler },
+        };
+        sdl.c.SDL_BindGPUComputeSamplers(
+            average_pass,
+            0,
+            &texture_sampler_bindings_0[0],
+            texture_sampler_bindings_0.len,
+        );
+        sdl.c.SDL_PushGPUComputeUniformData(
+            command_buffer,
+            0,
+            &AverageData{
+                .ix_temporal = pass.ix_temporal,
+                .ix_cascade = pass.ix_cascade,
+            },
+            @sizeOf(AverageData),
+        );
+        sdl.c.SDL_DispatchGPUCompute(average_pass, 16, 16, 16);
+        sdl.c.SDL_EndGPUComputePass(average_pass);
     }
 
     fn updateCascadeIndex(pass: *VoxelizePass) void {
@@ -500,8 +730,8 @@ const DebugVoxelDrawPass = struct {
         };
         errdefer sdl.c.SDL_ReleaseGPUGraphicsPipeline(device, pipeline);
 
-        const width = 1920;
-        const height = 1080;
+        const width = 540;
+        const height = 360;
         const backbuffer = try sdl.createGPUTexture(device, &.{
             .type = sdl.c.SDL_GPU_TEXTURETYPE_2D,
             .format = sdl.c.SDL_GPU_TEXTUREFORMAT_R16G16B16A16_FLOAT,

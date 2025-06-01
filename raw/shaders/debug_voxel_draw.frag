@@ -5,19 +5,10 @@ layout(location = 1) in vec3 ray_dir;
 
 layout(location = 0) out vec4 out_color;
 
-layout(set = 2, binding = 0) uniform usampler3D cascades;
+layout(set = 2, binding = 0) uniform sampler3D cascades;
 
-vec4 unpackRGBA(uint packed) {
-    return vec4(
-        float((packed >> 24) & 0xFFu) / 255.0,
-        float((packed >> 16) & 0xFFu) / 255.0,
-        float((packed >> 8) & 0xFFu) / 255.0,
-        float((packed >> 0) & 0xFFu) / 255.0
-    );
-}
-
-uint voxelFetch(ivec3 voxel_pos, int cascade) {
-    return texelFetch(cascades, ivec3(voxel_pos.x + 64 * cascade, voxel_pos.yz), 0).r;
+vec4 voxelFetch(ivec3 voxel_pos, int cascade) {
+    return texelFetch(cascades, ivec3(voxel_pos.x + 64 * cascade, voxel_pos.yz), 0);
 }
 
 int cascadeAt(vec3 pos) {
@@ -36,7 +27,7 @@ float voxelSize(int cascade) {
     return 0.125 * float(1 << cascade);
 }
 
-uint voxelAt(vec3 pos) {
+vec4 voxelAt(vec3 pos) {
     int cascade = cascadeAt(pos);
     float voxel_size = voxelSize(cascade);
     return voxelFetch(ivec3(floor(pos / voxel_size)) + 32, cascade);
@@ -51,9 +42,9 @@ void main() {
 
     for (int i = 0; i < 512; ++i) {
         pos += 0.5 * voxelSize(cascadeAt(pos)) * ray_dir;
-        uint packed = voxelAt(pos);
-        vec4 voxel_color = unpackRGBA(packed);
-        float a = ((packed & 0xFFu) == 0) ? 0.0 : 1.0;
+        vec4 voxel_color = voxelAt(pos);
+        float a = voxel_color.a;
+        // if (a > 0) a = 1.0;
         // TODO add debug mode showing transparency for higher cascades in central regions
         // acc.rgb += voxel_color.rgb * voxel_color.a * (1.0 - acc.a);
         // acc.a += voxel_color.a * (1.0 - acc.a);

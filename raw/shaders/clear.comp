@@ -1,0 +1,19 @@
+#version 460
+
+layout(local_size_x = 4, local_size_y = 4, local_size_z = 4) in;
+
+layout(r32ui, set = 1, binding = 0) uniform uimage3D target_weight_coverage;
+layout(r32ui, set = 1, binding = 1) uniform uimage3D target_diffuse_emissive_r;
+layout(r32ui, set = 1, binding = 2) uniform uimage3D target_diffuse_emissive_g;
+layout(r32ui, set = 1, binding = 3) uniform uimage3D target_diffuse_emissive_b;
+layout(r32ui, set = 1, binding = 4) uniform uimage3D target_normal_xy;
+layout(r32ui, set = 1, binding = 5) uniform uimage3D target_normal_z_pad;
+
+void main() {
+    imageStore(target_weight_coverage, ivec3(gl_GlobalInvocationID), uvec4(0));
+    imageStore(target_diffuse_emissive_r, ivec3(gl_GlobalInvocationID), uvec4(0));
+    imageStore(target_diffuse_emissive_g, ivec3(gl_GlobalInvocationID), uvec4(0));
+    imageStore(target_diffuse_emissive_b, ivec3(gl_GlobalInvocationID), uvec4(0));
+    imageStore(target_normal_xy, ivec3(gl_GlobalInvocationID), uvec4(0));
+    imageStore(target_normal_z_pad, ivec3(gl_GlobalInvocationID), uvec4(0));
+}
