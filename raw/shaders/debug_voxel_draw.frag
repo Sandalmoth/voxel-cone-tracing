@@ -5,10 +5,14 @@ layout(location = 1) in vec3 ray_dir;
 
 layout(location = 0) out vec4 out_color;
 
-layout(set = 2, binding = 0) uniform sampler3D cascades;
+layout(set = 2, binding = 0) uniform sampler3D cascade_coverage;
+layout(set = 2, binding = 1) uniform sampler3D cascades_diffuse;
+layout(set = 2, binding = 2) uniform sampler3D cascades_emissive;
+layout(set = 2, binding = 3) uniform sampler3D cascades_normal;
+layout(set = 2, binding = 4) uniform sampler3D cascades_radiance;
 
 vec4 voxelFetch(ivec3 voxel_pos, int cascade) {
-    return texelFetch(cascades, ivec3(voxel_pos.x + 64 * cascade, voxel_pos.yz), 0);
+    return texelFetch(cascades_diffuse, ivec3(voxel_pos.x + 64 * cascade, voxel_pos.yz), 0);
 }
 
 int cascadeAt(vec3 pos) {
@@ -40,7 +44,7 @@ void main() {
     
     vec4 acc = vec4(0.0, 0.0, 0.0, 0.0);
 
-    for (int i = 0; i < 512; ++i) {
+    for (int i = 0; i < 1024; ++i) {
         pos += 0.5 * voxelSize(cascadeAt(pos)) * ray_dir;
         vec4 voxel_color = voxelAt(pos);
         float a = voxel_color.a;

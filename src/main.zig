@@ -161,7 +161,7 @@ pub fn main() !void {
         } else {
             debug_voxel_draw_pass.run(
                 command_buffer,
-                voxelize_pass.cascades.get(.diffuse),
+                &voxelize_pass.cascades,
                 camera.v(alpha),
                 camera.p(alpha),
             );
@@ -678,7 +678,7 @@ const DebugVoxelDrawPass = struct {
                 .entrypoint = "main",
                 .format = sdl.c.SDL_GPU_SHADERFORMAT_SPIRV,
                 .stage = sdl.c.SDL_GPU_SHADERSTAGE_FRAGMENT,
-                .num_samplers = 1,
+                .num_samplers = 5,
                 .num_storage_textures = 0,
                 .num_storage_buffers = 0,
                 .num_uniform_buffers = 0,
@@ -730,7 +730,7 @@ const DebugVoxelDrawPass = struct {
         };
         errdefer sdl.c.SDL_ReleaseGPUGraphicsPipeline(device, pipeline);
 
-        const width = 540;
+        const width = 640;
         const height = 360;
         const backbuffer = try sdl.createGPUTexture(device, &.{
             .type = sdl.c.SDL_GPU_TEXTURETYPE_2D,
@@ -780,10 +780,11 @@ const DebugVoxelDrawPass = struct {
         try sdl.submitGPUCommandBuffer(command_buffer);
 
         const sampler = sdl.c.SDL_CreateGPUSampler(device, &.{
-            .min_filter = sdl.c.SDL_GPU_FILTER_NEAREST,
-            .mag_filter = sdl.c.SDL_GPU_FILTER_NEAREST,
+            .min_filter = sdl.c.SDL_GPU_FILTER_LINEAR,
+            .mag_filter = sdl.c.SDL_GPU_FILTER_LINEAR,
             .address_mode_u = sdl.c.SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE,
             .address_mode_v = sdl.c.SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE,
+            .address_mode_w = sdl.c.SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE,
         }) orelse {
             log.err("SDL_CreateGPUSampler: {s}", .{sdl.c.SDL_GetError()});
             return error.Sdl;
@@ -810,7 +811,7 @@ const DebugVoxelDrawPass = struct {
     fn run(
         pass: *DebugVoxelDrawPass,
         command_buffer: *sdl.GPUCommandBuffer,
-        cascades: *sdl.GPUTexture,
+        cascades: *std.EnumArray(VoxelizePass.Cascade, *sdl.GPUTexture),
         camera_v: zm.Mat,
         camera_p: zm.Mat,
     ) void {
@@ -846,7 +847,11 @@ const DebugVoxelDrawPass = struct {
             @sizeOf(DrawData),
         );
         const sampler_bindings = [_]sdl.c.SDL_GPUTextureSamplerBinding{
-            .{ .texture = cascades, .sampler = pass.sampler },
+            .{ .texture = cascades.get(.coverage), .sampler = pass.sampler },
+            .{ .texture = cascades.get(.diffuse), .sampler = pass.sampler },
+            .{ .texture = cascades.get(.emissive), .sampler = pass.sampler },
+            .{ .texture = cascades.get(.normal), .sampler = pass.sampler },
+            .{ .texture = cascades.get(.radiance), .sampler = pass.sampler },
         };
         sdl.c.SDL_BindGPUFragmentSamplers(
             render_pass,
