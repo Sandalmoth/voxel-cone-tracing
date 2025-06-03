@@ -26,6 +26,8 @@ const GameInput = enum {
     up,
     down,
     toggle_debug_view,
+    next_debug_view,
+    prev_debug_view,
 };
 
 map: std.AutoArrayHashMap(SdlInput, GameInput),

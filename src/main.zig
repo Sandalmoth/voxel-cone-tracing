@@ -74,6 +74,8 @@ pub fn main() !void {
     try input.map.put(.{ .keyboard = sdl.c.SDL_SCANCODE_SPACE }, .up);
     try input.map.put(.{ .keyboard = sdl.c.SDL_SCANCODE_LCTRL }, .down);
     try input.map.put(.{ .keyboard = sdl.c.SDL_SCANCODE_TAB }, .toggle_debug_view);
+    try input.map.put(.{ .keyboard = sdl.c.SDL_SCANCODE_1 }, .prev_debug_view);
+    try input.map.put(.{ .keyboard = sdl.c.SDL_SCANCODE_2 }, .next_debug_view);
     defer input.deinit();
 
     var debug_view: bool = false;
@@ -111,6 +113,16 @@ pub fn main() !void {
         while (lag >= tick_ns) {
             camera.update(&input);
             if (input.peek(.toggle_debug_view).pressed) debug_view = !debug_view;
+            if (input.peek(.next_debug_view).pressed) {
+                const n_modes: u32 = @intCast(std.meta.fields(DebugVoxelDrawPass.Mode).len);
+                const mode: u32 = @intFromEnum(debug_voxel_draw_pass.mode);
+                debug_voxel_draw_pass.mode = @enumFromInt((mode + 1) % n_modes);
+            }
+            if (input.peek(.prev_debug_view).pressed) {
+                const n_modes: u32 = @intCast(std.meta.fields(DebugVoxelDrawPass.Mode).len);
+                const mode: u32 = @intFromEnum(debug_voxel_draw_pass.mode);
+                debug_voxel_draw_pass.mode = @enumFromInt((mode + n_modes - 1) % n_modes);
+            }
             for (scene.objects.items) |*object| object.update(tick);
 
             input.decay();
@@ -180,6 +192,7 @@ const VoxelizePass = struct {
 
     const VoxelizeData = extern struct {
         model_matrix: [16]f32 align(16),
+        normal_matrix: [16]f32 align(16),
         n_triangles: u32 align(16),
         ix_cascade: u32,
     };
@@ -193,10 +206,6 @@ const VoxelizePass = struct {
         ix_temporal: u32,
         ix_cascade: u32,
     };
-
-    comptime {
-        std.debug.assert(@offsetOf(VoxelizeData, "n_triangles") == 64);
-    }
 
     const Target = enum {
         weight_coverage,
@@ -540,6 +549,7 @@ const VoxelizePass = struct {
             0,
             &VoxelizeData{
                 .model_matrix = zm.matToArr(object.transform(alpha)),
+                .normal_matrix = zm.matToArr(zm.transpose(zm.inverse(object.transform(alpha)))),
                 .n_triangles = object.model.n_indices / 3,
                 .ix_cascade = pass.ix_cascade,
             },
@@ -620,6 +630,14 @@ const DebugVoxelDrawPass = struct {
         position: [3]f32,
     };
 
+    const Mode = enum(u32) {
+        coverage = 0,
+        diffuse = 1,
+        emissive = 2,
+        normal = 3,
+        radiance = 4,
+    };
+
     const full_screen_quad = [_]Vertex{
         .{ .position = .{ -1, 1, 0 } },
         .{ .position = .{ 1, 1, 0 } },
@@ -635,6 +653,8 @@ const DebugVoxelDrawPass = struct {
     backbuffer: *sdl.c.SDL_GPUTexture,
     vertex_buffer: *sdl.GPUBuffer,
     sampler: *sdl.GPUSampler,
+
+    mode: Mode,
 
     fn init(
         gpa: std.mem.Allocator,
@@ -681,7 +701,7 @@ const DebugVoxelDrawPass = struct {
                 .num_samplers = 5,
                 .num_storage_textures = 0,
                 .num_storage_buffers = 0,
-                .num_uniform_buffers = 0,
+                .num_uniform_buffers = 1,
             });
         };
         defer sdl.releaseGPUShader(device, fragment_shader);
@@ -797,6 +817,7 @@ const DebugVoxelDrawPass = struct {
             .backbuffer = backbuffer,
             .vertex_buffer = vertex_buffer,
             .sampler = sampler,
+            .mode = .normal,
         };
     }
 
@@ -845,6 +866,12 @@ const DebugVoxelDrawPass = struct {
                 .ip = zm.matToArr(zm.inverse(camera_p)),
             },
             @sizeOf(DrawData),
+        );
+        sdl.c.SDL_PushGPUFragmentUniformData(
+            command_buffer,
+            0,
+            &@as(u32, @intFromEnum(pass.mode)),
+            @sizeOf(u32),
         );
         const sampler_bindings = [_]sdl.c.SDL_GPUTextureSamplerBinding{
             .{ .texture = cascades.get(.coverage), .sampler = pass.sampler },

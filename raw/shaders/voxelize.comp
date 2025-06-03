@@ -43,6 +43,7 @@ layout(r32ui, set = 1, binding = 5) uniform uimage3D target_normal_z_pad;
 
 layout(std140, set = 2, binding = 0) uniform VoxelizeData {
     mat4 model_matrix;
+    mat4 normal_matrix;
     uint n_triangles;
     uint ix_cascade;
 } voxelize_data;
@@ -157,11 +158,11 @@ void main() {
     vec3 p0 = (voxelize_data.model_matrix * vec4(p0_model, 1.0)).xyz;
     vec3 p1 = (voxelize_data.model_matrix * vec4(p1_model, 1.0)).xyz;
     vec3 p2 = (voxelize_data.model_matrix * vec4(p2_model, 1.0)).xyz;
-    vec3 normal = normalize(
+    vec3 normal = normalize(mat3(voxelize_data.normal_matrix) * normalize(
         vertex_buffer.vertices[i0].normal +
         vertex_buffer.vertices[i1].normal +
         vertex_buffer.vertices[i2].normal
-    );
+    ));
 
     float voxel_size = voxelSize(voxelize_data.ix_cascade);
     float coverage = 0.25 * clamp(triangleArea(p0, p1, p2) / (voxel_size * voxel_size), 0, 4.0);
