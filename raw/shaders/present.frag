@@ -15,23 +15,22 @@ void main() {
 
     vec3 color = texture(tex, frag_uv).rgb;
 
-    float mix_amount = 0.05;
-    float unmix_amount = 0.1;
+    float mix_amount = 3.952e-02;
     mat3 mix_matrix = mat3(
         1 - 2 * mix_amount, mix_amount, mix_amount,
         mix_amount, 1 - 2 * mix_amount, mix_amount,
         mix_amount, mix_amount, 1 - 2 * mix_amount
     );
-    mat3 unmix_matrix = mat3(
-        1 + 2 * unmix_amount, -unmix_amount, -unmix_amount,
-        -unmix_amount, 1 + 2 * unmix_amount, -unmix_amount,
-        -unmix_amount, -unmix_amount, 1 + 2 * unmix_amount
-    );
+    // float unmix_amount = 0.1;
+    // mat3 unmix_matrix = mat3(
+    //     1 + 2 * unmix_amount, -unmix_amount, -unmix_amount,
+    //     -unmix_amount, 1 + 2 * unmix_amount, -unmix_amount,
+    //     -unmix_amount, -unmix_amount, 1 + 2 * unmix_amount
+    // );
 
     color = color * mix_matrix;
-    color = color / (color + 4);
-    color = sqrt(color);
-    color = color * unmix_matrix;
+    color = color / (color + 1.468e-01);
+    // color = color * unmix_matrix;
 
     out_color = vec4(color, 1.0);
 }

@@ -76,9 +76,6 @@ void main() {
         if (debug_data.mode == 0) {
             voxel_color = vec4(clamp(voxel_color.rgb - 2e-2 * vec3(d), 0.1, 10.0), voxel_color.a);
         }
-        if (debug_data.mode == 1 || debug_data.mode == 3) {
-            voxel_color = vec4(4 * voxel_color.rgb, voxel_color.a); // compensate for tonemap
-        }
         float a = voxel_color.a;
         acc.rgb += voxel_color.rgb * a * (1.0 - acc.a);
         acc.a += a * (1.0 - acc.a);
