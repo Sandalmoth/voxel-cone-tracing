@@ -23,17 +23,17 @@ vec4 voxelFetch(ivec3 voxel_pos, int cascade) {
         c = vec4(10.0, 10.0, 10.0, c.r);
         break;        
     case 1:
-        c =  texelFetch(cascade_diffuse, ivec3(voxel_pos.x + 64 * cascade, voxel_pos.yz), 0);
+        c = texelFetch(cascade_diffuse, ivec3(voxel_pos.x + 64 * cascade, voxel_pos.yz), 0);
         break;        
     case 2:
-        c =  texelFetch(cascade_emissive, ivec3(voxel_pos.x + 64 * cascade, voxel_pos.yz), 0);
+        c = texelFetch(cascade_emissive, ivec3(voxel_pos.x + 64 * cascade, voxel_pos.yz), 0);
         break;        
     case 3:
         c = texelFetch(cascade_normal, ivec3(voxel_pos.x + 64 * cascade, voxel_pos.yz), 0);
         c = vec4(0.5 * (c.rgb + 1.0), c.a);
         break;        
     case 4:
-        c =  texelFetch(cascade_radiance, ivec3(voxel_pos.x + 64 * cascade, voxel_pos.yz), 0);
+        c = texelFetch(cascade_radiance, ivec3(voxel_pos.x + 64 * cascade, voxel_pos.yz), 0);
         break;        
     }
     return c;
@@ -75,6 +75,9 @@ void main() {
         vec4 voxel_color = voxelAt(pos);
         if (debug_data.mode == 0) {
             voxel_color = vec4(clamp(voxel_color.rgb - 2e-2 * vec3(d), 0.1, 10.0), voxel_color.a);
+        }
+        if (debug_data.mode == 1 || debug_data.mode == 3) {
+            voxel_color = vec4(4 * voxel_color.rgb, voxel_color.a); // compensate for tonemap
         }
         float a = voxel_color.a;
         acc.rgb += voxel_color.rgb * a * (1.0 - acc.a);

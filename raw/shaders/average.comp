@@ -11,7 +11,7 @@ layout(set = 0, binding = 5) uniform usampler3D target_normal_z_pad;
 
 layout(r16, set = 1, binding = 0) uniform image3D cascades_coverage;
 layout(rgba8, set = 1, binding = 1) uniform image3D cascades_diffuse;
-layout(r11f_g11f_b10f, set = 1, binding = 2) uniform image3D cascades_emissive;
+layout(rgba16f, set = 1, binding = 2) uniform image3D cascades_emissive;
 layout(rgba8_snorm, set = 1, binding = 3) uniform image3D cascades_normal;
 
 layout(std140, set = 2, binding = 0) uniform AverageData {
@@ -36,8 +36,7 @@ void main() {
     vec3 normal = vec3(normal_xy, normal_z_pad.x);
 
     diffuse *= iweight;
-    emissive *= iweight;
-    normal = normalize(normal * iweight);
+    normal = normalize(normal);
 
     imageStore(
         cascades_coverage,

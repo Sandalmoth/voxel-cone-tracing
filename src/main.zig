@@ -193,8 +193,11 @@ const VoxelizePass = struct {
     const VoxelizeData = extern struct {
         model_matrix: [16]f32 align(16),
         normal_matrix: [16]f32 align(16),
-        n_triangles: u32 align(16),
+        diffuse: [4]f32 align(16),
+        emissive: [4]f32 align(16),
+        n_triangles: u32,
         ix_cascade: u32,
+        roughness: f32,
     };
 
     const AverageData = extern struct {
@@ -413,7 +416,7 @@ const VoxelizePass = struct {
 
         cascades.set(.emissive, try sdl.createGPUTexture(device, &.{
             .type = sdl.c.SDL_GPU_TEXTURETYPE_3D,
-            .format = sdl.c.SDL_GPU_TEXTUREFORMAT_R11G11B10_UFLOAT,
+            .format = sdl.c.SDL_GPU_TEXTUREFORMAT_R16G16B16A16_FLOAT,
             .usage = sdl.c.SDL_GPU_TEXTUREUSAGE_COMPUTE_STORAGE_SIMULTANEOUS_READ_WRITE |
                 sdl.c.SDL_GPU_TEXTUREUSAGE_SAMPLER,
             .width = 64 * n_cascades,
@@ -439,7 +442,7 @@ const VoxelizePass = struct {
 
         cascades.set(.radiance, try sdl.createGPUTexture(device, &.{
             .type = sdl.c.SDL_GPU_TEXTURETYPE_3D,
-            .format = sdl.c.SDL_GPU_TEXTUREFORMAT_R11G11B10_UFLOAT,
+            .format = sdl.c.SDL_GPU_TEXTUREFORMAT_R16G16B16A16_FLOAT,
             .usage = sdl.c.SDL_GPU_TEXTUREUSAGE_COMPUTE_STORAGE_SIMULTANEOUS_READ_WRITE |
                 sdl.c.SDL_GPU_TEXTUREUSAGE_SAMPLER,
             .width = 64 * n_cascades,
@@ -550,8 +553,11 @@ const VoxelizePass = struct {
             &VoxelizeData{
                 .model_matrix = zm.matToArr(object.transform(alpha)),
                 .normal_matrix = zm.matToArr(zm.transpose(zm.inverse(object.transform(alpha)))),
+                .diffuse = object.diffuse,
+                .emissive = object.emissive,
                 .n_triangles = object.model.n_indices / 3,
                 .ix_cascade = pass.ix_cascade,
+                .roughness = object.roughness,
             },
             @sizeOf(VoxelizeData),
         );

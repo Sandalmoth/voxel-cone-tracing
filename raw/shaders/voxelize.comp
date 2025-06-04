@@ -44,8 +44,11 @@ layout(r32ui, set = 1, binding = 5) uniform uimage3D target_normal_z_pad;
 layout(std140, set = 2, binding = 0) uniform VoxelizeData {
     mat4 model_matrix;
     mat4 normal_matrix;
+    vec4 diffuse;
+    vec4 emissive;
     uint n_triangles;
     uint ix_cascade;
+    float roughness;
 } voxelize_data;
 
 float voxelSize(uint cascade) {
@@ -246,7 +249,8 @@ void main() {
                 do {
                     current_packed = imageLoad(target_diffuse_emissive_r, voxel_pos).r;
                     new_packed = packHalf2x16(
-                        unpackHalf2x16(current_packed) + vec2(0.5 * (1.0 + normal.r), 0.0)
+                        unpackHalf2x16(current_packed) +
+                            vec2(voxelize_data.diffuse.r, voxelize_data.emissive.r)
                     );
                     original_packed = imageAtomicCompSwap(
                         target_diffuse_emissive_r,
@@ -259,7 +263,8 @@ void main() {
                 do {
                     current_packed = imageLoad(target_diffuse_emissive_g, voxel_pos).r;
                     new_packed = packHalf2x16(
-                        unpackHalf2x16(current_packed) + vec2(0.5 * (1.0 + normal.g), 0.0)
+                        unpackHalf2x16(current_packed) +
+                            vec2(voxelize_data.diffuse.g, voxelize_data.emissive.g)
                     );
                     original_packed = imageAtomicCompSwap(
                         target_diffuse_emissive_g,
@@ -272,7 +277,8 @@ void main() {
                 do {
                     current_packed = imageLoad(target_diffuse_emissive_b, voxel_pos).r;
                     new_packed = packHalf2x16(
-                        unpackHalf2x16(current_packed) + vec2(0.5 * (1.0 + normal.b), 0.0)
+                        unpackHalf2x16(current_packed) +
+                            vec2(voxelize_data.diffuse.b, voxelize_data.emissive.b)
                     );
                     original_packed = imageAtomicCompSwap(
                         target_diffuse_emissive_b,

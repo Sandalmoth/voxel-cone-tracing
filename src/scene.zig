@@ -30,6 +30,10 @@ pub const Object = struct {
 
     angular_velocity: zm.Quat,
 
+    diffuse: zm.Vec,
+    emissive: zm.Vec,
+    roughness: f32,
+
     pub fn transform(object: Object, alpha: f32) zm.Mat {
         const position = zm.lerp(object.prev_position, object.prev_position, alpha);
         const rotation = zm.slerp(object.prev_rotation, object.rotation, alpha);
@@ -93,6 +97,19 @@ pub fn init(gpa: std.mem.Allocator, device: *sdl.c.SDL_GPUDevice) !Scene {
                     std.math.pi * rand.float(f32),
                     std.math.pi * rand.float(f32),
                 );
+                const diffuse = if (rand.boolean()) zm.f32x4s(1.0) else zm.f32x4(
+                    rand.float(f32),
+                    rand.float(f32),
+                    rand.float(f32),
+                    1.0,
+                );
+                const emissive = if (rand.float(f32) > 0.1) zm.f32x4s(0.0) else zm.f32x4(
+                    rand.float(f32) * 100,
+                    rand.float(f32) * 100,
+                    rand.float(f32) * 100,
+                    1.0,
+                );
+                const roughness = rand.float(f32);
                 try scene.objects.append(gpa, .{
                     .model = scene.cube,
                     .position = position,
@@ -102,6 +119,9 @@ pub fn init(gpa: std.mem.Allocator, device: *sdl.c.SDL_GPUDevice) !Scene {
                     .prev_rotation = rotation,
                     .prev_scale = scale,
                     .angular_velocity = angular_velocity,
+                    .diffuse = diffuse,
+                    .emissive = emissive,
+                    .roughness = roughness,
                 });
             }
         }
@@ -126,6 +146,19 @@ pub fn init(gpa: std.mem.Allocator, device: *sdl.c.SDL_GPUDevice) !Scene {
             std.math.pi * rand.float(f32),
             std.math.pi * rand.float(f32),
         );
+        const diffuse = if (rand.boolean()) zm.f32x4s(1.0) else zm.f32x4(
+            rand.float(f32),
+            rand.float(f32),
+            rand.float(f32),
+            1.0,
+        );
+        const emissive = if (rand.float(f32) > 0.1) zm.f32x4s(0.0) else zm.f32x4(
+            rand.float(f32) * 100,
+            rand.float(f32) * 100,
+            rand.float(f32) * 100,
+            1.0,
+        );
+        const roughness = rand.float(f32);
         try scene.objects.append(gpa, .{
             .model = scene.bunny,
             .position = position,
@@ -135,6 +168,9 @@ pub fn init(gpa: std.mem.Allocator, device: *sdl.c.SDL_GPUDevice) !Scene {
             .prev_rotation = rotation,
             .prev_scale = scale,
             .angular_velocity = angular_velocity,
+            .diffuse = diffuse,
+            .emissive = emissive,
+            .roughness = roughness,
         });
     }
 
@@ -159,6 +195,19 @@ pub fn init(gpa: std.mem.Allocator, device: *sdl.c.SDL_GPUDevice) !Scene {
                     std.math.pi * rand.float(f32),
                     std.math.pi * rand.float(f32),
                 );
+                const diffuse = if (rand.boolean()) zm.f32x4s(1.0) else zm.f32x4(
+                    rand.float(f32),
+                    rand.float(f32),
+                    rand.float(f32),
+                    1.0,
+                );
+                const emissive = if (rand.float(f32) > 0.1) zm.f32x4s(0.0) else zm.f32x4(
+                    rand.float(f32) * 100,
+                    rand.float(f32) * 100,
+                    rand.float(f32) * 100,
+                    1.0,
+                );
+                const roughness = rand.float(f32);
                 try scene.objects.append(gpa, .{
                     .model = scene.bunny,
                     .position = position,
@@ -168,6 +217,9 @@ pub fn init(gpa: std.mem.Allocator, device: *sdl.c.SDL_GPUDevice) !Scene {
                     .prev_rotation = rotation,
                     .prev_scale = scale,
                     .angular_velocity = angular_velocity,
+                    .diffuse = diffuse,
+                    .emissive = emissive,
+                    .roughness = roughness,
                 });
             }
         }
