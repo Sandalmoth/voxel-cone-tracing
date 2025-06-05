@@ -207,7 +207,6 @@ const VoxelizePass = struct {
 
     const LightingData = extern struct {
         ix_temporal: u32,
-        ix_cascade: u32,
     };
 
     const Target = enum {
@@ -612,6 +611,40 @@ const VoxelizePass = struct {
         );
         sdl.c.SDL_DispatchGPUCompute(average_pass, 16, 16, 16);
         sdl.c.SDL_EndGPUComputePass(average_pass);
+
+        const storage_texture_bindings_1 = [_]sdl.GPUStorageTextureReadWriteBinding{
+            .{ .texture = pass.cascades.get(.radiance) },
+        };
+        const lighting_pass = sdl.c.SDL_BeginGPUComputePass(
+            command_buffer,
+            &storage_texture_bindings_1[0],
+            storage_texture_bindings_1.len,
+            null,
+            0,
+        );
+        sdl.c.SDL_BindGPUComputePipeline(lighting_pass, pass.lighting_pipeline);
+        const texture_sampler_bindings_1 = [_]sdl.c.struct_SDL_GPUTextureSamplerBinding{
+            .{ .texture = pass.cascades.get(.coverage), .sampler = pass.sampler },
+            .{ .texture = pass.cascades.get(.diffuse), .sampler = pass.sampler },
+            .{ .texture = pass.cascades.get(.emissive), .sampler = pass.sampler },
+            .{ .texture = pass.cascades.get(.normal), .sampler = pass.sampler },
+        };
+        sdl.c.SDL_BindGPUComputeSamplers(
+            lighting_pass,
+            0,
+            &texture_sampler_bindings_1[0],
+            texture_sampler_bindings_1.len,
+        );
+        sdl.c.SDL_PushGPUComputeUniformData(
+            command_buffer,
+            0,
+            &LightingData{
+                .ix_temporal = pass.ix_temporal,
+            },
+            @sizeOf(LightingData),
+        );
+        sdl.c.SDL_DispatchGPUCompute(lighting_pass, 16 * n_cascades, 16, 16);
+        sdl.c.SDL_EndGPUComputePass(lighting_pass);
     }
 
     fn updateCascadeIndex(pass: *VoxelizePass) void {
@@ -773,7 +806,7 @@ const DebugVoxelDrawPass = struct {
         const sizeof_vertices: u32 = @intCast(full_screen_quad.len * @sizeOf(Vertex));
 
         const vertex_buffer = try sdl.createGPUBuffer(device, &.{
-            .usage = sdl.c.SDL_GPU_BUFFERUSAGE_VERTEX | sdl.c.SDL_GPU_BUFFERUSAGE_COMPUTE_STORAGE_READ,
+            .usage = sdl.c.SDL_GPU_BUFFERUSAGE_VERTEX,
             .size = sizeof_vertices,
         });
         errdefer sdl.releaseGPUBuffer(device, vertex_buffer);
@@ -823,7 +856,7 @@ const DebugVoxelDrawPass = struct {
             .backbuffer = backbuffer,
             .vertex_buffer = vertex_buffer,
             .sampler = sampler,
-            .mode = .normal,
+            .mode = .coverage,
         };
     }
 

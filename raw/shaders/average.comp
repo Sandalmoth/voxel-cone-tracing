@@ -22,6 +22,76 @@ layout(std140, set = 2, binding = 0) uniform AverageData {
 void main() {
     ivec3 voxel_pos = ivec3(gl_GlobalInvocationID);
 
+    if (average_data.ix_cascade > 0 &&
+        voxel_pos.y >= 16 && voxel_pos.y < 48 &&
+        voxel_pos.x >= 16 && voxel_pos.x < 48 &&
+        voxel_pos.z >= 16 && voxel_pos.z < 48) {
+        // instead of averaging (nonexistant) data in the targets
+        // average from the previous cascade instead
+        ivec3 root = 2 * (voxel_pos - 16) + ivec3(64 * (average_data.ix_cascade - 1), 0, 0);
+        vec4 v000, v001, v010, v011, v100, v101, v110, v111;
+
+        // it is not possible to pass an image with a layout qualifier to a function :(
+        v000 = imageLoad(cascades_coverage, root + ivec3(0, 0, 0));
+        v001 = imageLoad(cascades_coverage, root + ivec3(0, 0, 1));
+        v010 = imageLoad(cascades_coverage, root + ivec3(0, 1, 0));
+        v011 = imageLoad(cascades_coverage, root + ivec3(0, 1, 1));
+        v100 = imageLoad(cascades_coverage, root + ivec3(1, 0, 0));
+        v101 = imageLoad(cascades_coverage, root + ivec3(1, 0, 1));
+        v110 = imageLoad(cascades_coverage, root + ivec3(1, 1, 0));
+        v111 = imageLoad(cascades_coverage, root + ivec3(1, 1, 1));
+        imageStore(
+            cascades_coverage,
+            voxel_pos + ivec3(64 * average_data.ix_cascade, 0, 0),
+            0.125 * (v000 + v001 + v010 + v011 + v100 + v101 + v110 + v111)
+        );
+
+        v000 = imageLoad(cascades_diffuse, root + ivec3(0, 0, 0));
+        v001 = imageLoad(cascades_diffuse, root + ivec3(0, 0, 1));
+        v010 = imageLoad(cascades_diffuse, root + ivec3(0, 1, 0));
+        v011 = imageLoad(cascades_diffuse, root + ivec3(0, 1, 1));
+        v100 = imageLoad(cascades_diffuse, root + ivec3(1, 0, 0));
+        v101 = imageLoad(cascades_diffuse, root + ivec3(1, 0, 1));
+        v110 = imageLoad(cascades_diffuse, root + ivec3(1, 1, 0));
+        v111 = imageLoad(cascades_diffuse, root + ivec3(1, 1, 1));
+        imageStore(
+            cascades_diffuse,
+            voxel_pos + ivec3(64 * average_data.ix_cascade, 0, 0),
+            0.125 * (v000 + v001 + v010 + v011 + v100 + v101 + v110 + v111)
+        );
+
+        v000 = imageLoad(cascades_emissive, root + ivec3(0, 0, 0));
+        v001 = imageLoad(cascades_emissive, root + ivec3(0, 0, 1));
+        v010 = imageLoad(cascades_emissive, root + ivec3(0, 1, 0));
+        v011 = imageLoad(cascades_emissive, root + ivec3(0, 1, 1));
+        v100 = imageLoad(cascades_emissive, root + ivec3(1, 0, 0));
+        v101 = imageLoad(cascades_emissive, root + ivec3(1, 0, 1));
+        v110 = imageLoad(cascades_emissive, root + ivec3(1, 1, 0));
+        v111 = imageLoad(cascades_emissive, root + ivec3(1, 1, 1));
+        imageStore(
+            cascades_emissive,
+            voxel_pos + ivec3(64 * average_data.ix_cascade, 0, 0),
+            0.125 * (v000 + v001 + v010 + v011 + v100 + v101 + v110 + v111)
+        );
+
+        v000 = imageLoad(cascades_normal, root + ivec3(0, 0, 0));
+        v001 = imageLoad(cascades_normal, root + ivec3(0, 0, 1));
+        v010 = imageLoad(cascades_normal, root + ivec3(0, 1, 0));
+        v011 = imageLoad(cascades_normal, root + ivec3(0, 1, 1));
+        v100 = imageLoad(cascades_normal, root + ivec3(1, 0, 0));
+        v101 = imageLoad(cascades_normal, root + ivec3(1, 0, 1));
+        v110 = imageLoad(cascades_normal, root + ivec3(1, 1, 0));
+        v111 = imageLoad(cascades_normal, root + ivec3(1, 1, 1));
+        imageStore(
+            cascades_normal,
+            voxel_pos + ivec3(64 * average_data.ix_cascade, 0, 0),
+            normalize(v000 + v001 + v010 + v011 + v100 + v101 + v110 + v111)
+        );
+
+        return;
+    }
+
+
     vec2 weight_coverage = unpackHalf2x16(texelFetch(target_weight_coverage, voxel_pos, 0).r);
     vec2 diffuse_emissive_r = unpackHalf2x16(texelFetch(target_diffuse_emissive_r, voxel_pos, 0).r);
     vec2 diffuse_emissive_g = unpackHalf2x16(texelFetch(target_diffuse_emissive_g, voxel_pos, 0).r);

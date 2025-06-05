@@ -2,4 +2,82 @@
 
 layout(local_size_x = 4, local_size_y = 4, local_size_z = 4) in;
 
-void main() {}
+layout(set = 0, binding = 0) uniform sampler3D cascades_coverage;
+layout(set = 0, binding = 1) uniform sampler3D cascades_diffuse;
+layout(set = 0, binding = 2) uniform sampler3D cascades_emissive;
+layout(set = 0, binding = 3) uniform sampler3D cascades_normal;
+
+layout(rgba16f, set = 1, binding = 0) uniform image3D cascades_radiance;
+
+layout(std140, set = 2, binding = 0) uniform LightingData {
+    uint ix_temporal;
+} lighting_data;
+
+bool inBounds(vec3 position) {
+    vec3 a = abs(position);
+    float b = max(position.x, max(position.y, position.z));
+    return b <= 504.0; // voxel size at cascade 8 is 16, farthest away voxel center is at 63 / 2
+}
+
+float sampleCoverageAt(vec3 position, float diameter) {
+    // seleect the most appropriate cascade to sample from
+    // // compute the cascade we're at now
+    // ivec3 q = abs(ivec3(origin / 0.125));
+    // uint cascade = uint(max(q.x, q.y), q.z);
+    float cascade = round(clamp(log2(diameter / 0.125), 0, 7));
+    float cascade_size = 64.0 * 0.125 * float(1 << uint(cascade));
+    vec3 voxel_pos = clamp(position / cascade_size + 0.5, 0.5 / 64.0, 1 - 0.5 / 64.0);
+    return texture(cascades_coverage, voxel_pos).r;
+}
+
+float shadowRayDir(vec3 origin, vec3 light_dir, float voxel_size) {
+    float scale_factor = 0.3; // diameter of cone at distance 1, TODO set based on hardness
+
+    float acc = 0.0;
+    origin += light_dir * voxel_size;
+    float radius = scale_factor * voxel_size;
+
+    while (acc < 0.95 && inBounds(origin)) {
+        float cov = sampleCoverageAt(origin, 2 * radius);
+        acc += (1 - acc) * cov;
+    
+        float distance = radius * (2 + scale_factor);
+        radius = distance - radius;
+        origin += light_dir * distance;
+    }
+
+    return (acc < 0.95) ? acc : 1.0;
+
+    origin += voxel_size * light_dir;
+    
+    return 0.0;
+}
+
+void main() {
+    ivec3 voxel_pos = ivec3(gl_GlobalInvocationID);
+    uint cascade = uint(voxel_pos.x) >> 6; // divide by 64
+    float voxel_size = 0.125 * float(1 << cascade);
+    vec3 voxel_world_center = voxel_size * (vec3(voxel_pos) + 0.5);
+    
+    float coverage = texelFetch(cascades_coverage, voxel_pos, 0).r;
+    if (coverage < 0.01) {
+        imageStore(cascades_radiance, voxel_pos, vec4(0.0, 0.0, 0.0, 0.0));
+        return;   
+    }
+    
+    vec3 diffuse = texelFetch(cascades_diffuse, voxel_pos, 0).rgb;
+    vec3 emissive = texelFetch(cascades_emissive, voxel_pos, 0).rgb;
+    vec3 normal = texelFetch(cascades_normal, voxel_pos, 0).rgb;
+
+    vec3 light_dir = normalize(vec3(1.0, 2.0, 0.5));
+    float light_intensity = 2.0;
+
+    vec3 rad =
+        diffuse *
+        light_intensity *
+        max(dot(normal, light_dir), 0.0) *
+        (1.0 - shadowRayDir(voxel_world_center, light_dir, voxel_size));
+    rad += emissive;
+
+    imageStore(cascades_radiance, voxel_pos, vec4(rad, coverage));
+}
