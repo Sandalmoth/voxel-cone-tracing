@@ -23,7 +23,11 @@ float sampleCoverageAt(vec3 position, float diameter) {
     uint cascade = uint(clamp(log2(diameter / 0.125), 0, 7) + 0.5);
     float cascade_size = 64.0 * 0.125 * float(1 << cascade);
     vec3 voxel_pos = clamp(position / cascade_size + 0.5, 0.5 / 64.0, 1 - 0.5 / 64.0);
-    return texture(cascades_coverage, voxel_pos + vec3(cascade, 0, 0)).r;
+    return texture(cascades_coverage, vec3(
+            0.125 * (voxel_pos.x + cascade),
+            0.5 * voxel_pos.y,
+            voxel_pos.z
+        )).r;
 }
 
 float shadowRayDir(vec3 origin, vec3 light_dir, float voxel_size) {
