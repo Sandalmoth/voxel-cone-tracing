@@ -179,7 +179,7 @@ pub fn init(gpa: std.mem.Allocator, device: *sdl.c.SDL_GPUDevice) !Scene {
     }
 
     for (0..3) |x| {
-        for (0..3) |y| {
+        for (1..2) |y| {
             for (0..3) |z| {
                 const position = zm.f32x4(
                     100 * (@as(f32, @floatFromInt(x)) - 1.5 + rand.float(f32)),

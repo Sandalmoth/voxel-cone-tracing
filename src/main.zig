@@ -231,7 +231,8 @@ const VoxelizePass = struct {
     voxelize_pipeline: *sdl.GPUComputePipeline,
     average_pipeline: *sdl.GPUComputePipeline,
     lighting_pipeline: *sdl.GPUComputePipeline,
-    sampler: *sdl.GPUSampler,
+    nearest_sampler: *sdl.GPUSampler,
+    linear_sampler: *sdl.GPUSampler,
     compute_pass: ?*sdl.GPUComputePass,
 
     targets: std.EnumArray(Target, *sdl.GPUTexture),
@@ -452,7 +453,7 @@ const VoxelizePass = struct {
         }));
         errdefer sdl.releaseGPUTexture(device, cascades.get(.radiance));
 
-        const sampler = sdl.c.SDL_CreateGPUSampler(device, &.{
+        const nearest_sampler = sdl.c.SDL_CreateGPUSampler(device, &.{
             .min_filter = sdl.c.SDL_GPU_FILTER_NEAREST,
             .mag_filter = sdl.c.SDL_GPU_FILTER_NEAREST,
             .address_mode_u = sdl.c.SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE,
@@ -461,7 +462,18 @@ const VoxelizePass = struct {
             log.err("SDL_CreateGPUSampler: {s}", .{sdl.c.SDL_GetError()});
             return error.Sdl;
         };
-        errdefer sdl.c.SDL_ReleaseGPUSampler(device, sampler);
+        errdefer sdl.c.SDL_ReleaseGPUSampler(device, nearest_sampler);
+
+        const linear_sampler = sdl.c.SDL_CreateGPUSampler(device, &.{
+            .min_filter = sdl.c.SDL_GPU_FILTER_LINEAR,
+            .mag_filter = sdl.c.SDL_GPU_FILTER_LINEAR,
+            .address_mode_u = sdl.c.SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE,
+            .address_mode_v = sdl.c.SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE,
+        }) orelse {
+            log.err("SDL_CreateGPUSampler: {s}", .{sdl.c.SDL_GetError()});
+            return error.Sdl;
+        };
+        errdefer sdl.c.SDL_ReleaseGPUSampler(device, linear_sampler);
 
         return .{
             .device = device,
@@ -469,7 +481,8 @@ const VoxelizePass = struct {
             .voxelize_pipeline = voxelize_pipeline,
             .average_pipeline = average_pipeline,
             .lighting_pipeline = lighting_pipeline,
-            .sampler = sampler,
+            .nearest_sampler = nearest_sampler,
+            .linear_sampler = linear_sampler,
             .compute_pass = null,
             .targets = targets,
             .cascades = cascades,
@@ -480,7 +493,8 @@ const VoxelizePass = struct {
     }
 
     fn deinit(pass: *VoxelizePass) void {
-        sdl.c.SDL_ReleaseGPUSampler(pass.device, pass.sampler);
+        sdl.c.SDL_ReleaseGPUSampler(pass.device, pass.nearest_sampler);
+        sdl.c.SDL_ReleaseGPUSampler(pass.device, pass.linear_sampler);
         for (pass.cascades.values) |cascade| sdl.releaseGPUTexture(pass.device, cascade);
         for (pass.targets.values) |target| sdl.releaseGPUTexture(pass.device, target);
         sdl.releaseGPUComputePipeline(pass.device, pass.lighting_pipeline);
@@ -587,12 +601,12 @@ const VoxelizePass = struct {
         );
         sdl.c.SDL_BindGPUComputePipeline(average_pass, pass.average_pipeline);
         const texture_sampler_bindings_0 = [_]sdl.c.struct_SDL_GPUTextureSamplerBinding{
-            .{ .texture = pass.targets.get(.weight_coverage), .sampler = pass.sampler },
-            .{ .texture = pass.targets.get(.diffuse_emissive_r), .sampler = pass.sampler },
-            .{ .texture = pass.targets.get(.diffuse_emissive_g), .sampler = pass.sampler },
-            .{ .texture = pass.targets.get(.diffuse_emissive_b), .sampler = pass.sampler },
-            .{ .texture = pass.targets.get(.normal_xy), .sampler = pass.sampler },
-            .{ .texture = pass.targets.get(.normal_z_pad), .sampler = pass.sampler },
+            .{ .texture = pass.targets.get(.weight_coverage), .sampler = pass.nearest_sampler },
+            .{ .texture = pass.targets.get(.diffuse_emissive_r), .sampler = pass.nearest_sampler },
+            .{ .texture = pass.targets.get(.diffuse_emissive_g), .sampler = pass.nearest_sampler },
+            .{ .texture = pass.targets.get(.diffuse_emissive_b), .sampler = pass.nearest_sampler },
+            .{ .texture = pass.targets.get(.normal_xy), .sampler = pass.nearest_sampler },
+            .{ .texture = pass.targets.get(.normal_z_pad), .sampler = pass.nearest_sampler },
         };
         sdl.c.SDL_BindGPUComputeSamplers(
             average_pass,
@@ -624,10 +638,10 @@ const VoxelizePass = struct {
         );
         sdl.c.SDL_BindGPUComputePipeline(lighting_pass, pass.lighting_pipeline);
         const texture_sampler_bindings_1 = [_]sdl.c.struct_SDL_GPUTextureSamplerBinding{
-            .{ .texture = pass.cascades.get(.coverage), .sampler = pass.sampler },
-            .{ .texture = pass.cascades.get(.diffuse), .sampler = pass.sampler },
-            .{ .texture = pass.cascades.get(.emissive), .sampler = pass.sampler },
-            .{ .texture = pass.cascades.get(.normal), .sampler = pass.sampler },
+            .{ .texture = pass.cascades.get(.coverage), .sampler = pass.linear_sampler },
+            .{ .texture = pass.cascades.get(.diffuse), .sampler = pass.linear_sampler },
+            .{ .texture = pass.cascades.get(.emissive), .sampler = pass.linear_sampler },
+            .{ .texture = pass.cascades.get(.normal), .sampler = pass.linear_sampler },
         };
         sdl.c.SDL_BindGPUComputeSamplers(
             lighting_pass,

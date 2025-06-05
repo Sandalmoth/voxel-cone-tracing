@@ -43,7 +43,9 @@ void main() {
         imageStore(
             cascades_coverage,
             voxel_pos + ivec3(64 * average_data.ix_cascade, 0, 0),
-            0.125 * (v000 + v001 + v010 + v011 + v100 + v101 + v110 + v111)
+            // NOTE intentionally bias towards more opacity
+            // if our voxels represent solid geometry, a single sheet should mipmap to full cover
+            clamp(0.5 * (v000 + v001 + v010 + v011 + v100 + v101 + v110 + v111), 0, 1)
         );
 
         v000 = imageLoad(cascades_diffuse, root + ivec3(0, 0, 0));

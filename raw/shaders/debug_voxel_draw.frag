@@ -20,7 +20,7 @@ vec4 voxelFetch(ivec3 voxel_pos, int cascade) {
     switch (debug_data.mode) {
     case 0:
         c = texelFetch(cascade_coverage, ivec3(voxel_pos.x + 64 * cascade, voxel_pos.yz), 0);
-        c = vec4(10.0, 10.0, 10.0, c.r);
+        c = vec4(2.0, 2.0, 2.0, c.r);
         break;        
     case 1:
         c = texelFetch(cascade_diffuse, ivec3(voxel_pos.x + 64 * cascade, voxel_pos.yz), 0);
@@ -74,7 +74,7 @@ void main() {
         pos += 0.5 * voxelSize(cascadeAt(pos)) * ray_dir;
         vec4 voxel_color = voxelAt(pos);
         if (debug_data.mode == 0) {
-            voxel_color = vec4(clamp(voxel_color.rgb - 2e-2 * vec3(d), 0.1, 10.0), voxel_color.a);
+            voxel_color = vec4(clamp(voxel_color.rgb * exp(-d*0.02), 0.01, 10.0), voxel_color.a);
         }
         float a = voxel_color.a;
         acc.rgb += voxel_color.rgb * a * (1.0 - acc.a);
