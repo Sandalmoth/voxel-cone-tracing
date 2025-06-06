@@ -15,13 +15,11 @@ layout(set = 2, binding = 1) uniform sampler3D cascades_radiance;
 bool inBounds(vec3 position) {
     vec3 a = abs(position);
     float b = max(a.x, max(a.y, a.z));
-    return b <= 504.0; // voxel size at cascade 8 is 16, farthest away voxel center is at 63 / 2
+    return b <= 504.0;
 }
 
-float sampleCoverageAt(vec3 position, float diameter) {
-    uint cascade = uint(clamp(log2(diameter / 0.125), 0, 7) + 0.5);
+float sampleCoverageAt1(vec3 position, uint cascade) {
     float cascade_size = 64.0 * 0.125 * float(1 << cascade);
-
     vec3 voxel_pos = position / cascade_size + 0.5;
     vec3 cascade_pos = vec3(
         0.125 * (voxel_pos.x + float(cascade)),
@@ -45,6 +43,17 @@ float sampleCoverageAt(vec3 position, float diameter) {
         cascade_max - cascade_texel_half
     );
     return texture(cascades_coverage, safe_pos).r;
+}
+
+float sampleCoverageAt(vec3 position, float diameter) {
+    float fcascade = clamp(log2(diameter / 0.125), 0, 7);
+    uint low_cascade = uint(fcascade);
+    uint high_cascade = min(low_cascade + 1, 7);
+    float cascade_fraction = fcascade - float(low_cascade);
+    
+    float low_coverage = sampleCoverageAt1(position, low_cascade);
+    float high_coverage = sampleCoverageAt1(position, high_cascade);
+    return (1 - cascade_fraction) * low_coverage + cascade_fraction * high_coverage;
 }
 
 float shadowRayDir(vec3 origin, vec3 light_dir, float voxel_size) {
@@ -72,8 +81,8 @@ void main() {
 
     vec3 a = abs(frag_position);
     float b = max(a.x, max(a.y, a.z));
-    uint cascade = uint(clamp(log2(b) - 2, 0, 7));
-    float voxel_size = 0.125 * float(1 << cascade);
+    float cascade = clamp(log2(b) - 2, 0, 7);
+    float voxel_size = 0.0625 * b;
 
     vec3 rad =
         frag_diffuse * max(0.01,
