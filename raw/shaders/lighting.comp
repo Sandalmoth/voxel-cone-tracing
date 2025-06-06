@@ -49,6 +49,22 @@ float sampleCoverageAt(vec3 position, float diameter) {
 }
 
 float shadowRayDir(vec3 origin, vec3 light_dir, float voxel_size) {
+    // this function kinda works but
+    // with cascaded vct, the the initial step actually needs to be handled with extra care
+    // and we might need to always blend two mip levels while sampling the cascade
+    // (assuming we want to get a perfectly smooth result)
+    // this is because on the edge of a cascade, the first voxel sampled with suddenly changed
+    // creating a visible discontinuity
+    // 
+    // to fix this we need smoothly blend the original step size
+    // such that when a cascade ends we're already at the next cascades size as the initial step
+    // and we need to do tetralinear interpolation between cascades
+    // such that there is no sudden transition in resolution for the initial step
+    //
+    // however, it's probably fine to do this approximate version here for speed
+    // and then rely on the precise cone tracing only in actual draw-pass lighting
+    // since the voxel radiance will be smoothened by that anyway
+     
     float scale_factor = 0.2; // diameter of cone at distance 1, TODO set based on hardness
 
     float acc = 0.0;

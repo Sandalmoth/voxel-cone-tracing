@@ -159,7 +159,7 @@ pub fn main() !void {
 
         if (!debug_view) {
             {
-                draw_pass.begin(command_buffer);
+                draw_pass.begin(command_buffer, &voxelize_pass.cascades);
                 defer draw_pass.end(command_buffer);
                 const camera_vp = camera.vp(alpha);
                 for (scene.objects.items) |object| draw_pass.drawObject(
@@ -870,7 +870,7 @@ const DebugVoxelDrawPass = struct {
             .backbuffer = backbuffer,
             .vertex_buffer = vertex_buffer,
             .sampler = sampler,
-            .mode = .coverage,
+            .mode = .radiance,
         };
     }
 
@@ -948,11 +948,16 @@ const DrawPass = struct {
     const DrawData = extern struct {
         mvp: [16]f32 align(16),
         normal: [16]f32 align(16),
+        model: [16]f32 align(16),
+        diffuse: [4]f32 align(16),
+        emissive: [4]f32 align(16),
+        roughness: f32,
     };
 
     device: *sdl.c.SDL_GPUDevice,
     pipeline: *sdl.c.SDL_GPUGraphicsPipeline,
     render_pass: ?*sdl.c.SDL_GPURenderPass,
+    sampler: *sdl.GPUSampler,
 
     backbuffer: *sdl.c.SDL_GPUTexture,
     backbuffer_depth: *sdl.c.SDL_GPUTexture,
@@ -1003,7 +1008,7 @@ const DrawPass = struct {
                 .entrypoint = "main",
                 .format = sdl.c.SDL_GPU_SHADERFORMAT_SPIRV,
                 .stage = sdl.c.SDL_GPU_SHADERSTAGE_FRAGMENT,
-                .num_samplers = 0,
+                .num_samplers = 2,
                 .num_storage_textures = 0,
                 .num_storage_buffers = 0,
                 .num_uniform_buffers = 0,
@@ -1111,23 +1116,41 @@ const DrawPass = struct {
         };
         errdefer sdl.c.SDL_ReleaseGPUTexture(device, backbuffer_depth);
 
+        const sampler = sdl.c.SDL_CreateGPUSampler(device, &.{
+            .min_filter = sdl.c.SDL_GPU_FILTER_LINEAR,
+            .mag_filter = sdl.c.SDL_GPU_FILTER_LINEAR,
+            .address_mode_u = sdl.c.SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE,
+            .address_mode_v = sdl.c.SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE,
+            .address_mode_w = sdl.c.SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE,
+        }) orelse {
+            log.err("SDL_CreateGPUSampler: {s}", .{sdl.c.SDL_GetError()});
+            return error.Sdl;
+        };
+        errdefer sdl.c.SDL_ReleaseGPUSampler(device, sampler);
+
         return .{
             .device = device,
             .pipeline = pipeline,
             .render_pass = null,
+            .sampler = sampler,
             .backbuffer = backbuffer,
             .backbuffer_depth = backbuffer_depth,
         };
     }
 
     fn deinit(pass: *DrawPass) void {
+        sdl.c.SDL_ReleaseGPUSampler(pass.device, pass.sampler);
         sdl.c.SDL_ReleaseGPUTexture(pass.device, pass.backbuffer_depth);
         sdl.c.SDL_ReleaseGPUTexture(pass.device, pass.backbuffer);
         sdl.c.SDL_ReleaseGPUGraphicsPipeline(pass.device, pass.pipeline);
         pass.* = undefined;
     }
 
-    fn begin(pass: *DrawPass, command_buffer: *sdl.c.SDL_GPUCommandBuffer) void {
+    fn begin(
+        pass: *DrawPass,
+        command_buffer: *sdl.c.SDL_GPUCommandBuffer,
+        cascades: *std.EnumArray(VoxelizePass.Cascade, *sdl.GPUTexture),
+    ) void {
         const clear_color: sdl.c.SDL_FColor = .{ .r = 0.05, .g = 0.05, .b = 0.05, .a = 1.0 };
         const color_target_infos = [_]sdl.c.SDL_GPUColorTargetInfo{.{
             .texture = pass.backbuffer,
@@ -1145,6 +1168,16 @@ const DrawPass = struct {
                 .load_op = sdl.c.SDL_GPU_LOADOP_CLEAR,
                 .store_op = sdl.c.SDL_GPU_STOREOP_STORE,
             },
+        );
+        const sampler_bindings = [_]sdl.c.SDL_GPUTextureSamplerBinding{
+            .{ .texture = cascades.get(.coverage), .sampler = pass.sampler },
+            .{ .texture = cascades.get(.radiance), .sampler = pass.sampler },
+        };
+        sdl.c.SDL_BindGPUFragmentSamplers(
+            pass.render_pass,
+            0,
+            &sampler_bindings[0],
+            sampler_bindings.len,
         );
         sdl.c.SDL_BindGPUGraphicsPipeline(pass.render_pass, pass.pipeline);
     }
@@ -1179,6 +1212,10 @@ const DrawPass = struct {
             &DrawData{
                 .mvp = zm.matToArr(mvp),
                 .normal = zm.matToArr(normal),
+                .model = zm.matToArr(model),
+                .diffuse = object.diffuse,
+                .emissive = object.emissive,
+                .roughness = object.roughness,
             },
             @sizeOf(DrawData),
         );
