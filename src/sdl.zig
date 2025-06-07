@@ -279,7 +279,7 @@ pub fn beginGPURenderPass(
         if (color_target_infos.len == 0) null else &color_target_infos[0],
         @intCast(color_target_infos.len),
         depth_stencil_target_info,
-    );
+    ).?; // cannot fail according to the docs?
 }
 
 pub fn endGPURenderPass(render_pass: *GPURenderPass) void {

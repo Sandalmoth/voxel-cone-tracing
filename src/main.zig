@@ -4,6 +4,7 @@ const zm = @import("zmath");
 const sdl = @import("sdl.zig");
 
 const Input = @import("input.zig");
+const Scene = @import("scene.zig");
 
 const log = std.log;
 const perf_counter = @import("perfcounter.zig");
@@ -12,6 +13,9 @@ pub const ticks_per_second = 83;
 pub const tick: f32 = 1.0 / @as(f32, @floatFromInt(ticks_per_second));
 pub const tick_ns: u64 = 1_000_000_000 / ticks_per_second;
 pub const max_tick_ns: u64 = 250_000_000;
+
+const window_width = 1920;
+const window_height = 1080;
 
 pub fn main() !void {
     sdl.setMainReady();
@@ -25,8 +29,8 @@ pub fn main() !void {
 
     const window = try sdl.createWindow(
         "voxel_cone_tracing",
-        1920,
-        1080,
+        window_width,
+        window_height,
         sdl.c.SDL_WINDOW_RESIZABLE,
     );
     defer sdl.destroyWindow(window);
@@ -55,6 +59,8 @@ pub fn main() !void {
     try input.map.put(.{ .keyboard = sdl.c.SDL_SCANCODE_E }, .next_debug_view);
     defer input.deinit();
 
+    var draw_pass = try DrawPass.init(gpa, device);
+    defer draw_pass.deinit();
     var present_pass = try PresentPass.init(gpa, device, window);
     defer present_pass.deinit();
 
@@ -102,10 +108,180 @@ pub fn main() !void {
 
         const alpha = @as(f32, @floatFromInt(lag)) / @as(f32, @floatFromInt(tick_ns));
         _ = alpha;
+
+        const command_buffer = try sdl.acquireGPUCommandBuffer(device);
+
+        try present_pass.run(window, command_buffer, draw_pass.color_target);
+
+        try sdl.submitGPUCommandBuffer(command_buffer);
     }
 }
 
-const DrawPass = struct {};
+const DrawPass = struct {
+    const VertexUBO = extern struct {
+        mvp_matrix: [16]f32 align(16),
+        normal_matrix: [16]f32 align(16),
+        model_matrix: [16]f32 align(16),
+    };
+    const FragmentUBO = extern struct {
+        diffuse: [4]f32 align(16),
+        emissive: [4]f32 align(16),
+        roughness: f32,
+    };
+
+    device: *sdl.GPUDevice,
+    pipeline: *sdl.GPUGraphicsPipeline,
+
+    color_target: *sdl.c.SDL_GPUTexture,
+    depth_target: *sdl.c.SDL_GPUTexture,
+
+    fn init(
+        gpa: std.mem.Allocator,
+        device: *sdl.GPUDevice,
+    ) !DrawPass {
+        const vertex_shader = blk: {
+            const file = try std.fs.cwd().openFile(
+                "data/shaders/draw.vert.spv",
+                .{ .mode = .read_only },
+            );
+            defer file.close();
+            const bytes = try file.reader().readAllAlloc(gpa, 1_000_000);
+            defer gpa.free(bytes);
+
+            break :blk try sdl.createGPUShader(device, &.{
+                .code_size = bytes.len,
+                .code = bytes.ptr,
+                .entrypoint = "main",
+                .format = sdl.c.SDL_GPU_SHADERFORMAT_SPIRV,
+                .stage = sdl.c.SDL_GPU_SHADERSTAGE_VERTEX,
+                .num_samplers = 0,
+                .num_storage_textures = 0,
+                .num_storage_buffers = 0,
+                .num_uniform_buffers = 1,
+            });
+        };
+        defer sdl.releaseGPUShader(device, vertex_shader);
+
+        const fragment_shader = blk: {
+            const file = try std.fs.cwd().openFile(
+                "data/shaders/draw.frag.spv",
+                .{ .mode = .read_only },
+            );
+            defer file.close();
+            const bytes = try file.reader().readAllAlloc(gpa, 1_000_000);
+            defer gpa.free(bytes);
+
+            break :blk try sdl.createGPUShader(device, &.{
+                .code_size = bytes.len,
+                .code = bytes.ptr,
+                .entrypoint = "main",
+                .format = sdl.c.SDL_GPU_SHADERFORMAT_SPIRV,
+                .stage = sdl.c.SDL_GPU_SHADERSTAGE_FRAGMENT,
+                .num_samplers = 0,
+                .num_storage_textures = 0,
+                .num_storage_buffers = 0,
+                .num_uniform_buffers = 0,
+            });
+        };
+        defer sdl.releaseGPUShader(device, fragment_shader);
+
+        const vertex_buffer_descriptions = [_]sdl.GPUVertexBufferDescription{.{
+            .slot = 0,
+            .pitch = @sizeOf(Scene.Vertex),
+            .input_rate = sdl.c.SDL_GPU_VERTEXINPUTRATE_VERTEX,
+            .instance_step_rate = 0,
+        }};
+        const vertex_attributes = [_]sdl.GPUVertexAttribute{ .{
+            .buffer_slot = 0,
+            .format = sdl.c.SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3,
+            .location = 0,
+            .offset = @offsetOf(Scene.Vertex, "position"),
+        }, .{
+            .buffer_slot = 0,
+            .format = sdl.c.SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3,
+            .location = 1,
+            .offset = @offsetOf(Scene.Vertex, "normal"),
+        } };
+        const color_target_descriptions = [_]sdl.GPUColorTargetDescription{.{
+            .format = sdl.c.SDL_GPU_TEXTUREFORMAT_R16G16B16A16_FLOAT,
+            .blend_state = .{},
+        }};
+        // i don't like how there's no obvious name for this function in my renaming scheme...
+        const depth_stencil_format = if (sdl.c.SDL_GPUTextureSupportsFormat(
+            device,
+            sdl.c.SDL_GPU_TEXTUREFORMAT_D32_FLOAT,
+            sdl.c.SDL_GPU_TEXTURETYPE_2D,
+            sdl.c.SDL_GPU_TEXTUREUSAGE_DEPTH_STENCIL_TARGET,
+        )) sdl.c.SDL_GPU_TEXTUREFORMAT_D32_FLOAT else sdl.c.SDL_GPU_TEXTUREFORMAT_D24_UNORM;
+        const pipeline_create_info = sdl.GPUGraphicsPipelineCreateInfo{
+            .vertex_shader = vertex_shader,
+            .fragment_shader = fragment_shader,
+            .vertex_input_state = .{
+                .vertex_buffer_descriptions = &vertex_buffer_descriptions[0],
+                .num_vertex_buffers = vertex_buffer_descriptions.len,
+                .vertex_attributes = &vertex_attributes[0],
+                .num_vertex_attributes = vertex_attributes.len,
+            },
+            .primitive_type = sdl.c.SDL_GPU_PRIMITIVETYPE_TRIANGLELIST,
+            .rasterizer_state = .{
+                .front_face = sdl.c.SDL_GPU_FRONTFACE_COUNTER_CLOCKWISE,
+                .cull_mode = sdl.c.SDL_GPU_CULLMODE_BACK,
+            },
+            .multisample_state = .{},
+            .depth_stencil_state = .{
+                .compare_op = sdl.c.SDL_GPU_COMPAREOP_GREATER,
+                .enable_depth_test = true,
+                .enable_depth_write = true,
+            },
+            .target_info = .{
+                .color_target_descriptions = &color_target_descriptions[0],
+                .num_color_targets = color_target_descriptions.len,
+                .depth_stencil_format = @intCast(depth_stencil_format),
+                .has_depth_stencil_target = true,
+            },
+        };
+        const pipeline = try sdl.createGPUGraphicsPipeline(device, &pipeline_create_info);
+        errdefer sdl.releaseGPUGraphicsPipeline(device, pipeline);
+
+        const color_target = try sdl.createGPUTexture(device, &.{
+            .type = sdl.c.SDL_GPU_TEXTURETYPE_2D,
+            .format = sdl.c.SDL_GPU_TEXTUREFORMAT_R16G16B16A16_FLOAT,
+            .usage = sdl.c.SDL_GPU_TEXTUREUSAGE_COLOR_TARGET | sdl.c.SDL_GPU_TEXTUREUSAGE_SAMPLER,
+            .width = window_width,
+            .height = window_height,
+            .layer_count_or_depth = 1,
+            .num_levels = 1,
+            .sample_count = sdl.c.SDL_GPU_SAMPLECOUNT_1,
+        });
+        errdefer sdl.releaseGPUTexture(device, color_target);
+
+        const depth_target = try sdl.createGPUTexture(device, &.{
+            .type = sdl.c.SDL_GPU_TEXTURETYPE_2D,
+            .format = @intCast(depth_stencil_format),
+            .usage = sdl.c.SDL_GPU_TEXTUREUSAGE_DEPTH_STENCIL_TARGET,
+            .width = window_width,
+            .height = window_height,
+            .layer_count_or_depth = 1,
+            .num_levels = 1,
+            .sample_count = sdl.c.SDL_GPU_SAMPLECOUNT_1,
+        });
+        errdefer sdl.releaseGPUTexture(device, depth_target);
+
+        return .{
+            .device = device,
+            .pipeline = pipeline,
+            .color_target = color_target,
+            .depth_target = depth_target,
+        };
+    }
+
+    fn deinit(pass: *DrawPass) void {
+        sdl.releaseGPUTexture(pass.device, pass.depth_target);
+        sdl.releaseGPUTexture(pass.device, pass.color_target);
+        sdl.releaseGPUGraphicsPipeline(pass.device, pass.pipeline);
+        pass.* = undefined;
+    }
+};
 
 const PresentPass = struct {
     const Vertex = struct {
@@ -218,6 +394,7 @@ const PresentPass = struct {
             },
         };
         const pipeline = try sdl.createGPUGraphicsPipeline(device, &pipeline_create_info);
+        errdefer sdl.releaseGPUGraphicsPipeline(device, pipeline);
 
         const sizeof_vertices: u32 = @intCast(full_screen_quad.len * @sizeOf(Vertex));
         const vertex_buffer = try sdl.createGPUBuffer(device, &.{
