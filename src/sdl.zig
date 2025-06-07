@@ -32,6 +32,16 @@ pub const GPUStorageBufferReadWriteBinding = c.SDL_GPUStorageBufferReadWriteBind
 pub const GPUGraphicsPipeline = c.SDL_GPUGraphicsPipeline;
 pub const GPUSampler = c.SDL_GPUSampler;
 pub const GPUShader = c.SDL_GPUShader;
+pub const GPUVertexBufferDescription = c.SDL_GPUVertexBufferDescription;
+pub const GPUVertexAttribute = c.SDL_GPUVertexAttribute;
+pub const GPUColorTargetDescription = c.SDL_GPUColorTargetDescription;
+pub const GPUGraphicsPipelineCreateInfo = c.SDL_GPUGraphicsPipelineCreateInfo;
+pub const GPUSamplerCreateInfo = c.SDL_GPUSamplerCreateInfo;
+pub const GPUColorTargetInfo = c.SDL_GPUColorTargetInfo;
+pub const GPURenderPass = c.SDL_GPURenderPass;
+pub const GPUDepthStencilTargetInfo = c.SDL_GPUDepthStencilTargetInfo;
+pub const GPUBufferBinding = c.SDL_GPUBufferBinding;
+pub const GPUTextureSamplerBinding = c.SDL_GPUTextureSamplerBinding;
 
 pub fn getError() [*c]const u8 {
     return c.SDL_GetError();
@@ -62,8 +72,8 @@ pub fn endGPUCopyPass(copy_pass: *GPUCopyPass) void {
     c.SDL_EndGPUCopyPass(copy_pass);
 }
 
-pub fn createGPUBuffer(device: *GPUDevice, createinfo: *const GPUBufferCreateInfo) !*GPUBuffer {
-    return c.SDL_CreateGPUBuffer(device, createinfo) orelse {
+pub fn createGPUBuffer(device: *GPUDevice, create_info: *const GPUBufferCreateInfo) !*GPUBuffer {
+    return c.SDL_CreateGPUBuffer(device, create_info) orelse {
         log.err("SDL_CreateGPUBuffer: {s}", .{getError()});
         return error.Sdl;
     };
@@ -75,9 +85,9 @@ pub fn releaseGPUBuffer(device: *GPUDevice, buffer: *GPUBuffer) void {
 
 pub fn createGPUTransferBuffer(
     device: *GPUDevice,
-    createinfo: *const GPUTransferBufferCreateInfo,
+    create_info: *const GPUTransferBufferCreateInfo,
 ) !*GPUTransferBuffer {
-    return c.SDL_CreateGPUTransferBuffer(device, createinfo) orelse {
+    return c.SDL_CreateGPUTransferBuffer(device, create_info) orelse {
         log.err("SDL_CreateGPUTransferBuffer: {s}", .{getError()});
         return error.Sdl;
     };
@@ -113,9 +123,9 @@ pub fn uploadToGPUBuffer(
 
 pub fn createGPUShader(
     device: *GPUDevice,
-    createinfo: *const GPUShaderCreateInfo,
+    create_info: *const GPUShaderCreateInfo,
 ) !*GPUShader {
-    return c.SDL_CreateGPUShader(device, createinfo) orelse {
+    return c.SDL_CreateGPUShader(device, create_info) orelse {
         log.err("SDL_CreateGPUShader: {s}", .{getError()});
         return error.Sdl;
     };
@@ -127,9 +137,9 @@ pub fn releaseGPUShader(device: *GPUDevice, shader: *GPUShader) void {
 
 pub fn createGPUComputePipeline(
     device: *GPUDevice,
-    createinfo: *const GPUComputePipelineCreateInfo,
+    create_info: *const GPUComputePipelineCreateInfo,
 ) !*GPUComputePipeline {
-    return c.SDL_CreateGPUComputePipeline(device, createinfo) orelse {
+    return c.SDL_CreateGPUComputePipeline(device, create_info) orelse {
         log.err("SDL_CreateGPUComputePipeline: {s}", .{getError()});
         return error.Sdl;
     };
@@ -139,8 +149,11 @@ pub fn releaseGPUComputePipeline(device: *GPUDevice, pipeline: *GPUComputePipeli
     c.SDL_ReleaseGPUComputePipeline(device, pipeline);
 }
 
-pub fn createGPUTexture(device: *GPUDevice, createinfo: *const GPUTextureCreateInfo) !*GPUTexture {
-    return c.SDL_CreateGPUTexture(device, createinfo) orelse {
+pub fn createGPUTexture(
+    device: *GPUDevice,
+    create_info: *const GPUTextureCreateInfo,
+) !*GPUTexture {
+    return c.SDL_CreateGPUTexture(device, create_info) orelse {
         log.err("SDL_CreateGPUTexture: {s}", .{getError()});
         return error.Sdl;
     };
@@ -203,4 +216,117 @@ pub fn claimWindowForGPUDevice(device: *GPUDevice, window: *Window) !void {
         log.err("SDL_ClaimWindowForGPUDevice: {s}", .{getError()});
         return error.Sdl;
     }
+}
+
+pub fn getGPUSwapchainTextureFormat(device: *GPUDevice, window: *Window) c_uint {
+    return c.SDL_GetGPUSwapchainTextureFormat(device, window);
+}
+
+pub fn createGPUGraphicsPipeline(
+    device: *GPUDevice,
+    create_info: *const GPUGraphicsPipelineCreateInfo,
+) !*GPUGraphicsPipeline {
+    return c.SDL_CreateGPUGraphicsPipeline(device, create_info) orelse {
+        log.err("SDL_CreateGPUGraphicsPipeline: {s}", .{getError()});
+        return error.Sdl;
+    };
+}
+
+pub fn releaseGPUGraphicsPipeline(device: *GPUDevice, pipeline: *GPUGraphicsPipeline) void {
+    c.SDL_ReleaseGPUGraphicsPipeline(device, pipeline);
+}
+
+pub fn createGPUSampler(
+    device: *GPUDevice,
+    create_info: *const GPUSamplerCreateInfo,
+) !*GPUSampler {
+    return c.SDL_CreateGPUSampler(device, create_info) orelse {
+        log.err("SDL_CreateGPUSampler: {s}", .{getError()});
+        return error.Sdl;
+    };
+}
+
+pub fn releaseGPUSampler(device: *GPUDevice, sampler: *GPUSampler) void {
+    c.SDL_ReleaseGPUSampler(device, sampler);
+}
+
+pub fn waitAndAcquireGPUSwapchainTexture(
+    command_buffer: *GPUCommandBuffer,
+    window: *Window,
+    swapchain_texture: *?*GPUTexture,
+    swapchain_texture_width: ?*u32,
+    swapchain_texture_height: ?*u32,
+) !void {
+    if (!c.SDL_WaitAndAcquireGPUSwapchainTexture(
+        command_buffer,
+        window,
+        swapchain_texture,
+        swapchain_texture_width,
+        swapchain_texture_height,
+    )) {
+        log.err("SDL_WaitAndAcquireGPUSwapchainTexture: {s}", .{getError()});
+        return error.Sdl;
+    }
+}
+
+pub fn beginGPURenderPass(
+    command_buffer: *GPUCommandBuffer,
+    color_target_infos: []const GPUColorTargetInfo,
+    depth_stencil_target_info: ?*const GPUDepthStencilTargetInfo,
+) *GPURenderPass {
+    return c.SDL_BeginGPURenderPass(
+        command_buffer,
+        if (color_target_infos.len == 0) null else &color_target_infos[0],
+        @intCast(color_target_infos.len),
+        depth_stencil_target_info,
+    );
+}
+
+pub fn endGPURenderPass(render_pass: *GPURenderPass) void {
+    c.SDL_EndGPURenderPass(render_pass);
+}
+
+pub fn bindGPUGraphicsPipeline(
+    pass: *GPURenderPass,
+    pipeline: *GPUGraphicsPipeline,
+) void {
+    c.SDL_BindGPUGraphicsPipeline(pass, pipeline);
+}
+
+pub fn bindGPUVertexBuffers(
+    pass: *GPURenderPass,
+    first_slot: u32,
+    bindings: []const GPUBufferBinding,
+) void {
+    std.debug.assert(bindings.len > 0);
+    c.SDL_BindGPUVertexBuffers(
+        pass,
+        first_slot,
+        &bindings[0],
+        @intCast(bindings.len),
+    );
+}
+
+pub fn bindGPUFragmentSamplers(
+    pass: *GPURenderPass,
+    first_slot: u32,
+    bindings: []const GPUTextureSamplerBinding,
+) void {
+    std.debug.assert(bindings.len > 0);
+    c.SDL_BindGPUFragmentSamplers(
+        pass,
+        first_slot,
+        &bindings[0],
+        @intCast(bindings.len),
+    );
+}
+
+pub fn drawGPUPrimitives(
+    pass: *GPURenderPass,
+    num_vertices: u32,
+    num_instances: u32,
+    first_vertex: u32,
+    first_instance: u32,
+) void {
+    c.SDL_DrawGPUPrimitives(pass, num_vertices, num_instances, first_vertex, first_instance);
 }
