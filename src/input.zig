@@ -28,6 +28,7 @@ const GameInput = enum {
     toggle_debug_view,
     next_debug_view,
     prev_debug_view,
+    toggle_voxels_follow_camera,
 };
 
 map: std.AutoArrayHashMap(SdlInput, GameInput),
@@ -62,7 +63,7 @@ pub fn consume(input: *Input, game_input: GameInput) ButtonState {
     return result;
 }
 
-pub fn accumulate(input: *Input, event: sdl.c.SDL_Event) void {
+pub fn accumulate(input: *Input, event: sdl.Event) void {
     dispatch: switch (event.type) {
         sdl.c.SDL_EVENT_MOUSE_MOTION => {
             input.mouse_pos = .{ event.motion.x, event.motion.y, 0.0, 0.0 };

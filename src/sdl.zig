@@ -9,6 +9,9 @@ const std = @import("std");
 
 const log = std.log.scoped(.sdl);
 
+pub const Window = c.SDL_Window;
+pub const Event = c.SDL_Event;
+
 pub const GPUDevice = c.SDL_GPUDevice;
 pub const GPUCommandBuffer = c.SDL_GPUCommandBuffer;
 pub const GPUCopyPass = c.SDL_GPUCopyPass;
@@ -145,4 +148,59 @@ pub fn createGPUTexture(device: *GPUDevice, createinfo: *const GPUTextureCreateI
 
 pub fn releaseGPUTexture(device: *GPUDevice, texture: *GPUTexture) void {
     c.SDL_ReleaseGPUTexture(device, texture);
+}
+
+pub fn setMainReady() void {
+    c.SDL_SetMainReady();
+}
+
+pub fn init(flags: u32) !void {
+    if (!c.SDL_Init(flags)) {
+        log.err("SDL_Init: {s}", .{getError()});
+        return error.Sdl;
+    }
+}
+
+pub fn quit() void {
+    c.SDL_Quit();
+}
+
+pub fn createWindow(title: []const u8, w: c_int, h: c_int, flags: u64) !*Window {
+    return c.SDL_CreateWindow(title.ptr, w, h, flags) orelse {
+        log.err("SDL_CreateWindow: {s}", .{getError()});
+        return error.Sdl;
+    };
+}
+
+pub fn destroyWindow(window: *Window) void {
+    c.SDL_DestroyWindow(window);
+}
+
+pub fn setWindowRelativeMouseMode(window: *Window, enabled: bool) !void {
+    if (!c.SDL_SetWindowRelativeMouseMode(window, enabled)) {
+        log.err("SDL_SetWindowRelativeMouseMode: {s}", .{getError()});
+        return error.Sdl;
+    }
+}
+
+pub fn createGPUDevice(format_flags: u32, debug_mode: bool, name: ?[]const u8) !*GPUDevice {
+    return c.SDL_CreateGPUDevice(
+        format_flags,
+        debug_mode,
+        if (name == null) null else name.?.ptr,
+    ) orelse {
+        log.err("SDL_CreateGPUDevice: {s}", .{getError()});
+        return error.Sdl;
+    };
+}
+
+pub fn destroyGPUDevice(device: *GPUDevice) void {
+    c.SDL_DestroyGPUDevice(device);
+}
+
+pub fn claimWindowForGPUDevice(device: *GPUDevice, window: *Window) !void {
+    if (!c.SDL_ClaimWindowForGPUDevice(device, window)) {
+        log.err("SDL_ClaimWindowForGPUDevice: {s}", .{getError()});
+        return error.Sdl;
+    }
 }
