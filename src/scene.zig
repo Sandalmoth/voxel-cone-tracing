@@ -107,7 +107,7 @@ pub fn init(gpa: std.mem.Allocator, device: *sdl.c.SDL_GPUDevice) !Scene {
                     rand.float(f32),
                     1.0,
                 );
-                const emissive = if (rand.float(f32) > 0.1) zm.f32x4s(0.0) else zm.f32x4(
+                const emissive = if (rand.float(f32) > 0.0) zm.f32x4s(0.0) else zm.f32x4(
                     rand.float(f32) * 100,
                     rand.float(f32) * 100,
                     rand.float(f32) * 100,
@@ -156,7 +156,7 @@ pub fn init(gpa: std.mem.Allocator, device: *sdl.c.SDL_GPUDevice) !Scene {
             rand.float(f32),
             1.0,
         );
-        const emissive = if (rand.float(f32) > 0.1) zm.f32x4s(0.0) else zm.f32x4(
+        const emissive = if (rand.float(f32) > 0.0) zm.f32x4s(0.0) else zm.f32x4(
             rand.float(f32) * 100,
             rand.float(f32) * 100,
             rand.float(f32) * 100,
@@ -205,7 +205,7 @@ pub fn init(gpa: std.mem.Allocator, device: *sdl.c.SDL_GPUDevice) !Scene {
                     rand.float(f32),
                     1.0,
                 );
-                const emissive = if (rand.float(f32) > 0.1) zm.f32x4s(0.0) else zm.f32x4(
+                const emissive = if (rand.float(f32) > 0.0) zm.f32x4s(0.0) else zm.f32x4(
                     rand.float(f32) * 100,
                     rand.float(f32) * 100,
                     rand.float(f32) * 100,
@@ -239,6 +239,20 @@ pub fn init(gpa: std.mem.Allocator, device: *sdl.c.SDL_GPUDevice) !Scene {
         .prev_scale = zm.f32x4(50, 2, 50, 0),
         .angular_velocity = zm.qidentity(),
         .diffuse = zm.f32x4s(1.0),
+        .emissive = zm.f32x4s(0.0),
+        .roughness = 0.5,
+    });
+
+    try scene.objects.append(gpa, .{
+        .model = scene.cube,
+        .position = zm.f32x4(-8, 0, 0, 1),
+        .rotation = zm.qidentity(),
+        .scale = zm.f32x4(2, 10, 10, 0),
+        .prev_position = zm.f32x4(-8, 0, 0, 1),
+        .prev_rotation = zm.qidentity(),
+        .prev_scale = zm.f32x4(2, 10, 10, 0),
+        .angular_velocity = zm.qidentity(),
+        .diffuse = zm.f32x4(1.0, 0.0, 0.0, 1.0),
         .emissive = zm.f32x4s(0.0),
         .roughness = 0.5,
     });
