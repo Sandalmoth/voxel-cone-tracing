@@ -42,16 +42,58 @@ pub const GPURenderPass = c.SDL_GPURenderPass;
 pub const GPUDepthStencilTargetInfo = c.SDL_GPUDepthStencilTargetInfo;
 pub const GPUBufferBinding = c.SDL_GPUBufferBinding;
 pub const GPUTextureSamplerBinding = c.SDL_GPUTextureSamplerBinding;
+pub const FColor = c.SDL_FColor;
 
 pub fn getError() [*c]const u8 {
     return c.SDL_GetError();
 }
 
 pub fn acquireGPUCommandBuffer(device: *GPUDevice) !*GPUCommandBuffer {
-    return c.SDL_AcquireGPUCommandBuffer(device) orelse {
+    const command_buffer = c.SDL_AcquireGPUCommandBuffer(device) orelse {
         log.err("SDL_AcquireGPUCommandBuffer: {s}", .{getError()});
         return error.Sdl;
     };
+    // BUG BUG BUG
+    // this is a workaround for an error in SDL where a value is left uninitialized
+    // TODO TODO TODO
+    // remove when it gets fixed upstream
+    const CommandBufferCommonHeader = extern struct {
+        device: *anyopaque,
+        render_pass: extern struct {
+            command_buffer: *anyopaque,
+            in_progress: bool,
+            color_targets: [4]*anyopaque,
+            num_color_targets: u32,
+            depth_stencil_target: *anyopaque,
+            graphics_pipeline: *anyopaque,
+            vertex_sampler_bound: [16]bool,
+            vertex_storage_texture_bound: [8]bool,
+            vertex_storage_buffer_bound: [8]bool,
+            fragment_sampler_bound: [16]bool,
+            fragment_storage_texture_bound: [8]bool,
+            fragment_storage_buffer_bound: [8]bool,
+        },
+        computepass: extern struct {
+            command_buffer: *anyopaque,
+            in_progress: bool,
+            compute_pipeline: *anyopaque,
+            sampler_bound: [16]bool,
+            read_only_storage_texture_bound: [8]bool,
+            read_only_storage_buffer_bound: [8]bool,
+            read_write_storage_texture_bound: [8]bool,
+            read_write_storage_buffer_bound: [8]bool,
+        },
+        copy_pass: extern struct {
+            command_buffer: *anyopaque,
+            in_progress: bool,
+        },
+        swapchain_texture_acquired: bool,
+        submitted: bool,
+        ignore_render_pass_texture_validation: bool,
+    };
+    @as(*CommandBufferCommonHeader, @alignCast(@ptrCast(command_buffer)))
+        .ignore_render_pass_texture_validation = false;
+    return command_buffer;
 }
 
 pub fn submitGPUCommandBuffer(command_buffer: *GPUCommandBuffer) !void {
@@ -273,13 +315,16 @@ pub fn beginGPURenderPass(
     command_buffer: *GPUCommandBuffer,
     color_target_infos: []const GPUColorTargetInfo,
     depth_stencil_target_info: ?*const GPUDepthStencilTargetInfo,
-) *GPURenderPass {
+) !*GPURenderPass {
     return c.SDL_BeginGPURenderPass(
         command_buffer,
         if (color_target_infos.len == 0) null else &color_target_infos[0],
         @intCast(color_target_infos.len),
         depth_stencil_target_info,
-    ).?; // cannot fail according to the docs?
+    ) orelse {
+        log.err("SDL_BeginGPURenderPass: {s}", .{getError()});
+        return error.Sdl;
+    };
 }
 
 pub fn endGPURenderPass(render_pass: *GPURenderPass) void {

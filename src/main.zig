@@ -111,6 +111,10 @@ pub fn main() !void {
 
         const command_buffer = try sdl.acquireGPUCommandBuffer(device);
 
+        {
+            try draw_pass.begin(command_buffer);
+            defer draw_pass.end();
+        }
         try present_pass.run(window, command_buffer, draw_pass.color_target);
 
         try sdl.submitGPUCommandBuffer(command_buffer);
@@ -132,8 +136,9 @@ const DrawPass = struct {
     device: *sdl.GPUDevice,
     pipeline: *sdl.GPUGraphicsPipeline,
 
-    color_target: *sdl.c.SDL_GPUTexture,
-    depth_target: *sdl.c.SDL_GPUTexture,
+    draw_pass: ?*sdl.GPURenderPass,
+    color_target: *sdl.GPUTexture,
+    depth_target: *sdl.GPUTexture,
 
     fn init(
         gpa: std.mem.Allocator,
@@ -270,6 +275,7 @@ const DrawPass = struct {
         return .{
             .device = device,
             .pipeline = pipeline,
+            .draw_pass = null,
             .color_target = color_target,
             .depth_target = depth_target,
         };
@@ -280,6 +286,35 @@ const DrawPass = struct {
         sdl.releaseGPUTexture(pass.device, pass.color_target);
         sdl.releaseGPUGraphicsPipeline(pass.device, pass.pipeline);
         pass.* = undefined;
+    }
+
+    fn begin(
+        pass: *DrawPass,
+        command_buffer: *sdl.GPUCommandBuffer,
+    ) !void {
+        const clear_color: sdl.FColor = .{ .r = 0.05, .g = 0.05, .b = 0.05, .a = 1.0 };
+        const color_target_infos = [_]sdl.GPUColorTargetInfo{.{
+            .texture = pass.color_target,
+            .clear_color = clear_color,
+            .load_op = sdl.c.SDL_GPU_LOADOP_CLEAR,
+            .store_op = sdl.c.SDL_GPU_STOREOP_STORE,
+        }};
+        pass.draw_pass = try sdl.beginGPURenderPass(
+            command_buffer,
+            &color_target_infos,
+            &.{
+                .texture = pass.depth_target,
+                .clear_depth = 0,
+                .load_op = sdl.c.SDL_GPU_LOADOP_CLEAR,
+                .store_op = sdl.c.SDL_GPU_STOREOP_STORE,
+            },
+        );
+        sdl.bindGPUGraphicsPipeline(pass.draw_pass.?, pass.pipeline);
+    }
+
+    fn end(pass: *DrawPass) void {
+        sdl.endGPURenderPass(pass.draw_pass.?);
+        pass.draw_pass = null;
     }
 };
 
@@ -472,7 +507,7 @@ const PresentPass = struct {
         const color_target_infos = [_]sdl.GPUColorTargetInfo{
             .{ .texture = swapchain_texture, .load_op = sdl.c.SDL_GPU_LOADOP_DONT_CARE },
         };
-        const render_pass = sdl.beginGPURenderPass(
+        const render_pass = try sdl.beginGPURenderPass(
             command_buffer,
             &color_target_infos,
             null,
