@@ -209,10 +209,10 @@ pub fn init(gpa: std.mem.Allocator, device: *sdl.c.SDL_GPUDevice) !Scene {
     // left wall
     try scene.objects.append(gpa, .{
         .model = scene.cube,
-        .position = zm.f32x4(0, 0, -2, 1),
+        .position = zm.f32x4(0.01, 0, -2, 1),
         .rotation = zm.qidentity(),
         .scale = zm.f32x4(4, 4, 1, 0),
-        .prev_position = zm.f32x4(0, 0, -2, 1),
+        .prev_position = zm.f32x4(0.01, 0, -2, 1),
         .prev_rotation = zm.qidentity(),
         .prev_scale = zm.f32x4(4, 4, 1, 0),
         .angular_velocity = zm.qidentity(),
@@ -224,10 +224,10 @@ pub fn init(gpa: std.mem.Allocator, device: *sdl.c.SDL_GPUDevice) !Scene {
     // right wall
     try scene.objects.append(gpa, .{
         .model = scene.cube,
-        .position = zm.f32x4(0, 0, 2, 1),
+        .position = zm.f32x4(0.01, 0, 2, 1),
         .rotation = zm.qidentity(),
         .scale = zm.f32x4(4, 4, 1, 0),
-        .prev_position = zm.f32x4(0, 0, 2, 1),
+        .prev_position = zm.f32x4(0.01, 0, 2, 1),
         .prev_rotation = zm.qidentity(),
         .prev_scale = zm.f32x4(4, 4, 1, 0),
         .angular_velocity = zm.qidentity(),
