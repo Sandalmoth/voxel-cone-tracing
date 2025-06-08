@@ -1,3 +1,43 @@
 #version 460
 
+#define NIL 4294967295
+#define MIN_VOXEL_SIZE 0.109375
+
+struct Vertex {
+    vec3 position;
+    vec3 normal;  
+};
+
+struct TriangleData {
+    vec3 normal;
+    vec3 diffuse;
+    vec3 emissive;
+    float coverage;
+};
+
+layout(local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
+
+layout(r32ui, set = 1, binding = 0) uniform uimage3D u_triangle_cascades;
+
+layout(std430, set = 1, binding = 1) buffer TriangleBuffer {
+    TriangleData triangles[];
+} b_triangles;
+
+layout(std430, set = 0, binding = 0) readonly buffer VertexBuffer {
+    Vertex vertices[];
+} b_vertices;
+
+layout(std430, set = 0, binding = 1) readonly buffer IndexBuffer {
+    uint indices[];
+} b_indices;
+
+layout(std140, set = 2, binding = 0) uniform VoxelizeData {
+    mat4 model_matrix;
+    mat4 normal_matrix;
+    vec4 diffuse;
+    vec4 emissive;
+    float roughness;
+    uint n_triangles;
+} voxelize_data;
+
 void main() {}

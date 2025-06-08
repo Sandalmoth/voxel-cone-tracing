@@ -94,8 +94,8 @@ pub fn main() !void {
             while (it.next()) |name| {
                 const stats = perf_counter.stats(name);
                 log.info(
-                    "{s}\t{d:.3}\t({d:.3}-{d:.3})",
-                    .{ name, stats[2] * 1e-6, stats[0] * 1e-6, stats[4] * 1e-6 },
+                    "{s}\t{d:.3}\t[{d:.3}-{d:.3}] ({d:.1} FPS)",
+                    .{ name, stats[2] * 1e-6, stats[0] * 1e-6, stats[4] * 1e-6, 1e9 / stats[2] },
                 );
             }
             perf_print_timer.reset();
@@ -127,6 +127,15 @@ pub fn main() !void {
         const command_buffer = try sdl.acquireGPUCommandBuffer(device);
 
         {
+            try voxelize_pass.begin(command_buffer);
+            for (scene.objects.items) |object| voxelize_pass.voxelizeObject(
+                command_buffer,
+                object,
+                alpha,
+            );
+            try voxelize_pass.end(command_buffer);
+        }
+        {
             try draw_pass.begin(command_buffer);
             defer draw_pass.end();
             const vp_matrix = camera.vp(alpha);
@@ -146,12 +155,21 @@ pub fn main() !void {
 const VoxelizePass = struct {
 
     // std430
-    const TriangleInfo = struct {
+    const TriangleData = struct {
         // we don't need position, since it's implicit by the voxel
         normal: [3]f32 align(16),
         diffuse: [3]f32 align(16),
         emissive: [3]f32 align(16),
         coverage: f32,
+    };
+
+    const VoxelizationUBO = struct {
+        model_matrix: [16]f32 align(16),
+        normal_matrix: [16]f32 align(16),
+        diffuse: [4]f32 align(16),
+        emissive: [4]f32 align(16),
+        roughness: f32 align(16),
+        n_triangles: u32,
     };
 
     device: *sdl.GPUDevice,
@@ -236,8 +254,8 @@ const VoxelizePass = struct {
                 .code = bytes.ptr,
                 .entrypoint = "main",
                 .format = sdl.c.SDL_GPU_SHADERFORMAT_SPIRV,
-                .num_samplers = 0,
-                .num_readonly_storage_textures = 1,
+                .num_samplers = 1,
+                .num_readonly_storage_textures = 0,
                 .num_readonly_storage_buffers = 1,
                 .num_readwrite_storage_textures = 2,
                 .num_readwrite_storage_buffers = 0,
@@ -263,7 +281,7 @@ const VoxelizePass = struct {
         const triangle_buffer = try sdl.createGPUBuffer(device, &.{
             .usage = sdl.c.SDL_GPU_BUFFERUSAGE_COMPUTE_STORAGE_READ |
                 sdl.c.SDL_GPU_BUFFERUSAGE_COMPUTE_STORAGE_WRITE,
-            .size = 128 * 128 * @sizeOf(TriangleInfo),
+            .size = 128 * 128 * @sizeOf(TriangleData),
         });
         errdefer sdl.releaseGPUBuffer(device, triangle_buffer);
 
@@ -272,9 +290,9 @@ const VoxelizePass = struct {
             .format = sdl.c.SDL_GPU_TEXTUREFORMAT_R32_UINT,
             .usage = sdl.c.SDL_GPU_TEXTUREUSAGE_COMPUTE_STORAGE_SIMULTANEOUS_READ_WRITE |
                 sdl.c.SDL_GPU_TEXTUREUSAGE_SAMPLER,
-            .width = 64 * 8,
-            .height = 64 * 6,
-            .layer_count_or_depth = 64,
+            .width = 66 * 8,
+            .height = 66 * 6,
+            .layer_count_or_depth = 66,
             .num_levels = 1,
             .sample_count = sdl.c.SDL_GPU_SAMPLECOUNT_1,
         });
@@ -285,9 +303,9 @@ const VoxelizePass = struct {
             .format = sdl.c.SDL_GPU_TEXTUREFORMAT_R8_UNORM,
             .usage = sdl.c.SDL_GPU_TEXTUREUSAGE_COMPUTE_STORAGE_SIMULTANEOUS_READ_WRITE |
                 sdl.c.SDL_GPU_TEXTUREUSAGE_SAMPLER,
-            .width = 64 * 8,
-            .height = 64 * 6,
-            .layer_count_or_depth = 64,
+            .width = 66 * 8,
+            .height = 66 * 6,
+            .layer_count_or_depth = 66,
             .num_levels = 1,
             .sample_count = sdl.c.SDL_GPU_SAMPLECOUNT_1,
         });
@@ -298,9 +316,9 @@ const VoxelizePass = struct {
             .format = sdl.c.SDL_GPU_TEXTUREFORMAT_R16G16B16A16_FLOAT,
             .usage = sdl.c.SDL_GPU_TEXTUREUSAGE_COMPUTE_STORAGE_SIMULTANEOUS_READ_WRITE |
                 sdl.c.SDL_GPU_TEXTUREUSAGE_SAMPLER,
-            .width = 64 * 8,
-            .height = 64 * 6,
-            .layer_count_or_depth = 64,
+            .width = 66 * 8,
+            .height = 66 * 6,
+            .layer_count_or_depth = 66,
             .num_levels = 1,
             .sample_count = sdl.c.SDL_GPU_SAMPLECOUNT_1,
         });
@@ -330,6 +348,77 @@ const VoxelizePass = struct {
         sdl.releaseGPUComputePipeline(pass.device, pass.voxelization_pipeline);
         sdl.releaseGPUComputePipeline(pass.device, pass.clear_pipeline);
         pass.* = undefined;
+    }
+
+    fn begin(pass: *VoxelizePass, command_buffer: *sdl.GPUCommandBuffer) !void {
+        const clear_pass = try sdl.beginGPUComputePass(
+            command_buffer,
+            &.{.{ .texture = pass.triangle_cascades, .cycle = true }},
+            &.{},
+        );
+        sdl.bindGPUComputePipeline(clear_pass, pass.clear_pipeline);
+        sdl.dispatchGPUCompute(clear_pass, 132, 99, 17);
+        sdl.endGPUComputePass(clear_pass);
+
+        pass.voxelize_pass = try sdl.beginGPUComputePass(
+            command_buffer,
+            &.{.{ .texture = pass.triangle_cascades }},
+            &.{.{ .buffer = pass.triangle_buffer, .cycle = true }},
+        );
+        sdl.bindGPUComputePipeline(pass.voxelize_pass.?, pass.voxelization_pipeline);
+    }
+
+    fn voxelizeObject(
+        pass: *VoxelizePass,
+        command_buffer: *sdl.GPUCommandBuffer,
+        object: Scene.Object,
+        alpha: f32,
+    ) void {
+        sdl.bindGPUComputeStorageBuffers(pass.voxelize_pass.?, 0, &.{
+            object.model.vertex_buffer,
+            object.model.index_buffer,
+        });
+        const transform = object.transform(alpha);
+        sdl.pushGPUComputeUniformData(
+            command_buffer,
+            0,
+            &VoxelizationUBO{
+                .model_matrix = zm.matToArr(transform),
+                .normal_matrix = zm.matToArr(zm.transpose(zm.inverse(transform))),
+                .diffuse = object.diffuse,
+                .emissive = object.emissive,
+                .roughness = object.roughness,
+                .n_triangles = object.model.n_indices / 3,
+            },
+            @sizeOf(VoxelizationUBO),
+        );
+        sdl.dispatchGPUCompute(
+            pass.voxelize_pass.?,
+            (object.model.n_indices / 3 + 63) / 64,
+            1,
+            1,
+        );
+    }
+
+    fn end(pass: *VoxelizePass, command_buffer: *sdl.GPUCommandBuffer) !void {
+        sdl.endGPUComputePass(pass.voxelize_pass.?);
+        pass.voxelize_pass = null;
+
+        const shading_pass = try sdl.beginGPUComputePass(
+            command_buffer,
+            &.{
+                .{ .texture = pass.opacity_cascades, .cycle = true },
+                .{ .texture = pass.radiance_cascades, .cycle = true },
+            },
+            &.{},
+        );
+        sdl.bindGPUComputePipeline(shading_pass, pass.shading_pipeline);
+        sdl.bindGPUComputeStorageBuffers(shading_pass, 0, &.{pass.triangle_buffer});
+        sdl.bindGPUComputeSamplers(shading_pass, 0, &.{
+            .{ .texture = pass.triangle_cascades, .sampler = pass.sampler },
+        });
+        sdl.dispatchGPUCompute(shading_pass, 132, 99, 17);
+        sdl.endGPUComputePass(shading_pass);
     }
 };
 

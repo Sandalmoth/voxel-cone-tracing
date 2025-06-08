@@ -419,3 +419,74 @@ pub fn pushGPUFragmentUniformData(
 ) void {
     c.SDL_PushGPUFragmentUniformData(command_buffer, slot_index, data, length);
 }
+
+pub fn beginGPUComputePass(
+    command_buffer: *GPUCommandBuffer,
+    storage_texture_bindings: []const GPUStorageTextureReadWriteBinding,
+    storage_buffer_bindings: []const GPUStorageBufferReadWriteBinding,
+) !*GPUComputePass {
+    return c.SDL_BeginGPUComputePass(
+        command_buffer,
+        if (storage_texture_bindings.len == 0) null else &storage_texture_bindings[0],
+        @intCast(storage_texture_bindings.len),
+        if (storage_buffer_bindings.len == 0) null else &storage_buffer_bindings[0],
+        @intCast(storage_buffer_bindings.len),
+    ) orelse {
+        log.err("SDL_BeginGPURenderPass: {s}", .{getError()});
+        return error.Sdl;
+    };
+}
+
+pub fn bindGPUComputePipeline(pass: *GPUComputePass, pipeline: *GPUComputePipeline) void {
+    c.SDL_BindGPUComputePipeline(pass, pipeline);
+}
+
+pub fn dispatchGPUCompute(
+    pass: *GPUComputePass,
+    groupcount_x: u32,
+    groupcount_y: u32,
+    groupcount_z: u32,
+) void {
+    c.SDL_DispatchGPUCompute(pass, groupcount_x, groupcount_y, groupcount_z);
+}
+
+pub fn endGPUComputePass(pass: *GPUComputePass) void {
+    c.SDL_EndGPUComputePass(pass);
+}
+
+pub fn bindGPUComputeStorageBuffers(
+    pass: *GPUComputePass,
+    first_slot: u32,
+    bindings: []const *GPUBuffer,
+) void {
+    std.debug.assert(bindings.len > 0);
+    c.SDL_BindGPUComputeStorageBuffers(
+        pass,
+        first_slot,
+        &bindings[0],
+        @intCast(bindings.len),
+    );
+}
+
+pub fn pushGPUComputeUniformData(
+    command_buffer: *GPUCommandBuffer,
+    slot_index: u32,
+    data: *const anyopaque,
+    length: u32,
+) void {
+    c.SDL_PushGPUComputeUniformData(command_buffer, slot_index, data, length);
+}
+
+pub fn bindGPUComputeSamplers(
+    pass: *GPUComputePass,
+    first_slot: u32,
+    bindings: []const GPUTextureSamplerBinding,
+) void {
+    std.debug.assert(bindings.len > 0);
+    c.SDL_BindGPUComputeSamplers(
+        pass,
+        first_slot,
+        &bindings[0],
+        @intCast(bindings.len),
+    );
+}

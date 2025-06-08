@@ -1,3 +1,14 @@
 #version 460
 
-void main() {}
+#define NIL 4294967295
+
+layout(local_size_x = 4, local_size_y = 4, local_size_z = 4) in;
+
+layout(r32ui, set = 1, binding = 0) uniform uimage3D u_triangle_cascades;
+
+void main() {
+    if (gl_GlobalInvocationID.x >= 528 ||
+        gl_GlobalInvocationID.y >= 396 ||
+        gl_GlobalInvocationID.z >= 66) return;
+    imageStore(u_triangle_cascades, ivec3(gl_GlobalInvocationID), uvec4(NIL));
+}
