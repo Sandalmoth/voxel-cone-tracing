@@ -64,6 +64,17 @@ pub fn main() !void {
     var present_pass = try PresentPass.init(gpa, device, window);
     defer present_pass.deinit();
 
+    var camera = Camera{
+        .pos = zm.f32x4(-4.0, 0.0, 0.0, 1.0),
+        .yaw = 0.0,
+        .pitch = 0.0,
+        .prev_pos = zm.f32x4(-4.0, 0.0, 0.0, 1.0),
+        .prev_yaw = 0.0,
+        .prev_pitch = 0.0,
+    };
+    var scene = try Scene.init(gpa, device);
+    defer scene.deinit(gpa, device);
+
     var frame_timer = try std.time.Timer.start();
     var lag: u64 = 0;
     var time: f64 = 0.0;
@@ -101,19 +112,28 @@ pub fn main() !void {
         }
 
         while (lag >= tick_ns) {
+            camera.update(&input);
+            for (scene.objects.items) |*object| object.update(tick);
+
             input.decay();
             lag -= tick_ns;
             time += 1.0 / @as(f64, @floatFromInt(ticks_per_second));
         }
 
         const alpha = @as(f32, @floatFromInt(lag)) / @as(f32, @floatFromInt(tick_ns));
-        _ = alpha;
 
         const command_buffer = try sdl.acquireGPUCommandBuffer(device);
 
         {
             try draw_pass.begin(command_buffer);
             defer draw_pass.end();
+            const vp_matrix = camera.vp(alpha);
+            for (scene.objects.items) |object| draw_pass.drawObject(
+                command_buffer,
+                object,
+                vp_matrix,
+                alpha,
+            );
         }
         try present_pass.run(window, command_buffer, draw_pass.color_target);
 
@@ -185,7 +205,7 @@ const DrawPass = struct {
                 .num_samplers = 0,
                 .num_storage_textures = 0,
                 .num_storage_buffers = 0,
-                .num_uniform_buffers = 0,
+                .num_uniform_buffers = 1,
             });
         };
         defer sdl.releaseGPUShader(device, fragment_shader);
@@ -310,6 +330,42 @@ const DrawPass = struct {
             },
         );
         sdl.bindGPUGraphicsPipeline(pass.draw_pass.?, pass.pipeline);
+    }
+
+    fn drawObject(
+        pass: *DrawPass,
+        command_buffer: *sdl.GPUCommandBuffer,
+        object: Scene.Object,
+        camera_vp: zm.Mat,
+        alpha: f32,
+    ) void {
+        const vertex_buffers = [_]sdl.c.SDL_GPUBufferBinding{
+            .{ .buffer = object.model.vertex_buffer, .offset = 0 },
+        };
+        sdl.bindGPUVertexBuffers(
+            pass.draw_pass.?,
+            0,
+            &vertex_buffers,
+        );
+        sdl.bindGPUIndexBuffer(
+            pass.draw_pass.?,
+            &.{ .buffer = object.model.index_buffer, .offset = 0 },
+            sdl.c.SDL_GPU_INDEXELEMENTSIZE_32BIT,
+        );
+        const model = object.transform(alpha);
+        const mvp = zm.mul(model, camera_vp);
+        const normal = zm.transpose(zm.inverse(model));
+        sdl.pushGPUVertexUniformData(command_buffer, 0, &VertexUBO{
+            .mvp_matrix = zm.matToArr(mvp),
+            .normal_matrix = zm.matToArr(normal),
+            .model_matrix = zm.matToArr(model),
+        }, @sizeOf(VertexUBO));
+        sdl.pushGPUFragmentUniformData(command_buffer, 0, &FragmentUBO{
+            .diffuse = object.diffuse,
+            .emissive = object.emissive,
+            .roughness = object.roughness,
+        }, @sizeOf(FragmentUBO));
+        sdl.drawGPUIndexedPrimitives(pass.draw_pass.?, object.model.n_indices, 1, 0, 0, 0);
     }
 
     fn end(pass: *DrawPass) void {
@@ -525,3 +581,96 @@ const PresentPass = struct {
         sdl.endGPURenderPass(render_pass);
     }
 };
+
+const Camera = struct {
+    pos: zm.Vec,
+    yaw: f32,
+    pitch: f32,
+
+    prev_pos: zm.Vec,
+    prev_yaw: f32,
+    prev_pitch: f32,
+
+    const up = zm.f32x4(0.0, 1.0, 0.0, 0.0);
+    const mouse_sensitivity = 0.3;
+    const move_speed = 10;
+
+    fn update(camera: *Camera, input: *Input) void {
+        // mouse-look camera
+        camera.prev_pos = camera.pos;
+        camera.prev_yaw = camera.yaw;
+        camera.prev_pitch = camera.pitch;
+
+        camera.yaw += input.mouse_delta[0] * mouse_sensitivity * tick;
+        camera.pitch -= input.mouse_delta[1] * mouse_sensitivity * tick;
+        camera.pitch = std.math.clamp(camera.pitch, -0.49 * std.math.pi, 0.49 * std.math.pi);
+
+        const forward = zm.f32x4(
+            @cos(camera.yaw),
+            0.0,
+            @sin(camera.yaw),
+            0.0,
+        ) * zm.f32x4s(move_speed * tick);
+
+        const right = zm.f32x4(
+            @cos(camera.yaw + 0.5 * std.math.pi),
+            0.0,
+            @sin(camera.yaw + 0.5 * std.math.pi),
+            0.0,
+        ) * zm.f32x4s(move_speed * tick);
+
+        if (input.peek(.forward).held) camera.pos += forward;
+        if (input.peek(.backward).held) camera.pos -= forward;
+        if (input.peek(.right).held) camera.pos += right;
+        if (input.peek(.left).held) camera.pos -= right;
+        if (input.peek(.up).held) camera.pos += up * zm.f32x4s(move_speed * tick);
+        if (input.peek(.down).held) camera.pos -= up * zm.f32x4s(move_speed * tick);
+    }
+
+    fn v(camera: Camera, alpha: f32) zm.Mat {
+        const pos = zm.lerp(camera.prev_pos, camera.pos, alpha);
+        const yaw = (1 - alpha) * camera.prev_yaw + alpha * camera.yaw;
+        const pitch = (1 - alpha) * camera.prev_pitch + alpha * camera.pitch;
+
+        const facing = zm.normalize3(zm.f32x4(
+            @cos(pitch) * @cos(yaw),
+            @sin(pitch),
+            @cos(pitch) * @sin(yaw),
+            0.0,
+        ));
+
+        return zm.lookAtRh(pos, pos + facing, up);
+    }
+
+    fn p(camera: Camera, alpha: f32) zm.Mat {
+        _ = camera;
+        _ = alpha;
+        return perspectiveFovRhInv(std.math.degreesToRadians(54), 16.0 / 9.0, 0.1, 1e5);
+    }
+
+    fn vp(camera: Camera, alpha: f32) zm.Mat {
+        return zm.mul(
+            camera.v(alpha),
+            camera.p(alpha),
+        );
+    }
+};
+
+pub fn perspectiveFovRhInv(fovy: f32, aspect: f32, near: f32, far: f32) zm.Mat {
+    const scfov = zm.sincos(0.5 * fovy);
+
+    std.debug.assert(near > 0.0 and far > 0.0);
+    std.debug.assert(!std.math.approxEqAbs(f32, scfov[0], 0.0, 0.001));
+    std.debug.assert(!std.math.approxEqAbs(f32, far, near, 0.001));
+    std.debug.assert(!std.math.approxEqAbs(f32, aspect, 0.0, 0.01));
+
+    const h = scfov[1] / scfov[0];
+    const w = h / aspect;
+    const r = far / (near - far);
+    return .{
+        zm.f32x4(w, 0.0, 0.0, 0.0),
+        zm.f32x4(0.0, h, 0.0, 0.0),
+        zm.f32x4(0.0, 0.0, -r - 1.0, -1.0),
+        zm.f32x4(0.0, 0.0, -r * near, 0.0),
+    };
+}

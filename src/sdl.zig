@@ -375,3 +375,47 @@ pub fn drawGPUPrimitives(
 ) void {
     c.SDL_DrawGPUPrimitives(pass, num_vertices, num_instances, first_vertex, first_instance);
 }
+
+pub fn drawGPUIndexedPrimitives(
+    pass: *GPURenderPass,
+    num_indices: u32,
+    num_instances: u32,
+    first_index: u32,
+    vertex_offset: i32,
+    first_instance: u32,
+) void {
+    c.SDL_DrawGPUIndexedPrimitives(
+        pass,
+        num_indices,
+        num_instances,
+        first_index,
+        vertex_offset,
+        first_instance,
+    );
+}
+
+pub fn bindGPUIndexBuffer(
+    pass: *GPURenderPass,
+    binding: *const GPUBufferBinding,
+    index_element_size: c_uint,
+) void {
+    c.SDL_BindGPUIndexBuffer(pass, binding, index_element_size);
+}
+
+pub fn pushGPUVertexUniformData(
+    command_buffer: *GPUCommandBuffer,
+    slot_index: u32,
+    data: *const anyopaque,
+    length: u32,
+) void {
+    c.SDL_PushGPUVertexUniformData(command_buffer, slot_index, data, length);
+}
+
+pub fn pushGPUFragmentUniformData(
+    command_buffer: *GPUCommandBuffer,
+    slot_index: u32,
+    data: *const anyopaque,
+    length: u32,
+) void {
+    c.SDL_PushGPUFragmentUniformData(command_buffer, slot_index, data, length);
+}
