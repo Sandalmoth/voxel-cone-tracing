@@ -9,19 +9,38 @@ struct Vertex {
 };
 
 struct TriangleData {
-    vec3 normal;
-    vec3 diffuse;
+    vec3 position0;
+    vec3 position1;
+    vec3 position2;
+    vec3 normal0;
+    vec3 normal1;
+    vec3 normal2;
+    vec4 diffuse;
     vec3 emissive;
     float coverage;
+};
+
+struct TriangleNode {
+    uint ix_triangle;
+    uint next;
 };
 
 layout(local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
 
 layout(r32ui, set = 1, binding = 0) uniform uimage3D u_triangle_cascades;
 
-layout(std430, set = 1, binding = 1) buffer TriangleBuffer {
+layout(std430, set = 1, binding = 1) buffer TriangleCounterBuffer {
+    uint n_triangles;
+    uint n_nodes;
+} b_triangle_counters;
+
+layout(std430, set = 1, binding = 2) buffer TriangleDataBuffer {
     TriangleData triangles[];
-} b_triangles;
+} b_triangle_data;
+
+layout(std430, set = 1, binding = 3) buffer TriangleListBuffer {
+    TriangleNode nodes[];
+} b_triangle_nodes;
 
 layout(std430, set = 0, binding = 0) readonly buffer VertexBuffer {
     Vertex vertices[];
@@ -40,4 +59,130 @@ layout(std140, set = 2, binding = 0) uniform VoxelizeData {
     uint n_triangles;
 } voxelize_data;
 
-void main() {}
+float voxelSize(uint cascade) {
+    return MIN_VOXEL_SIZE * float(1 << cascade);
+}
+
+bool intersectVoxelTriangle2(
+    vec3 low, vec3 ext, vec3 p0, vec3 p1, vec3 p2,
+    vec3 n, vec3 c,
+    vec2 ne0xy, vec2 ne1xy, vec2 ne2xy, float de0xy, float de1xy, float de2xy,
+    vec2 ne0yz, vec2 ne1yz, vec2 ne2yz, float de0yz, float de1yz, float de2yz,
+    vec2 ne0zx, vec2 ne1zx, vec2 ne2zx, float de0zx, float de1zx, float de2zx
+) {
+    // https://omnigoat.github.io/2015/03/09/box-triangle-intersection/
+    float d1 = dot(n, low + c - p0);
+    float d2 = dot(n, low + ext - c - p0);
+    if (d1 * d2 > 0.0) return false;
+
+    if (dot(ne0xy, low.xy) + de0xy < 0.0) return false;
+    if (dot(ne1xy, low.xy) + de1xy < 0.0) return false;
+    if (dot(ne2xy, low.xy) + de2xy < 0.0) return false;
+    if (dot(ne0yz, low.yz) + de0yz < 0.0) return false;
+    if (dot(ne1yz, low.yz) + de1yz < 0.0) return false;
+    if (dot(ne2yz, low.yz) + de2yz < 0.0) return false;
+    if (dot(ne0zx, low.zx) + de0zx < 0.0) return false;
+    if (dot(ne1zx, low.zx) + de1zx < 0.0) return false;
+    if (dot(ne2zx, low.zx) + de2zx < 0.0) return false;
+
+    return true;
+}
+
+float triangleArea(vec3 p0, vec3 p1, vec3 p2) {
+    return 0.5 * length(cross(p1 - p0, p2 - p0));
+}
+
+void main() {
+    uint ix_src_triangle = gl_GlobalInvocationID.x;
+    if (ix_src_triangle >= voxelize_data.n_triangles) return;
+    uint ix_cascade = gl_GlobalInvocationID.y;
+
+    uint first_index = 3 * ix_src_triangle;
+    uint i0 = b_indices.indices[first_index + 0];
+    uint i1 = b_indices.indices[first_index + 1];
+    uint i2 = b_indices.indices[first_index + 2];
+
+    vec3 p0_model = b_vertices.vertices[i0].position;
+    vec3 p1_model = b_vertices.vertices[i1].position;
+    vec3 p2_model = b_vertices.vertices[i2].position;
+
+    vec3 p0 = (voxelize_data.model_matrix * vec4(p0_model, 1.0)).xyz;
+    vec3 p1 = (voxelize_data.model_matrix * vec4(p1_model, 1.0)).xyz;
+    vec3 p2 = (voxelize_data.model_matrix * vec4(p2_model, 1.0)).xyz;
+    vec3 n0 = normalize(mat3(voxelize_data.normal_matrix) * b_vertices.vertices[i0].normal);
+    vec3 n1 = normalize(mat3(voxelize_data.normal_matrix) * b_vertices.vertices[i1].normal);
+    vec3 n2 = normalize(mat3(voxelize_data.normal_matrix) * b_vertices.vertices[i2].normal);
+
+    // store triangle info
+    uint ix_triangle_data = atomicAdd(b_triangle_counters.n_triangles, 1);
+    b_triangle_data.triangles[ix_triangle_data] = TriangleData(
+        p0, p1, p2,
+        n0, n1, n2,
+        voxelize_data.diffuse, voxelize_data.emissive.rgb, voxelize_data.roughness
+    );
+
+    // setup for the intersection
+    float voxel_size = voxelSize(ix_cascade);
+    vec3 ext = vec3(voxel_size, voxel_size, voxel_size);
+    vec3 n = normalize(cross(p1 - p0, p2 - p0));
+    vec3 c = vec3((n.x > 0.0) ? ext.x : 0.0, (n.y > 0.0) ? ext.y : 0.0, (n.z > 0.0) ? ext.z : 0.0);
+    vec3 e0 = p1 - p0;
+    vec3 e1 = p2 - p1;
+    vec3 e2 = p0 - p2;
+    float xym = sign(n.z);
+    float yzm = sign(n.x);
+    float zxm = sign(n.y);
+    vec2 ne0xy = vec2(-e0.y, e0.x) * xym;
+    vec2 ne1xy = vec2(-e1.y, e1.x) * xym;
+    vec2 ne2xy = vec2(-e2.y, e2.x) * xym;
+    vec2 ne0yz = vec2(-e0.z, e0.y) * yzm;
+    vec2 ne1yz = vec2(-e1.z, e1.y) * yzm;
+    vec2 ne2yz = vec2(-e2.z, e2.y) * yzm;
+    vec2 ne0zx = vec2(-e0.x, e0.z) * zxm;
+    vec2 ne1zx = vec2(-e1.x, e1.z) * zxm;
+    vec2 ne2zx = vec2(-e2.x, e2.z) * zxm;
+    float de0xy = -dot(ne0xy, p0.xy) + max(0.0, ext.x * ne0xy.x) + max(0.0, ext.y * ne0xy.y);
+    float de1xy = -dot(ne1xy, p1.xy) + max(0.0, ext.x * ne1xy.x) + max(0.0, ext.y * ne1xy.y);
+    float de2xy = -dot(ne2xy, p2.xy) + max(0.0, ext.x * ne2xy.x) + max(0.0, ext.y * ne2xy.y);
+    float de0yz = -dot(ne0yz, p0.yz) + max(0.0, ext.y * ne0yz.x) + max(0.0, ext.z * ne0yz.y);
+    float de1yz = -dot(ne1yz, p1.yz) + max(0.0, ext.y * ne1yz.x) + max(0.0, ext.z * ne1yz.y);
+    float de2yz = -dot(ne2yz, p2.yz) + max(0.0, ext.y * ne2yz.x) + max(0.0, ext.z * ne2yz.y);
+    float de0zx = -dot(ne0zx, p0.zx) + max(0.0, ext.z * ne0zx.x) + max(0.0, ext.x * ne0zx.y);
+    float de1zx = -dot(ne1zx, p1.zx) + max(0.0, ext.z * ne1zx.x) + max(0.0, ext.x * ne1zx.y);
+    float de2zx = -dot(ne2zx, p2.zx) + max(0.0, ext.z * ne2zx.x) + max(0.0, ext.x * ne2zx.y);
+    
+    // iterate over the triangle aabb and test for intersection with each voxel
+    vec3 lower_bound = min(min(p0, p1), p2);
+    vec3 upper_bound = max(max(p0, p1), p2);
+    ivec3 voxel_lower_bound = ivec3(floor(lower_bound / voxel_size));
+    ivec3 voxel_upper_bound = ivec3(floor(upper_bound / voxel_size));
+    for (int x = voxel_lower_bound.x; x <= voxel_upper_bound.x; ++x) {
+        if (x < -33 || x >= 33) continue;
+        for (int y = voxel_lower_bound.y; y <= voxel_upper_bound.y; ++y) {
+            if (y < -33 || y >= 33) continue;
+            for (int z = voxel_lower_bound.z; z <= voxel_upper_bound.z; ++z) {
+                if (z < -33 || z >= 33) continue;
+
+                // prepend to voxel linked list
+                ivec3 voxel_pos = ivec3(x + 64 * ix_cascade, y, z) + 32;
+                uint new_head = atomicAdd(b_triangle_counters.n_nodes, 1);
+                uint current_head;
+                uint original_head;
+                do {
+                    current_head = imageLoad(u_triangle_cascades, voxel_pos).r;
+                    b_triangle_nodes.nodes[new_head] = TriangleNode(
+                        ix_triangle_data,
+                        current_head
+                    );
+                    original_head = imageAtomicCompSwap(
+                        u_triangle_cascades,
+                        voxel_pos,
+                        current_head,
+                        new_head
+                    );
+                } while (original_head != current_head);
+    
+            }
+        }
+    }
+}
