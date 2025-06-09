@@ -35,8 +35,6 @@ pub fn main() !void {
     );
     defer sdl.destroyWindow(window);
 
-    try sdl.setWindowRelativeMouseMode(window, true);
-
     const device = try sdl.createGPUDevice(
         sdl.c.SDL_GPU_SHADERFORMAT_SPIRV,
         true,
@@ -45,6 +43,29 @@ pub fn main() !void {
     defer sdl.destroyGPUDevice(device);
 
     try sdl.claimWindowForGPUDevice(device, window);
+
+    try sdl.setWindowRelativeMouseMode(window, true);
+    if (sdl.windowSupportsGPUPresentMode(device, window, sdl.c.SDL_GPU_PRESENTMODE_MAILBOX)) {
+        log.info("Swapchain composition set to mailbox", .{});
+        try sdl.setGPUSwapchainParameters(
+            device,
+            window,
+            sdl.c.SDL_GPU_SWAPCHAINCOMPOSITION_SDR,
+            sdl.c.SDL_GPU_PRESENTMODE_MAILBOX,
+        );
+    } else if (sdl.windowSupportsGPUPresentMode(
+        device,
+        window,
+        sdl.c.SDL_GPU_PRESENTMODE_IMMEDIATE,
+    )) {
+        log.info("Swapchain composition set to immediate", .{});
+        try sdl.setGPUSwapchainParameters(
+            device,
+            window,
+            sdl.c.SDL_GPU_SWAPCHAINCOMPOSITION_SDR,
+            sdl.c.SDL_GPU_PRESENTMODE_IMMEDIATE,
+        );
+    }
 
     var input = Input.init(gpa);
     try input.map.put(.{ .keyboard = sdl.c.SDL_SCANCODE_W }, .forward);
@@ -96,7 +117,7 @@ pub fn main() !void {
             while (it.next()) |name| {
                 const stats = perf_counter.stats(name);
                 log.info(
-                    "{s}\t{d:.3}\t[{d:.3}-{d:.3}] ({} FPS)",
+                    "{s}:\t{d:.3}\t[{d:.3}-{d:.3}]\t({} FPS)",
                     .{ name, stats[2] * 1e-6, stats[0] * 1e-6, stats[4] * 1e-6, frame_counter },
                 );
             }
@@ -276,7 +297,7 @@ const VoxelizePass = struct {
         const triangle_counter_buffer = try sdl.createGPUBuffer(device, &.{
             .usage = sdl.c.SDL_GPU_BUFFERUSAGE_COMPUTE_STORAGE_READ |
                 sdl.c.SDL_GPU_BUFFERUSAGE_COMPUTE_STORAGE_WRITE,
-            .size = 8,
+            .size = 4,
         });
         errdefer sdl.releaseGPUBuffer(device, triangle_counter_buffer);
 
@@ -396,6 +417,7 @@ const VoxelizePass = struct {
             object.model.index_buffer,
         });
         const transform = object.transform(alpha);
+        const n_triangles: u32 = object.model.n_indices / 3;
         sdl.pushGPUComputeUniformData(
             command_buffer,
             0,
@@ -405,13 +427,13 @@ const VoxelizePass = struct {
                 .diffuse = object.diffuse,
                 .emissive = object.emissive,
                 .roughness = object.roughness,
-                .n_triangles = object.model.n_indices / 3,
+                .n_triangles = n_triangles,
             },
             @sizeOf(VoxelizationUBO),
         );
         sdl.dispatchGPUCompute(
             pass.voxelize_pass.?,
-            (object.model.n_indices / 3 + 63) / 64,
+            (n_triangles + 63) / 64,
             8,
             1,
         );

@@ -8,7 +8,6 @@ layout(r32ui, set = 1, binding = 0) uniform uimage3D u_triangle_cascades;
 
 layout(std430, set = 1, binding = 1) buffer TriangleDataBuffer {
     uint n_triangles;
-    uint n_nodes;
 } b_triangle_counters;
 
 void main() {
@@ -21,6 +20,5 @@ void main() {
         gl_GlobalInvocationID.y == 0 &&
         gl_GlobalInvocationID.z == 0) {
         b_triangle_counters.n_triangles = 0;        
-        b_triangle_counters.n_nodes = 0;        
     }
 }

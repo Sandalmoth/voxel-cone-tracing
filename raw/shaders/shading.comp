@@ -3,6 +3,15 @@
 layout(local_size_x = 4, local_size_y = 4, local_size_z = 4) in;
 
 layout(r16, set = 1, binding = 0) uniform image3D u_opacity_cascades;
+
 layout(rgba16f, set = 1, binding = 1) uniform image3D u_radiance_cascades;
+
+layout(std430, set = 1, binding = 2) readonly buffer TriangleDataBuffer {
+    TriangleData triangles[];
+} b_triangle_data;
+
+layout(std430, set = 1, binding = 3) readonly buffer TriangleListBuffer {
+    TriangleIntersection isects[];
+} b_triangle_isects;
 
 void main() {}

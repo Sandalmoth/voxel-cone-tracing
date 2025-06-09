@@ -432,7 +432,7 @@ pub fn beginGPUComputePass(
         if (storage_buffer_bindings.len == 0) null else &storage_buffer_bindings[0],
         @intCast(storage_buffer_bindings.len),
     ) orelse {
-        log.err("SDL_BeginGPURenderPass: {s}", .{getError()});
+        log.err("SDL_BeginGPUComputePass: {s}", .{getError()});
         return error.Sdl;
     };
 }
@@ -489,4 +489,29 @@ pub fn bindGPUComputeSamplers(
         &bindings[0],
         @intCast(bindings.len),
     );
+}
+
+pub fn windowSupportsGPUPresentMode(
+    device: *GPUDevice,
+    window: *Window,
+    present_mode: c_uint,
+) bool {
+    return c.SDL_WindowSupportsGPUPresentMode(device, window, present_mode);
+}
+
+pub fn setGPUSwapchainParameters(
+    device: *GPUDevice,
+    window: *Window,
+    swapchain_composition: c_uint,
+    present_mode: c_uint,
+) !void {
+    if (!c.SDL_SetGPUSwapchainParameters(
+        device,
+        window,
+        swapchain_composition,
+        present_mode,
+    )) {
+        log.err("SDL_SetGPUSwapchainParameters: {s}", .{getError()});
+        return error.Sdl;
+    }
 }
