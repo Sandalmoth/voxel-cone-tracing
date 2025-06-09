@@ -191,13 +191,20 @@ const VoxelizePass = struct {
     voxelization_pipeline: *sdl.GPUComputePipeline,
     shading_pipeline: *sdl.GPUComputePipeline,
 
+    sort_dispatch_pipeline: *sdl.GPUComputePipeline,
+    sort_histogram_pipeline: *sdl.GPUComputePipeline,
+    sort_scan_pipeline: *sdl.GPUComputePipeline,
+    sort_scatter_pipeline: *sdl.GPUComputePipeline,
+    sort_dispatch_buffer: *sdl.GPUBuffer,
+    sort_histogram_buffer: *sdl.GPUBuffer,
+
     sampler: *sdl.GPUSampler,
     voxelize_pass: ?*sdl.GPUComputePass,
 
     triangle_counter_buffer: *sdl.GPUBuffer,
     triangle_data_buffer: *sdl.GPUBuffer,
     triangle_list_buffer: *sdl.GPUBuffer,
-    triangle_cascades: *sdl.GPUTexture,
+
     opacity_cascades: *sdl.GPUTexture,
     radiance_cascades: *sdl.GPUTexture,
 
@@ -219,12 +226,12 @@ const VoxelizePass = struct {
                 .num_samplers = 0,
                 .num_readonly_storage_textures = 0,
                 .num_readonly_storage_buffers = 0,
-                .num_readwrite_storage_textures = 1,
+                .num_readwrite_storage_textures = 0,
                 .num_readwrite_storage_buffers = 1,
                 .num_uniform_buffers = 0,
-                .threadcount_x = 4,
-                .threadcount_y = 4,
-                .threadcount_z = 4,
+                .threadcount_x = 1,
+                .threadcount_y = 1,
+                .threadcount_z = 1,
             });
         };
         errdefer sdl.releaseGPUComputePipeline(device, clear_pipeline);
@@ -246,7 +253,7 @@ const VoxelizePass = struct {
                 .num_samplers = 0,
                 .num_readonly_storage_textures = 0,
                 .num_readonly_storage_buffers = 2,
-                .num_readwrite_storage_textures = 1,
+                .num_readwrite_storage_textures = 0,
                 .num_readwrite_storage_buffers = 3,
                 .num_uniform_buffers = 1,
                 .threadcount_x = 64,
@@ -270,7 +277,7 @@ const VoxelizePass = struct {
                 .code = bytes.ptr,
                 .entrypoint = "main",
                 .format = sdl.c.SDL_GPU_SHADERFORMAT_SPIRV,
-                .num_samplers = 1,
+                .num_samplers = 0,
                 .num_readonly_storage_textures = 0,
                 .num_readonly_storage_buffers = 2,
                 .num_readwrite_storage_textures = 2,
@@ -283,6 +290,114 @@ const VoxelizePass = struct {
         };
         errdefer sdl.releaseGPUComputePipeline(device, shading_pipeline);
 
+        const sort_dispatch_pipeline = blk: {
+            const file = try std.fs.cwd().openFile(
+                "data/shaders/sort_dispatch.comp.spv",
+                .{ .mode = .read_only },
+            );
+            defer file.close();
+            const bytes = try file.reader().readAllAlloc(gpa, 1_000_000);
+            defer gpa.free(bytes);
+
+            break :blk try sdl.createGPUComputePipeline(device, &.{
+                .code_size = bytes.len,
+                .code = bytes.ptr,
+                .entrypoint = "main",
+                .format = sdl.c.SDL_GPU_SHADERFORMAT_SPIRV,
+                .num_samplers = 0,
+                .num_readonly_storage_textures = 0,
+                .num_readonly_storage_buffers = 1,
+                .num_readwrite_storage_textures = 0,
+                .num_readwrite_storage_buffers = 1,
+                .num_uniform_buffers = 0,
+                .threadcount_x = 1,
+                .threadcount_y = 1,
+                .threadcount_z = 1,
+            });
+        };
+        errdefer sdl.releaseGPUComputePipeline(device, sort_dispatch_pipeline);
+
+        const sort_histogram_pipeline = blk: {
+            const file = try std.fs.cwd().openFile(
+                "data/shaders/sort_histogram.comp.spv",
+                .{ .mode = .read_only },
+            );
+            defer file.close();
+            const bytes = try file.reader().readAllAlloc(gpa, 1_000_000);
+            defer gpa.free(bytes);
+
+            break :blk try sdl.createGPUComputePipeline(device, &.{
+                .code_size = bytes.len,
+                .code = bytes.ptr,
+                .entrypoint = "main",
+                .format = sdl.c.SDL_GPU_SHADERFORMAT_SPIRV,
+                .num_samplers = 0,
+                .num_readonly_storage_textures = 0,
+                .num_readonly_storage_buffers = 1,
+                .num_readwrite_storage_textures = 0,
+                .num_readwrite_storage_buffers = 1,
+                .num_uniform_buffers = 1,
+                .threadcount_x = 256,
+                .threadcount_y = 1,
+                .threadcount_z = 1,
+            });
+        };
+        errdefer sdl.releaseGPUComputePipeline(device, sort_histogram_pipeline);
+
+        const sort_scan_pipeline = blk: {
+            const file = try std.fs.cwd().openFile(
+                "data/shaders/sort_scan.comp.spv",
+                .{ .mode = .read_only },
+            );
+            defer file.close();
+            const bytes = try file.reader().readAllAlloc(gpa, 1_000_000);
+            defer gpa.free(bytes);
+
+            break :blk try sdl.createGPUComputePipeline(device, &.{
+                .code_size = bytes.len,
+                .code = bytes.ptr,
+                .entrypoint = "main",
+                .format = sdl.c.SDL_GPU_SHADERFORMAT_SPIRV,
+                .num_samplers = 0,
+                .num_readonly_storage_textures = 0,
+                .num_readonly_storage_buffers = 1,
+                .num_readwrite_storage_textures = 0,
+                .num_readwrite_storage_buffers = 1,
+                .num_uniform_buffers = 0,
+                .threadcount_x = 256,
+                .threadcount_y = 1,
+                .threadcount_z = 1,
+            });
+        };
+        errdefer sdl.releaseGPUComputePipeline(device, sort_scan_pipeline);
+
+        const sort_scatter_pipeline = blk: {
+            const file = try std.fs.cwd().openFile(
+                "data/shaders/sort_scatter.comp.spv",
+                .{ .mode = .read_only },
+            );
+            defer file.close();
+            const bytes = try file.reader().readAllAlloc(gpa, 1_000_000);
+            defer gpa.free(bytes);
+
+            break :blk try sdl.createGPUComputePipeline(device, &.{
+                .code_size = bytes.len,
+                .code = bytes.ptr,
+                .entrypoint = "main",
+                .format = sdl.c.SDL_GPU_SHADERFORMAT_SPIRV,
+                .num_samplers = 0,
+                .num_readonly_storage_textures = 0,
+                .num_readonly_storage_buffers = 0,
+                .num_readwrite_storage_textures = 1,
+                .num_readwrite_storage_buffers = 0,
+                .num_uniform_buffers = 0,
+                .threadcount_x = 256,
+                .threadcount_y = 1,
+                .threadcount_z = 1,
+            });
+        };
+        errdefer sdl.releaseGPUComputePipeline(device, sort_scatter_pipeline);
+
         const sampler = sdl.c.SDL_CreateGPUSampler(device, &.{
             .min_filter = sdl.c.SDL_GPU_FILTER_LINEAR,
             .mag_filter = sdl.c.SDL_GPU_FILTER_LINEAR,
@@ -293,6 +408,20 @@ const VoxelizePass = struct {
             return error.Sdl;
         };
         errdefer sdl.c.SDL_ReleaseGPUSampler(device, sampler);
+
+        const sort_dispatch_buffer = try sdl.createGPUBuffer(device, &.{
+            .usage = sdl.c.SDL_GPU_BUFFERUSAGE_INDIRECT |
+                sdl.c.SDL_GPU_BUFFERUSAGE_COMPUTE_STORAGE_WRITE,
+            .size = 1024,
+        });
+        errdefer sdl.releaseGPUBuffer(device, sort_dispatch_buffer);
+
+        const sort_histogram_buffer = try sdl.createGPUBuffer(device, &.{
+            .usage = sdl.c.SDL_GPU_BUFFERUSAGE_COMPUTE_STORAGE_READ |
+                sdl.c.SDL_GPU_BUFFERUSAGE_COMPUTE_STORAGE_WRITE,
+            .size = 64 * 1024 * 1024,
+        });
+        errdefer sdl.releaseGPUBuffer(device, sort_histogram_buffer);
 
         const triangle_counter_buffer = try sdl.createGPUBuffer(device, &.{
             .usage = sdl.c.SDL_GPU_BUFFERUSAGE_COMPUTE_STORAGE_READ |
@@ -314,19 +443,6 @@ const VoxelizePass = struct {
             .size = 64 * 1024 * 1024,
         });
         errdefer sdl.releaseGPUBuffer(device, triangle_list_buffer);
-
-        const triangle_cascades = try sdl.createGPUTexture(device, &.{
-            .type = sdl.c.SDL_GPU_TEXTURETYPE_3D,
-            .format = sdl.c.SDL_GPU_TEXTUREFORMAT_R32_UINT,
-            .usage = sdl.c.SDL_GPU_TEXTUREUSAGE_COMPUTE_STORAGE_SIMULTANEOUS_READ_WRITE |
-                sdl.c.SDL_GPU_TEXTUREUSAGE_SAMPLER,
-            .width = 66 * 8,
-            .height = 66,
-            .layer_count_or_depth = 66,
-            .num_levels = 1,
-            .sample_count = sdl.c.SDL_GPU_SAMPLECOUNT_1,
-        });
-        errdefer sdl.releaseGPUTexture(device, triangle_cascades);
 
         const opacity_cascades = try sdl.createGPUTexture(device, &.{
             .type = sdl.c.SDL_GPU_TEXTURETYPE_3D,
@@ -359,12 +475,17 @@ const VoxelizePass = struct {
             .clear_pipeline = clear_pipeline,
             .voxelization_pipeline = voxelization_pipeline,
             .shading_pipeline = shading_pipeline,
+            .sort_dispatch_buffer = sort_dispatch_buffer,
+            .sort_histogram_buffer = sort_histogram_buffer,
+            .sort_dispatch_pipeline = sort_dispatch_pipeline,
+            .sort_histogram_pipeline = sort_histogram_pipeline,
+            .sort_scan_pipeline = sort_scan_pipeline,
+            .sort_scatter_pipeline = sort_scatter_pipeline,
             .voxelize_pass = null,
             .sampler = sampler,
             .triangle_counter_buffer = triangle_counter_buffer,
             .triangle_data_buffer = triangle_data_buffer,
             .triangle_list_buffer = triangle_list_buffer,
-            .triangle_cascades = triangle_cascades,
             .opacity_cascades = opacity_cascades,
             .radiance_cascades = radiance_cascades,
         };
@@ -373,11 +494,16 @@ const VoxelizePass = struct {
     fn deinit(pass: *VoxelizePass) void {
         sdl.releaseGPUTexture(pass.device, pass.radiance_cascades);
         sdl.releaseGPUTexture(pass.device, pass.opacity_cascades);
-        sdl.releaseGPUTexture(pass.device, pass.triangle_cascades);
         sdl.releaseGPUBuffer(pass.device, pass.triangle_list_buffer);
         sdl.releaseGPUBuffer(pass.device, pass.triangle_data_buffer);
         sdl.releaseGPUBuffer(pass.device, pass.triangle_counter_buffer);
+        sdl.releaseGPUBuffer(pass.device, pass.sort_histogram_buffer);
+        sdl.releaseGPUBuffer(pass.device, pass.sort_dispatch_buffer);
         sdl.releaseGPUSampler(pass.device, pass.sampler);
+        sdl.releaseGPUComputePipeline(pass.device, pass.sort_scatter_pipeline);
+        sdl.releaseGPUComputePipeline(pass.device, pass.sort_scan_pipeline);
+        sdl.releaseGPUComputePipeline(pass.device, pass.sort_histogram_pipeline);
+        sdl.releaseGPUComputePipeline(pass.device, pass.sort_dispatch_pipeline);
         sdl.releaseGPUComputePipeline(pass.device, pass.shading_pipeline);
         sdl.releaseGPUComputePipeline(pass.device, pass.voxelization_pipeline);
         sdl.releaseGPUComputePipeline(pass.device, pass.clear_pipeline);
@@ -387,7 +513,7 @@ const VoxelizePass = struct {
     fn begin(pass: *VoxelizePass, command_buffer: *sdl.GPUCommandBuffer) !void {
         const clear_pass = try sdl.beginGPUComputePass(
             command_buffer,
-            &.{.{ .texture = pass.triangle_cascades, .cycle = true }},
+            &.{},
             &.{.{ .buffer = pass.triangle_counter_buffer, .cycle = true }},
         );
         sdl.bindGPUComputePipeline(clear_pass, pass.clear_pipeline);
@@ -396,9 +522,9 @@ const VoxelizePass = struct {
 
         pass.voxelize_pass = try sdl.beginGPUComputePass(
             command_buffer,
-            &.{.{ .texture = pass.triangle_cascades }},
+            &.{},
             &.{
-                .{ .buffer = pass.triangle_counter_buffer, .cycle = true },
+                .{ .buffer = pass.triangle_counter_buffer },
                 .{ .buffer = pass.triangle_data_buffer, .cycle = true },
                 .{ .buffer = pass.triangle_list_buffer, .cycle = true },
             },
@@ -443,6 +569,46 @@ const VoxelizePass = struct {
         sdl.endGPUComputePass(pass.voxelize_pass.?);
         pass.voxelize_pass = null;
 
+        // gpu radix sort
+        const dispatch_pass = try sdl.beginGPUComputePass(
+            command_buffer,
+            &.{},
+            &.{.{ .buffer = pass.sort_dispatch_buffer, .cycle = true }},
+        );
+        sdl.bindGPUComputePipeline(dispatch_pass, pass.sort_dispatch_pipeline);
+        sdl.bindGPUComputeStorageBuffers(dispatch_pass, 0, &.{pass.triangle_counter_buffer});
+        sdl.dispatchGPUCompute(dispatch_pass, 1, 1, 1);
+        sdl.endGPUComputePass(dispatch_pass);
+        for (0..4) |i| {
+            const histogram_pass = try sdl.beginGPUComputePass(
+                command_buffer,
+                &.{},
+                &.{.{ .buffer = pass.sort_histogram_buffer }},
+            );
+            sdl.bindGPUComputePipeline(histogram_pass, pass.sort_histogram_pipeline);
+            sdl.bindGPUComputeStorageBuffers(histogram_pass, 0, &.{pass.triangle_list_buffer});
+            sdl.pushGPUComputeUniformData(command_buffer, 0, &@as(u32, @intCast(i * 8)), 4);
+            sdl.dispatchGPUComputeIndirect(histogram_pass, pass.sort_dispatch_buffer, 0);
+            sdl.endGPUComputePass(histogram_pass);
+
+            const scan_pass = try sdl.beginGPUComputePass(
+                command_buffer,
+                &.{},
+                &.{.{ .buffer = pass.sort_histogram_buffer }},
+            );
+            sdl.bindGPUComputePipeline(scan_pass, pass.sort_scan_pipeline);
+            sdl.bindGPUComputeStorageBuffers(scan_pass, 0, &.{pass.triangle_list_buffer});
+            sdl.endGPUComputePass(scan_pass);
+
+            const scatter_pass = try sdl.beginGPUComputePass(
+                command_buffer,
+                &.{},
+                &.{.{ .buffer = pass.triangle_list_buffer }},
+            );
+            sdl.bindGPUComputePipeline(scatter_pass, pass.sort_scatter_pipeline);
+            sdl.endGPUComputePass(scatter_pass);
+        }
+
         const shading_pass = try sdl.beginGPUComputePass(
             command_buffer,
             &.{
@@ -455,9 +621,6 @@ const VoxelizePass = struct {
         sdl.bindGPUComputeStorageBuffers(shading_pass, 0, &.{
             pass.triangle_data_buffer,
             pass.triangle_list_buffer,
-        });
-        sdl.bindGPUComputeSamplers(shading_pass, 0, &.{
-            .{ .texture = pass.triangle_cascades, .sampler = pass.sampler },
         });
         sdl.dispatchGPUCompute(shading_pass, 132, 99, 17);
         sdl.endGPUComputePass(shading_pass);

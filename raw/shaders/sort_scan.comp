@@ -1,0 +1,51 @@
+#version 460
+
+struct TriangleIntersection {
+    uint ix_voxel;
+    uint ix_triangle;
+};
+
+layout(local_size_x = 256, local_size_y = 1, local_size_z = 1) in;
+
+layout(std430, set = 0, binding = 0) readonly buffer TriangleListBuffer {
+    TriangleIntersection isects[];
+} b_triangle_isects;
+
+layout(std430, set = 1, binding = 0) buffer HistogramBuffer {
+    uint histograms[];
+} b_histograms;
+
+shared uint workspace[512];
+
+void main() {
+    uint local_id = gl_LocalInvocationID.x;
+    workspace[local_id] = b_histograms.histograms[local_id];
+    workspace[local_id + 256] = b_histograms.histograms[local_id + 256];
+    barrier();
+    groupMemoryBarrier();
+
+    for (uint i = 1; i < 512; i *= 2) {
+        uint j = (local_id + 1) * i * 2 - 1;
+        if (j < 512) workspace[j] += workspace[j - i];
+        barrier();
+        groupMemoryBarrier();
+    }
+
+    if (local_id == 0) workspace[511] = 0;
+    barrier();
+    groupMemoryBarrier();
+
+    for (uint i = 256; i > 0; i /= 2) {
+        uint j = (local_id + 1) * i * 2 - 1;
+        if (j < 512) {
+            uint tmp = workspace[j - i];
+            workspace[j - i] = workspace[j];
+            workspace[j] += tmp;
+        }
+        barrier();
+        groupMemoryBarrier();
+    }
+
+    b_histograms.histograms[local_id] = workspace[local_id];
+    b_histograms.histograms[local_id + 256] = workspace[local_id + 256];
+}

@@ -1,0 +1,41 @@
+#version 460
+
+struct TriangleIntersection {
+    uint ix_voxel;
+    uint ix_triangle;
+};
+
+layout(local_size_x = 256, local_size_y = 1, local_size_z = 1) in;
+
+layout(std430, set = 0, binding = 0) readonly buffer TriangleListBuffer {
+    TriangleIntersection isects[];
+} b_triangle_isects;
+
+layout(std430, set = 1, binding = 0) buffer HistogramBuffer {
+    uint histograms[];
+} b_histograms;
+
+layout(std140, set = 2, binding = 0) uniform UBO {
+    uint bit_shift;
+} ubo;
+
+shared uint histogram[256];
+
+void main() {
+    if (gl_LocalInvocationID.x < 256) {
+        histogram[gl_LocalInvocationID.x] = 0;
+    }
+    barrier();
+
+    for (int i = 0; i < 256; ++i) {
+        uint key = b_triangle_isects.isects[i].ix_voxel;
+        uint radix = (key >> ubo.bit_shift) & 0xFFu;
+        atomicAdd(histogram[radix], 1);
+    }
+    barrier();
+    
+    if (gl_LocalInvocationID.x < 256) {
+        uint offset = gl_WorkGroupID.x * 256;
+        b_histograms.histograms[offset + gl_LocalInvocationID.x] = histogram[gl_LocalInvocationID.x];
+    }
+}

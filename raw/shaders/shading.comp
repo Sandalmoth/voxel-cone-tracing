@@ -1,5 +1,18 @@
 #version 460
 
+struct TriangleData {
+    vec3 normal;
+    vec4 diffuse;
+    vec3 emissive;
+    float roughness;
+    float coverage;
+};
+
+struct TriangleIntersection {
+    uint ix_voxel;
+    uint ix_triangle;
+};
+
 layout(local_size_x = 4, local_size_y = 4, local_size_z = 4) in;
 
 layout(r16, set = 1, binding = 0) uniform image3D u_opacity_cascades;

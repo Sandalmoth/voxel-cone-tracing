@@ -1,24 +1,11 @@
 #version 460
 
-#define NIL 4294967295
+layout(local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
 
-layout(local_size_x = 4, local_size_y = 4, local_size_z = 4) in;
-
-layout(r32ui, set = 1, binding = 0) uniform uimage3D u_triangle_cascades;
-
-layout(std430, set = 1, binding = 1) buffer TriangleDataBuffer {
+layout(std430, set = 1, binding = 0) buffer TriangleDataBuffer {
     uint n_triangles;
 } b_triangle_counters;
 
 void main() {
-    if (gl_GlobalInvocationID.x >= 528 ||
-        gl_GlobalInvocationID.y >= 396 ||
-        gl_GlobalInvocationID.z >= 66) return;
-    imageStore(u_triangle_cascades, ivec3(gl_GlobalInvocationID), uvec4(NIL));
-
-    if (gl_GlobalInvocationID.x == 0 &&
-        gl_GlobalInvocationID.y == 0 &&
-        gl_GlobalInvocationID.z == 0) {
-        b_triangle_counters.n_triangles = 0;        
-    }
+    b_triangle_counters.n_triangles = 0;        
 }

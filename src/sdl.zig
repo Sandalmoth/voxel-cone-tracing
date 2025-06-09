@@ -515,3 +515,7 @@ pub fn setGPUSwapchainParameters(
         return error.Sdl;
     }
 }
+
+pub fn dispatchGPUComputeIndirect(pass: *GPUComputePass, buffer: *GPUBuffer, offset: u32) void {
+    c.SDL_DispatchGPUComputeIndirect(pass, buffer, offset);
+}

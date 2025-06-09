@@ -1,0 +1,12 @@
+#version 460
+
+struct TriangleIntersection {
+    uint ix_voxel;
+    uint ix_triangle;
+};
+
+layout(std430, set = 1, binding = 0) buffer TriangleListBuffer {
+    TriangleIntersection isects[];
+} b_triangle_isects;
+
+void main() {}

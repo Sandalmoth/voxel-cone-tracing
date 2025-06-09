@@ -1,0 +1,39 @@
+#version 460
+
+struct IndirectDispatchCommand {
+    uint groupcount_x;
+    uint groupcount_y;
+    uint groupcount_z;
+};
+
+struct TriangleIntersection {
+    uint ix_voxel;
+    uint ix_triangle;
+};
+
+layout(local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
+
+layout(std430, set = 0, binding = 0) readonly buffer TriangleCounterBuffer {
+    uint n_triangles;
+} b_triangle_counters;
+
+layout(std430, set = 1, binding = 0) buffer IndirectDispatchCommands {
+    IndirectDispatchCommand indirect_dispatch_commands[];
+};
+
+void main() {
+    indirect_dispatch_commands[0] = IndirectDispatchCommand(
+        (b_triangle_counters.n_triangles + 255) / 256, 1, 1
+    );
+
+    for (int i = 0; i < 4; ++i) {
+        indirect_dispatch_commands[i + 1] = IndirectDispatchCommand(0, 0, 0);
+    }
+    uint n = b_triangle_counters.n_triangles;
+    uint i = 1;
+    while (n > 1) {
+        uint local_size = (n + 511) / 512;
+        indirect_dispatch_commands[i] = IndirectDispatchCommand(local_size, 1, 1);
+        n = local_size;
+    }
+}
