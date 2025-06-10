@@ -22,6 +22,14 @@ struct TriangleIntersection {
 
 layout(local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
 
+layout(std430, set = 0, binding = 0) readonly buffer VertexBuffer {
+    Vertex vertices[];
+} b_vertices;
+
+layout(std430, set = 0, binding = 1) readonly buffer IndexBuffer {
+    uint indices[];
+} b_indices;
+
 layout(std430, set = 1, binding = 0) buffer TriangleDataBuffer {
     TriangleData triangles[];
 } b_triangle_data;
@@ -30,14 +38,6 @@ layout(std430, set = 1, binding = 1) buffer TriangleListBuffer {
     uint n_triangles;
     TriangleIntersection isects[];
 } b_triangle_isects;
-
-layout(std430, set = 0, binding = 0) readonly buffer VertexBuffer {
-    Vertex vertices[];
-} b_vertices;
-
-layout(std430, set = 0, binding = 1) readonly buffer IndexBuffer {
-    uint indices[];
-} b_indices;
 
 layout(std140, set = 2, binding = 0) uniform VoxelizeData {
     mat4 model_matrix;

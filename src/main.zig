@@ -598,14 +598,14 @@ const SortPass = struct {
         pass.* = undefined;
     }
 
-    fn sort(pass: *SortPass, command_buffer: *sdl.GPUCommandBuffer, in_data: *sdl.GPUBuffer) !void {
+    fn sort(pass: *SortPass, command_buffer: *sdl.GPUCommandBuffer, data: *sdl.GPUBuffer) !void {
         const dispatch_pass = try sdl.beginGPUComputePass(
             command_buffer,
             &.{},
             &.{.{ .buffer = pass.dispatch_buffer, .cycle = true }},
         );
         sdl.bindGPUComputePipeline(dispatch_pass, pass.dispatch_pipeline);
-        sdl.bindGPUComputeStorageBuffers(dispatch_pass, 0, &.{in_data});
+        sdl.bindGPUComputeStorageBuffers(dispatch_pass, 0, &.{data});
         sdl.dispatchGPUCompute(dispatch_pass, 1, 1, 1);
         sdl.endGPUComputePass(dispatch_pass);
 
@@ -616,7 +616,7 @@ const SortPass = struct {
                 &.{.{ .buffer = pass.histogram_buffer }},
             );
             sdl.bindGPUComputePipeline(histogram_pass, pass.histogram_pipeline);
-            sdl.bindGPUComputeStorageBuffers(histogram_pass, 0, &.{in_data});
+            sdl.bindGPUComputeStorageBuffers(histogram_pass, 0, &.{data});
             sdl.pushGPUComputeUniformData(command_buffer, 0, &@as(u32, @intCast(i * 8)), 4);
             sdl.dispatchGPUComputeIndirect(histogram_pass, pass.dispatch_buffer, 0);
             sdl.endGPUComputePass(histogram_pass);
@@ -627,7 +627,7 @@ const SortPass = struct {
                 &.{.{ .buffer = pass.histogram_buffer }},
             );
             sdl.bindGPUComputePipeline(scan_pass, pass.scan_pipeline);
-            sdl.bindGPUComputeStorageBuffers(scan_pass, 0, &.{in_data});
+            sdl.bindGPUComputeStorageBuffers(scan_pass, 0, &.{data});
             sdl.dispatchGPUCompute(histogram_pass, 1, 1, 1);
             sdl.endGPUComputePass(scan_pass);
 
@@ -636,19 +636,17 @@ const SortPass = struct {
                 &.{},
                 &.{
                     .{ .buffer = pass.histogram_buffer },
-                    .{ .buffer = in_data, .cycle = true },
+                    .{ .buffer = data, .cycle = true },
                 },
             );
             sdl.bindGPUComputePipeline(scatter_pass, pass.scatter_pipeline);
-            sdl.bindGPUComputeStorageBuffers(scatter_pass, 0, &.{in_data});
+            sdl.bindGPUComputeStorageBuffers(scatter_pass, 0, &.{data});
             sdl.pushGPUComputeUniformData(command_buffer, 0, &@as(u32, @intCast(i * 8)), 4);
             sdl.dispatchGPUComputeIndirect(scatter_pass, pass.dispatch_buffer, 0);
             sdl.endGPUComputePass(scatter_pass);
         }
     }
 };
-
-const IndexPass = struct {};
 
 const DrawPass = struct {
     const VertexUBO = extern struct {

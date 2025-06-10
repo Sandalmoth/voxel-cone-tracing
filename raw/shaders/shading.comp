@@ -15,16 +15,65 @@ struct TriangleIntersection {
 
 layout(local_size_x = 4, local_size_y = 4, local_size_z = 4) in;
 
+layout(std430, set = 0, binding = 0) readonly buffer TriangleDataBuffer {
+    TriangleData triangles[];
+} b_triangle_data;
+
+layout(std430, set = 0, binding = 1) readonly buffer TriangleListBuffer {
+    uint n_triangles;
+    TriangleIntersection isects[];
+} b_triangle_isects;
+
 layout(r16, set = 1, binding = 0) uniform image3D u_opacity_cascades;
 
 layout(rgba16f, set = 1, binding = 1) uniform image3D u_radiance_cascades;
 
-layout(std430, set = 1, binding = 2) readonly buffer TriangleDataBuffer {
-    TriangleData triangles[];
-} b_triangle_data;
+uint packVoxelPos(ivec4 v) {
+    uvec4 u = uvec4(v + 33);
+    return (u.x & 0xFFu) |
+           ((u.y & 0xFFu) << 8) |
+           ((u.z & 0xFFu) << 16) |
+           ((u.w & 0xFFu) << 24);
+}
 
-layout(std430, set = 1, binding = 3) readonly buffer TriangleListBuffer {
-    TriangleIntersection isects[];
-} b_triangle_isects;
+uint lowerBound(uint value, uint n) {
+    uint left = 0;
+    uint right = n;
+    for (uint step = n >> 1; step > 0; step >>= 1) {
+        uint mid = left + step;
+        bool cond = (mid < right) && (b_triangle_isects.isects[mid].ix_voxel < value);
+        left = cond ? mid : left;
+    }
+    return (b_triangle_isects.isects[left].ix_voxel < value) ? left + 1 : left;
+}
 
-void main() {}
+void main() {
+    ivec3 voxel_pos = ivec3(
+        gl_GlobalInvocationID.x % 8,
+        gl_GlobalInvocationID.y % 6,
+        gl_GlobalInvocationID.z
+    ) - 33;
+    uint cascade = gl_GlobalInvocationID.x / 66;
+    uint face = gl_GlobalInvocationID.y / 66;
+
+    if (voxel_pos.x < -33 || voxel_pos.x > 32 ||
+        voxel_pos.y < -33 || voxel_pos.y > 32 ||
+        voxel_pos.z < -33 || voxel_pos.z > 32) return;
+
+    float coverage = 0.0;
+
+    uint packed = packVoxelPos(ivec4(voxel_pos, cascade));
+    uint i = lowerBound(packed, b_triangle_isects.n_triangles);
+    TriangleIntersection isect = b_triangle_isects.isects[i];
+    while (isect.ix_voxel == packed) {
+        TriangleData triangle = b_triangle_data.triangles[isect.ix_triangle];
+        coverage += triangle.coverage;
+        
+        isect = b_triangle_isects.isects[++i];
+    }
+
+    if (face == 0) {
+        coverage = clamp(coverage, 0, 1);
+        imageStore(u_opacity_cascades, voxel_pos + ivec3(33 + cascade * 66, 33, 33), vec4(coverage));
+    }
+}
