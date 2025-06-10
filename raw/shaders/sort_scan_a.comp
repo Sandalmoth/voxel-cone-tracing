@@ -1,0 +1,63 @@
+#version 460
+
+struct KV {
+    uint key;
+    uint value;
+};
+
+layout(local_size_x = 256, local_size_y = 1, local_size_z = 1) in;
+
+layout(std430, set = 0, binding = 0) readonly buffer KVs {
+    uint n_kvs;
+    KV kvs[];
+};
+
+layout(std430, set = 1, binding = 0) buffer HistogramBuffer {
+    // uint dispatch_sizes[4];
+    // uint dispatch_offsets[4];
+    uint histograms[];
+};
+
+// layout(std140, set = 2, binding = 0) uniform UBO {
+//     uint invocation;
+// } ubo;
+//
+void main() {}
+
+// shared uint workspace[256];
+
+// void main() {
+//     uint local_id = gl_LocalInvocationID.x;
+//     workspace[local_id] = b_histograms.histograms[local_id];
+//     barrier();
+//     groupMemoryBarrier();
+
+//     for (uint i = 1; i < 256; i *= 2) {
+//         uint j = (local_id + 1) * i * 2 - 1;
+//         if (j < 256) workspace[j] += workspace[j - i];
+//         barrier();
+//         groupMemoryBarrier();
+//     }
+
+//     if (local_id == 0) {
+//         histograms[gl_WorkGroupID.x] = (workspace[255] << 2) & 0x1u;
+        
+//         // b_histograms.histograms[local_id + 256 * b_histograms.dispatch_sizes[ubo.invocation]];
+//         workspace[255] = 0;
+//     }
+//     barrier();
+//     groupMemoryBarrier();
+
+//     for (uint i = 128; i > 0; i /= 2) {
+//         uint j = (local_id + 1) * i * 2 - 1;
+//         if (j < 256) {
+//             uint tmp = workspace[j - i];
+//             workspace[j - i] = workspace[j];
+//             workspace[j] += tmp;
+//         }
+//         barrier();
+//         groupMemoryBarrier();
+//     }
+
+//     b_histograms.histograms[local_id] = workspace[local_id];
+// }

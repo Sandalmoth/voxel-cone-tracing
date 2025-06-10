@@ -22,15 +22,12 @@ struct TriangleIntersection {
 
 layout(local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
 
-layout(std430, set = 1, binding = 0) buffer TriangleCounterBuffer {
-    uint n_triangles;
-} b_triangle_counters;
-
-layout(std430, set = 1, binding = 1) buffer TriangleDataBuffer {
+layout(std430, set = 1, binding = 0) buffer TriangleDataBuffer {
     TriangleData triangles[];
 } b_triangle_data;
 
-layout(std430, set = 1, binding = 2) buffer TriangleListBuffer {
+layout(std430, set = 1, binding = 1) buffer TriangleListBuffer {
+    uint n_triangles;
     TriangleIntersection isects[];
 } b_triangle_isects;
 
@@ -235,7 +232,7 @@ void main() {
                 // so by storing color and normal per intersection
                 // we could do the texture lookupts here, and this shader could bind the resource
                 // since this is called per mesh (or similar) that works with a bindful renderer
-                uint ix_dst_triangle = atomicAdd(b_triangle_counters.n_triangles, 1);
+                uint ix_dst_triangle = atomicAdd(b_triangle_isects.n_triangles, 1);
                 b_triangle_data.triangles[ix_dst_triangle] = TriangleData(
                     normal,
                     voxelize_data.diffuse, voxelize_data.emissive.rgb, voxelize_data.roughness,

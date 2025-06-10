@@ -1,11 +1,17 @@
 #version 460
 
+struct TriangleIntersection {
+    uint ix_voxel;
+    uint ix_triangle;
+};
+
 layout(local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
 
-layout(std430, set = 1, binding = 0) buffer TriangleDataBuffer {
+layout(std430, set = 1, binding = 0) buffer TriangleListBuffer {
     uint n_triangles;
-} b_triangle_counters;
+    TriangleIntersection isects[];
+} b_triangle_isects;
 
 void main() {
-    b_triangle_counters.n_triangles = 0;        
+    b_triangle_isects.n_triangles = 0;        
 }

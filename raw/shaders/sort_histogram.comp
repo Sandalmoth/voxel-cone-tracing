@@ -1,41 +1,97 @@
 #version 460
 
-struct TriangleIntersection {
-    uint ix_voxel;
-    uint ix_triangle;
+#define WORKGROUP_SIZE 256
+#define BLOCK_SIZE 32
+
+struct KV {
+    uint key;
+    uint value;
 };
 
-layout(local_size_x = 256, local_size_y = 1, local_size_z = 1) in;
+layout(local_size_x = WORKGROUP_SIZE, local_size_y = 1, local_size_z = 1) in;
 
-layout(std430, set = 0, binding = 0) readonly buffer TriangleListBuffer {
-    TriangleIntersection isects[];
-} b_triangle_isects;
+layout(std430, set = 0, binding = 0) readonly buffer KVs {
+    uint n_kvs;
+    KV kvs[];
+};
 
 layout(std430, set = 1, binding = 0) buffer HistogramBuffer {
     uint histograms[];
-} b_histograms;
+};
 
 layout(std140, set = 2, binding = 0) uniform UBO {
     uint bit_shift;
-} ubo;
+};
 
-shared uint histogram[256];
+shared uint local_hist[256];
 
 void main() {
-    if (gl_LocalInvocationID.x < 256) {
-        histogram[gl_LocalInvocationID.x] = 0;
+    uint local_id = gl_LocalInvocationID.x;
+    uint workgroup_id = gl_WorkGroupID.x;
+    uint n_workgroups = gl_NumWorkGroups.x;
+
+    if (local_id < 256) {
+        local_hist[local_id] = 0;
+    }
+    if (local_id == 0) {
+        histograms[workgroup_id + 256 * n_workgroups] = 0;
     }
     barrier();
 
-    for (int i = 0; i < 256; ++i) {
-        uint key = b_triangle_isects.isects[i].ix_voxel;
-        uint radix = (key >> ubo.bit_shift) & 0xFFu;
-        atomicAdd(histogram[radix], 1);
+    for (int i = 0; i < BLOCK_SIZE; ++i) {
+        uint ix = WORKGROUP_SIZE * i + WORKGROUP_SIZE * BLOCK_SIZE * workgroup_id + local_id;
+        if (ix < n_kvs) {
+            uint key = kvs[ix].key;
+            uint radix = (key >> bit_shift) & 0xFFu;
+            atomicAdd(local_hist[radix], 1);
+        }
     }
     barrier();
-    
-    if (gl_LocalInvocationID.x < 256) {
-        uint offset = gl_WorkGroupID.x * 256;
-        b_histograms.histograms[offset + gl_LocalInvocationID.x] = histogram[gl_LocalInvocationID.x];
+
+    for (uint i = 1; i < 256; i *= 2) {
+        uint j = (local_id + 1) * i * 2 - 1;
+        if (j < 256) local_hist[j] += local_hist[j - i];
+        barrier();
+    }
+
+    if (local_id == 0) {
+        histograms[workgroup_id + 256 * n_workgroups] = (local_hist[255] << 2) | 0x1u;
+        local_hist[255] = 0;
+    }
+    barrier();
+
+    for (uint i = 128 / 2; i > 0; i /= 2) {
+        uint j = (local_id + 1) * i * 2 - 1;
+        if (j < 256) {
+            uint tmp = local_hist[j - i];
+            local_hist[j - i] = local_hist[j];
+            local_hist[j] += tmp;
+        }
+        barrier();
+    }
+
+    uint prior_total = 0;
+    if (local_id == 0) {
+        uint i = workgroup_id;
+        while (i > 0) {
+            memoryBarrierBuffer();
+            uint packed = atomicAdd(histograms[(i - 1) + 256 * n_workgroups], 0);
+            if ((packed & 0x2u) > 0) {
+                prior_total = packed >> 2;
+                break;
+            } else if ((packed & 0x1u) > 0) {
+                prior_total += packed >> 2;
+                --i;
+            }
+        }
+    }
+    atomicAdd(
+        histograms[workgroup_id + 256 * n_workgroups],
+        (prior_total << 2) | 0x2u
+    );
+    barrier();
+
+    if (local_id < 256) {
+        histograms[local_id + 256 * workgroup_id] = local_hist[local_id] + prior_total;
     }
 }
