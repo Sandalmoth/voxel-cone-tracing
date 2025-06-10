@@ -7,6 +7,5 @@ glslc --target-env=vulkan1.0 raw/shaders/voxelization.comp -o data/shaders/voxel
 glslc --target-env=vulkan1.0 raw/shaders/shading.comp -o data/shaders/shading.comp.spv
 glslc --target-env=vulkan1.0 raw/shaders/sort_dispatch.comp -o data/shaders/sort_dispatch.comp.spv
 glslc --target-env=vulkan1.0 raw/shaders/sort_histogram.comp -o data/shaders/sort_histogram.comp.spv
-glslc --target-env=vulkan1.0 raw/shaders/sort_scan_a.comp -o data/shaders/sort_scan_a.comp.spv
-glslc --target-env=vulkan1.0 raw/shaders/sort_scan_b.comp -o data/shaders/sort_scan_b.comp.spv
+glslc --target-env=vulkan1.0 raw/shaders/sort_scan.comp -o data/shaders/sort_scan.comp.spv
 glslc --target-env=vulkan1.0 raw/shaders/sort_scatter.comp -o data/shaders/sort_scatter.comp.spv

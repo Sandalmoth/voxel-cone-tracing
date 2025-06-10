@@ -448,8 +448,7 @@ const SortPass = struct {
 
     dispatch_pipeline: *sdl.GPUComputePipeline,
     histogram_pipeline: *sdl.GPUComputePipeline,
-    scan_a_pipeline: *sdl.GPUComputePipeline,
-    // scan_b_pipeline: *sdl.GPUComputePipeline,
+    scan_pipeline: *sdl.GPUComputePipeline,
     scatter_pipeline: *sdl.GPUComputePipeline,
 
     dispatch_buffer: *sdl.GPUBuffer,
@@ -510,9 +509,9 @@ const SortPass = struct {
         };
         errdefer sdl.releaseGPUComputePipeline(device, histogram_pipeline);
 
-        const scan_a_pipeline = blk: {
+        const scan_pipeline = blk: {
             const file = try std.fs.cwd().openFile(
-                "data/shaders/sort_scan_a.comp.spv",
+                "data/shaders/sort_scan.comp.spv",
                 .{ .mode = .read_only },
             );
             defer file.close();
@@ -535,34 +534,7 @@ const SortPass = struct {
                 .threadcount_z = 1,
             });
         };
-        errdefer sdl.releaseGPUComputePipeline(device, scan_a_pipeline);
-
-        // const scan_b_pipeline = blk: {
-        //     const file = try std.fs.cwd().openFile(
-        //         "data/shaders/sort_scan_b.comp.spv",
-        //         .{ .mode = .read_only },
-        //     );
-        //     defer file.close();
-        //     const bytes = try file.reader().readAllAlloc(gpa, 1_000_000);
-        //     defer gpa.free(bytes);
-
-        //     break :blk try sdl.createGPUComputePipeline(device, &.{
-        //         .code_size = bytes.len,
-        //         .code = bytes.ptr,
-        //         .entrypoint = "main",
-        //         .format = sdl.c.SDL_GPU_SHADERFORMAT_SPIRV,
-        //         .num_samplers = 0,
-        //         .num_readonly_storage_textures = 0,
-        //         .num_readonly_storage_buffers = 1,
-        //         .num_readwrite_storage_textures = 0,
-        //         .num_readwrite_storage_buffers = 1,
-        //         .num_uniform_buffers = 0,
-        //         .threadcount_x = 256,
-        //         .threadcount_y = 1,
-        //         .threadcount_z = 1,
-        //     });
-        // };
-        // errdefer sdl.releaseGPUComputePipeline(device, scan_b_pipeline);
+        errdefer sdl.releaseGPUComputePipeline(device, scan_pipeline);
 
         const scatter_pipeline = blk: {
             const file = try std.fs.cwd().openFile(
@@ -609,8 +581,7 @@ const SortPass = struct {
             .device = device,
             .dispatch_pipeline = dispatch_pipeline,
             .histogram_pipeline = histogram_pipeline,
-            .scan_a_pipeline = scan_a_pipeline,
-            // .scan_b_pipeline = scan_b_pipeline,
+            .scan_pipeline = scan_pipeline,
             .scatter_pipeline = scatter_pipeline,
             .dispatch_buffer = dispatch_buffer,
             .histogram_buffer = histogram_buffer,
@@ -621,8 +592,7 @@ const SortPass = struct {
         sdl.releaseGPUBuffer(pass.device, pass.histogram_buffer);
         sdl.releaseGPUBuffer(pass.device, pass.dispatch_buffer);
         sdl.releaseGPUComputePipeline(pass.device, pass.scatter_pipeline);
-        // sdl.releaseGPUComputePipeline(pass.device, pass.scan_b_pipeline);
-        sdl.releaseGPUComputePipeline(pass.device, pass.scan_a_pipeline);
+        sdl.releaseGPUComputePipeline(pass.device, pass.scan_pipeline);
         sdl.releaseGPUComputePipeline(pass.device, pass.histogram_pipeline);
         sdl.releaseGPUComputePipeline(pass.device, pass.dispatch_pipeline);
         pass.* = undefined;
@@ -656,7 +626,7 @@ const SortPass = struct {
                 &.{},
                 &.{.{ .buffer = pass.histogram_buffer }},
             );
-            sdl.bindGPUComputePipeline(scan_pass, pass.scan_a_pipeline);
+            sdl.bindGPUComputePipeline(scan_pass, pass.scan_pipeline);
             sdl.bindGPUComputeStorageBuffers(scan_pass, 0, &.{in_data});
             sdl.dispatchGPUCompute(histogram_pass, 1, 1, 1);
             sdl.endGPUComputePass(scan_pass);
