@@ -448,9 +448,9 @@ const SortPass = struct {
 
     dispatch_pipeline: *sdl.GPUComputePipeline,
     histogram_pipeline: *sdl.GPUComputePipeline,
-    // scan_a_pipeline: *sdl.GPUComputePipeline,
+    scan_a_pipeline: *sdl.GPUComputePipeline,
     // scan_b_pipeline: *sdl.GPUComputePipeline,
-    // scatter_pipeline: *sdl.GPUComputePipeline,
+    scatter_pipeline: *sdl.GPUComputePipeline,
 
     dispatch_buffer: *sdl.GPUBuffer,
     histogram_buffer: *sdl.GPUBuffer,
@@ -510,32 +510,32 @@ const SortPass = struct {
         };
         errdefer sdl.releaseGPUComputePipeline(device, histogram_pipeline);
 
-        // const scan_a_pipeline = blk: {
-        //     const file = try std.fs.cwd().openFile(
-        //         "data/shaders/sort_scan_a.comp.spv",
-        //         .{ .mode = .read_only },
-        //     );
-        //     defer file.close();
-        //     const bytes = try file.reader().readAllAlloc(gpa, 1_000_000);
-        //     defer gpa.free(bytes);
+        const scan_a_pipeline = blk: {
+            const file = try std.fs.cwd().openFile(
+                "data/shaders/sort_scan_a.comp.spv",
+                .{ .mode = .read_only },
+            );
+            defer file.close();
+            const bytes = try file.reader().readAllAlloc(gpa, 1_000_000);
+            defer gpa.free(bytes);
 
-        //     break :blk try sdl.createGPUComputePipeline(device, &.{
-        //         .code_size = bytes.len,
-        //         .code = bytes.ptr,
-        //         .entrypoint = "main",
-        //         .format = sdl.c.SDL_GPU_SHADERFORMAT_SPIRV,
-        //         .num_samplers = 0,
-        //         .num_readonly_storage_textures = 0,
-        //         .num_readonly_storage_buffers = 1,
-        //         .num_readwrite_storage_textures = 0,
-        //         .num_readwrite_storage_buffers = 1,
-        //         .num_uniform_buffers = 0,
-        //         .threadcount_x = 256,
-        //         .threadcount_y = 1,
-        //         .threadcount_z = 1,
-        //     });
-        // };
-        // errdefer sdl.releaseGPUComputePipeline(device, scan_a_pipeline);
+            break :blk try sdl.createGPUComputePipeline(device, &.{
+                .code_size = bytes.len,
+                .code = bytes.ptr,
+                .entrypoint = "main",
+                .format = sdl.c.SDL_GPU_SHADERFORMAT_SPIRV,
+                .num_samplers = 0,
+                .num_readonly_storage_textures = 0,
+                .num_readonly_storage_buffers = 1,
+                .num_readwrite_storage_textures = 0,
+                .num_readwrite_storage_buffers = 1,
+                .num_uniform_buffers = 0,
+                .threadcount_x = 256,
+                .threadcount_y = 1,
+                .threadcount_z = 1,
+            });
+        };
+        errdefer sdl.releaseGPUComputePipeline(device, scan_a_pipeline);
 
         // const scan_b_pipeline = blk: {
         //     const file = try std.fs.cwd().openFile(
@@ -564,32 +564,32 @@ const SortPass = struct {
         // };
         // errdefer sdl.releaseGPUComputePipeline(device, scan_b_pipeline);
 
-        // const scatter_pipeline = blk: {
-        //     const file = try std.fs.cwd().openFile(
-        //         "data/shaders/sort_scatter.comp.spv",
-        //         .{ .mode = .read_only },
-        //     );
-        //     defer file.close();
-        //     const bytes = try file.reader().readAllAlloc(gpa, 1_000_000);
-        //     defer gpa.free(bytes);
+        const scatter_pipeline = blk: {
+            const file = try std.fs.cwd().openFile(
+                "data/shaders/sort_scatter.comp.spv",
+                .{ .mode = .read_only },
+            );
+            defer file.close();
+            const bytes = try file.reader().readAllAlloc(gpa, 1_000_000);
+            defer gpa.free(bytes);
 
-        //     break :blk try sdl.createGPUComputePipeline(device, &.{
-        //         .code_size = bytes.len,
-        //         .code = bytes.ptr,
-        //         .entrypoint = "main",
-        //         .format = sdl.c.SDL_GPU_SHADERFORMAT_SPIRV,
-        //         .num_samplers = 0,
-        //         .num_readonly_storage_textures = 0,
-        //         .num_readonly_storage_buffers = 0,
-        //         .num_readwrite_storage_textures = 1,
-        //         .num_readwrite_storage_buffers = 0,
-        //         .num_uniform_buffers = 0,
-        //         .threadcount_x = 256,
-        //         .threadcount_y = 1,
-        //         .threadcount_z = 1,
-        //     });
-        // };
-        // errdefer sdl.releaseGPUComputePipeline(device, scatter_pipeline);
+            break :blk try sdl.createGPUComputePipeline(device, &.{
+                .code_size = bytes.len,
+                .code = bytes.ptr,
+                .entrypoint = "main",
+                .format = sdl.c.SDL_GPU_SHADERFORMAT_SPIRV,
+                .num_samplers = 0,
+                .num_readonly_storage_textures = 0,
+                .num_readonly_storage_buffers = 1,
+                .num_readwrite_storage_textures = 0,
+                .num_readwrite_storage_buffers = 2,
+                .num_uniform_buffers = 1,
+                .threadcount_x = 256,
+                .threadcount_y = 1,
+                .threadcount_z = 1,
+            });
+        };
+        errdefer sdl.releaseGPUComputePipeline(device, scatter_pipeline);
 
         const dispatch_buffer = try sdl.createGPUBuffer(device, &.{
             .usage = sdl.c.SDL_GPU_BUFFERUSAGE_INDIRECT |
@@ -609,9 +609,9 @@ const SortPass = struct {
             .device = device,
             .dispatch_pipeline = dispatch_pipeline,
             .histogram_pipeline = histogram_pipeline,
-            // .scan_a_pipeline = scan_a_pipeline,
+            .scan_a_pipeline = scan_a_pipeline,
             // .scan_b_pipeline = scan_b_pipeline,
-            // .scatter_pipeline = scatter_pipeline,
+            .scatter_pipeline = scatter_pipeline,
             .dispatch_buffer = dispatch_buffer,
             .histogram_buffer = histogram_buffer,
         };
@@ -620,22 +620,22 @@ const SortPass = struct {
     fn deinit(pass: *SortPass) void {
         sdl.releaseGPUBuffer(pass.device, pass.histogram_buffer);
         sdl.releaseGPUBuffer(pass.device, pass.dispatch_buffer);
-        // sdl.releaseGPUComputePipeline(pass.device, pass.scatter_pipeline);
+        sdl.releaseGPUComputePipeline(pass.device, pass.scatter_pipeline);
         // sdl.releaseGPUComputePipeline(pass.device, pass.scan_b_pipeline);
-        // sdl.releaseGPUComputePipeline(pass.device, pass.scan_a_pipeline);
+        sdl.releaseGPUComputePipeline(pass.device, pass.scan_a_pipeline);
         sdl.releaseGPUComputePipeline(pass.device, pass.histogram_pipeline);
         sdl.releaseGPUComputePipeline(pass.device, pass.dispatch_pipeline);
         pass.* = undefined;
     }
 
-    fn sort(pass: *SortPass, command_buffer: *sdl.GPUCommandBuffer, data: *sdl.GPUBuffer) !void {
+    fn sort(pass: *SortPass, command_buffer: *sdl.GPUCommandBuffer, in_data: *sdl.GPUBuffer) !void {
         const dispatch_pass = try sdl.beginGPUComputePass(
             command_buffer,
             &.{},
             &.{.{ .buffer = pass.dispatch_buffer, .cycle = true }},
         );
         sdl.bindGPUComputePipeline(dispatch_pass, pass.dispatch_pipeline);
-        sdl.bindGPUComputeStorageBuffers(dispatch_pass, 0, &.{data});
+        sdl.bindGPUComputeStorageBuffers(dispatch_pass, 0, &.{in_data});
         sdl.dispatchGPUCompute(dispatch_pass, 1, 1, 1);
         sdl.endGPUComputePass(dispatch_pass);
 
@@ -646,54 +646,34 @@ const SortPass = struct {
                 &.{.{ .buffer = pass.histogram_buffer }},
             );
             sdl.bindGPUComputePipeline(histogram_pass, pass.histogram_pipeline);
-            sdl.bindGPUComputeStorageBuffers(histogram_pass, 0, &.{data});
+            sdl.bindGPUComputeStorageBuffers(histogram_pass, 0, &.{in_data});
             sdl.pushGPUComputeUniformData(command_buffer, 0, &@as(u32, @intCast(i * 8)), 4);
             sdl.dispatchGPUComputeIndirect(histogram_pass, pass.dispatch_buffer, 0);
             sdl.endGPUComputePass(histogram_pass);
 
-            // var j: u32 = 0;
-            // while (j < 4) : (j += 1) {
-            //     const scan_pass = try sdl.beginGPUComputePass(
-            //         command_buffer,
-            //         &.{},
-            //         &.{.{ .buffer = pass.histogram_buffer }},
-            //     );
-            //     sdl.bindGPUComputePipeline(scan_pass, pass.scan_a_pipeline);
-            //     sdl.bindGPUComputeStorageBuffers(scan_pass, 0, &.{data});
-            //     sdl.pushGPUComputeUniformData(command_buffer, 0, &j, 4);
-            //     sdl.dispatchGPUComputeIndirect(
-            //         histogram_pass,
-            //         pass.dispatch_buffer,
-            //         4 * (1 + j),
-            //     );
-            //     sdl.endGPUComputePass(scan_pass);
-            // }
+            const scan_pass = try sdl.beginGPUComputePass(
+                command_buffer,
+                &.{},
+                &.{.{ .buffer = pass.histogram_buffer }},
+            );
+            sdl.bindGPUComputePipeline(scan_pass, pass.scan_a_pipeline);
+            sdl.bindGPUComputeStorageBuffers(scan_pass, 0, &.{in_data});
+            sdl.dispatchGPUCompute(histogram_pass, 1, 1, 1);
+            sdl.endGPUComputePass(scan_pass);
 
-            // while (j > 0) : (j -= 1) {
-            //     const scan_pass = try sdl.beginGPUComputePass(
-            //         command_buffer,
-            //         &.{},
-            //         &.{.{ .buffer = pass.histogram_buffer }},
-            //     );
-            //     sdl.bindGPUComputePipeline(scan_pass, pass.scan_b_pipeline);
-            //     sdl.bindGPUComputeStorageBuffers(scan_pass, 0, &.{data});
-            //     sdl.pushGPUComputeUniformData(command_buffer, 0, &(j - 1), 4);
-            //     sdl.dispatchGPUComputeIndirect(
-            //         histogram_pass,
-            //         pass.dispatch_buffer,
-            //         4 * (1 + j - 1),
-            //     );
-            //     sdl.endGPUComputePass(scan_pass);
-            // }
-
-            // const scatter_pass = try sdl.beginGPUComputePass(
-            //     command_buffer,
-            //     &.{},
-            //     &.{.{ .buffer = data }},
-            // );
-            // sdl.bindGPUComputePipeline(scatter_pass, pass.scatter_pipeline);
-            // sdl.dispatchGPUComputeIndirect(histogram_pass, pass.dispatch_buffer, 0);
-            // sdl.endGPUComputePass(scatter_pass);
+            const scatter_pass = try sdl.beginGPUComputePass(
+                command_buffer,
+                &.{},
+                &.{
+                    .{ .buffer = pass.histogram_buffer },
+                    .{ .buffer = in_data, .cycle = true },
+                },
+            );
+            sdl.bindGPUComputePipeline(scatter_pass, pass.scatter_pipeline);
+            sdl.bindGPUComputeStorageBuffers(scatter_pass, 0, &.{in_data});
+            sdl.pushGPUComputeUniformData(command_buffer, 0, &@as(u32, @intCast(i * 8)), 4);
+            sdl.dispatchGPUComputeIndirect(scatter_pass, pass.dispatch_buffer, 0);
+            sdl.endGPUComputePass(scatter_pass);
         }
     }
 };

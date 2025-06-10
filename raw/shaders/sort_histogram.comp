@@ -28,13 +28,9 @@ shared uint local_hist[256];
 void main() {
     uint local_id = gl_LocalInvocationID.x;
     uint workgroup_id = gl_WorkGroupID.x;
-    uint n_workgroups = gl_NumWorkGroups.x;
 
     if (local_id < 256) {
         local_hist[local_id] = 0;
-    }
-    if (local_id == 0) {
-        histograms[workgroup_id + 256 * n_workgroups] = 0;
     }
     barrier();
 
@@ -48,50 +44,7 @@ void main() {
     }
     barrier();
 
-    for (uint i = 1; i < 256; i *= 2) {
-        uint j = (local_id + 1) * i * 2 - 1;
-        if (j < 256) local_hist[j] += local_hist[j - i];
-        barrier();
-    }
-
-    if (local_id == 0) {
-        histograms[workgroup_id + 256 * n_workgroups] = (local_hist[255] << 2) | 0x1u;
-        local_hist[255] = 0;
-    }
-    barrier();
-
-    for (uint i = 128 / 2; i > 0; i /= 2) {
-        uint j = (local_id + 1) * i * 2 - 1;
-        if (j < 256) {
-            uint tmp = local_hist[j - i];
-            local_hist[j - i] = local_hist[j];
-            local_hist[j] += tmp;
-        }
-        barrier();
-    }
-
-    uint prior_total = 0;
-    if (local_id == 0) {
-        uint i = workgroup_id;
-        while (i > 0) {
-            memoryBarrierBuffer();
-            uint packed = atomicAdd(histograms[(i - 1) + 256 * n_workgroups], 0);
-            if ((packed & 0x2u) > 0) {
-                prior_total = packed >> 2;
-                break;
-            } else if ((packed & 0x1u) > 0) {
-                prior_total += packed >> 2;
-                --i;
-            }
-        }
-    }
-    atomicAdd(
-        histograms[workgroup_id + 256 * n_workgroups],
-        (prior_total << 2) | 0x2u
-    );
-    barrier();
-
     if (local_id < 256) {
-        histograms[local_id + 256 * workgroup_id] = local_hist[local_id] + prior_total;
+        histograms[local_id + 256 * workgroup_id] = local_hist[local_id];
     }
 }

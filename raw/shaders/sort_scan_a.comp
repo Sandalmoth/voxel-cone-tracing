@@ -1,11 +1,13 @@
 #version 460
 
+#define WORKGROUP_SIZE 256
+
 struct KV {
     uint key;
     uint value;
 };
 
-layout(local_size_x = 256, local_size_y = 1, local_size_z = 1) in;
+layout(local_size_x = WORKGROUP_SIZE, local_size_y = 1, local_size_z = 1) in;
 
 layout(std430, set = 0, binding = 0) readonly buffer KVs {
     uint n_kvs;
@@ -13,51 +15,50 @@ layout(std430, set = 0, binding = 0) readonly buffer KVs {
 };
 
 layout(std430, set = 1, binding = 0) buffer HistogramBuffer {
-    // uint dispatch_sizes[4];
-    // uint dispatch_offsets[4];
     uint histograms[];
 };
 
-// layout(std140, set = 2, binding = 0) uniform UBO {
-//     uint invocation;
-// } ubo;
-//
-void main() {}
+shared uint local_hist[256];
 
-// shared uint workspace[256];
+void main() {
+    uint local_id = gl_LocalInvocationID.x;
+    // NOTE n_workgroups in the histogram and scatter pass
+    uint n_workgroups = (n_kvs + WORKGROUP_SIZE * 32 - 1) / (WORKGROUP_SIZE * 32);
 
-// void main() {
-//     uint local_id = gl_LocalInvocationID.x;
-//     workspace[local_id] = b_histograms.histograms[local_id];
-//     barrier();
-//     groupMemoryBarrier();
+    uint bin_total = 0;
+    for (uint i = 0; i < n_workgroups; ++i) {
+        bin_total += histograms[i * 256 + local_id];
+    }
+    
+    local_hist[local_id] = bin_total;
+    barrier();
 
-//     for (uint i = 1; i < 256; i *= 2) {
-//         uint j = (local_id + 1) * i * 2 - 1;
-//         if (j < 256) workspace[j] += workspace[j - i];
-//         barrier();
-//         groupMemoryBarrier();
-//     }
+    for (uint i = 1; i < 256; i *= 2) {
+        uint j = (local_id + 1) * i * 2 - 1;
+        if (j < 256) local_hist[j] += local_hist[j - i];
+        barrier();
+    }
 
-//     if (local_id == 0) {
-//         histograms[gl_WorkGroupID.x] = (workspace[255] << 2) & 0x1u;
-        
-//         // b_histograms.histograms[local_id + 256 * b_histograms.dispatch_sizes[ubo.invocation]];
-//         workspace[255] = 0;
-//     }
-//     barrier();
-//     groupMemoryBarrier();
+    if (local_id == 0) {
+        local_hist[255] = 0;
+    }
+    barrier();
 
-//     for (uint i = 128; i > 0; i /= 2) {
-//         uint j = (local_id + 1) * i * 2 - 1;
-//         if (j < 256) {
-//             uint tmp = workspace[j - i];
-//             workspace[j - i] = workspace[j];
-//             workspace[j] += tmp;
-//         }
-//         barrier();
-//         groupMemoryBarrier();
-//     }
+    for (uint i = 128 / 2; i > 0; i /= 2) {
+        uint j = (local_id + 1) * i * 2 - 1;
+        if (j < 256) {
+            uint tmp = local_hist[j - i];
+            local_hist[j - i] = local_hist[j];
+            local_hist[j] += tmp;
+        }
+        barrier();
+    }
 
-//     b_histograms.histograms[local_id] = workspace[local_id];
-// }
+    if (local_id < 256) {
+        histograms[local_id + 256 * n_workgroups] = local_hist[local_id];
+        histograms[local_id + 256 * n_workgroups + 256] = local_hist[local_id];
+    }
+    
+    
+}
+
