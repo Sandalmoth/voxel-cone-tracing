@@ -9,3 +9,5 @@ glslc --target-env=vulkan1.0 raw/shaders/sort_dispatch.comp -o data/shaders/sort
 glslc --target-env=vulkan1.0 raw/shaders/sort_histogram.comp -o data/shaders/sort_histogram.comp.spv
 glslc --target-env=vulkan1.0 raw/shaders/sort_scan.comp -o data/shaders/sort_scan.comp.spv
 glslc --target-env=vulkan1.0 raw/shaders/sort_scatter.comp -o data/shaders/sort_scatter.comp.spv
+glslc --target-env=vulkan1.0 raw/shaders/debug.vert -o data/shaders/debug.vert.spv
+glslc --target-env=vulkan1.0 raw/shaders/debug.frag -o data/shaders/debug.frag.spv

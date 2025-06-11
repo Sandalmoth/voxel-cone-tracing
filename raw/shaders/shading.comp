@@ -49,8 +49,8 @@ uint lowerBound(uint value, uint n) {
 
 void main() {
     ivec3 voxel_pos = ivec3(
-        gl_GlobalInvocationID.x % 8,
-        gl_GlobalInvocationID.y % 6,
+        gl_GlobalInvocationID.x % 66,
+        gl_GlobalInvocationID.y % 66,
         gl_GlobalInvocationID.z
     ) - 33;
     uint cascade = gl_GlobalInvocationID.x / 66;

@@ -32,11 +32,12 @@ shared uint local_hist[256];
 shared uint local_offsets[256];
 
 void main() {
+    uint global_id = gl_GlobalInvocationID.x;
     uint local_id = gl_LocalInvocationID.x;
     uint workgroup_id = gl_WorkGroupID.x;
     uint n_workgroups = gl_NumWorkGroups.x;
 
-    if (local_id == 0) {
+    if (global_id == 0) {
         n_kvs_out = n_kvs_in;
     }
     if (local_id < 256) {
@@ -63,6 +64,11 @@ void main() {
         uint ix = WORKGROUP_SIZE * i + WORKGROUP_SIZE * BLOCK_SIZE * workgroup_id + local_id;
         if (ix < n_kvs_in) {
             KV kv = kvs_in[ix];
+            uint radix = (kv.key >> bit_shift) & 0xFFu;
+            kvs_out[local_offsets[radix] + counters[radix]] = kv;
+            ++counters[radix];
         }
     }
+
+    barrier();
 }

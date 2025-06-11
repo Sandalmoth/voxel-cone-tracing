@@ -43,6 +43,7 @@ pub const GPUDepthStencilTargetInfo = c.SDL_GPUDepthStencilTargetInfo;
 pub const GPUBufferBinding = c.SDL_GPUBufferBinding;
 pub const GPUTextureSamplerBinding = c.SDL_GPUTextureSamplerBinding;
 pub const FColor = c.SDL_FColor;
+pub const GPUFence = c.SDL_GPUFence;
 
 pub fn getError() [*c]const u8 {
     return c.SDL_GetError();
@@ -518,4 +519,44 @@ pub fn setGPUSwapchainParameters(
 
 pub fn dispatchGPUComputeIndirect(pass: *GPUComputePass, buffer: *GPUBuffer, offset: u32) void {
     c.SDL_DispatchGPUComputeIndirect(pass, buffer, offset);
+}
+
+pub fn pushGPUDebugGroup(command_buffer: *GPUCommandBuffer, name: [:0]const u8) void {
+    c.SDL_PushGPUDebugGroup(command_buffer, name.ptr);
+}
+
+pub fn popGPUDebugGroup(command_buffer: *GPUCommandBuffer) void {
+    c.SDL_PopGPUDebugGroup(command_buffer);
+}
+
+pub fn getGPUDeviceDriver(device: *GPUDevice) []const u8 {
+    const driver = c.SDL_GetGPUDeviceDriver(device);
+    if (driver == null) return "UNKNOWN";
+    return std.mem.span(driver);
+}
+
+pub fn submitGPUCommandBufferAndAcquireFence(command_buffer: *GPUCommandBuffer) !*GPUFence {
+    return c.SDL_SubmitGPUCommandBufferAndAcquireFence(command_buffer) orelse {
+        log.err("SDL_SubmitGPUCommandBufferAndAcquireFence: {s}", .{getError()});
+        return error.Sdl;
+    };
+}
+
+pub fn waitForGPUFences(device: *GPUDevice, wait_all: bool, fences: []const *GPUFence) !void {
+    if (!c.SDL_WaitForGPUFences(device, wait_all, &fences[0], @intCast(fences.len))) {
+        log.err("SDL_WaitForGPUFences: {s}", .{getError()});
+        return error.Sdl;
+    }
+}
+
+pub fn releaseGPUFence(device: *GPUDevice, fence: *GPUFence) void {
+    c.SDL_ReleaseGPUFence(device, fence);
+}
+
+pub fn downloadFromGPUBuffer(
+    pass: *GPUCopyPass,
+    source: *const GPUBufferRegion,
+    destination: *const GPUTransferBufferLocation,
+) void {
+    c.SDL_DownloadFromGPUBuffer(pass, source, destination);
 }
