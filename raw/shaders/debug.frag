@@ -1,6 +1,6 @@
 #version 460
 
-#define MIN_VOXEL_SIZE 0.109375
+#define MIN_VOXEL_SIZE 0.244140625
 
 layout(location = 0) in vec3 v_ray_origin;
 layout(location = 1) in vec3 v_ray_dir;
@@ -13,7 +13,7 @@ layout(set = 2, binding = 1) uniform sampler3D u_radiance_cascades;
 uint cascadeAt(vec3 pos) {
     vec3 a = abs(pos);
     float maximum = max(max(a.x, a.y), a.z);
-    return uint(clamp(ceil(log2(maximum / (MIN_VOXEL_SIZE * 32))), 0, 7));
+    return uint(clamp(ceil(log2(maximum / (MIN_VOXEL_SIZE * 32))), 0, 8));
 }
 
 float voxelSize(uint cascade) {
@@ -22,6 +22,7 @@ float voxelSize(uint cascade) {
 
 vec4 voxelAt(vec3 pos) {
     uint cascade = cascadeAt(pos);
+    if (cascade == 8) return vec4(0.0, 0.0, 0.0, 0.0);
     float voxel_size = voxelSize(cascade);
     ivec3 voxel_pos = ivec3(floor(pos / voxel_size)) + 33;
     vec4 c = texelFetch(u_opacity_cascades, ivec3(voxel_pos.x + 66 * cascade, voxel_pos.yz), 0);

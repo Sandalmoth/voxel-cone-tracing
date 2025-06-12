@@ -13,7 +13,7 @@ struct TriangleIntersection {
     uint ix_triangle;
 };
 
-layout(local_size_x = 4, local_size_y = 4, local_size_z = 4) in;
+layout(local_size_x = 8, local_size_y = 4, local_size_z = 2) in;
 
 layout(std430, set = 0, binding = 0) readonly buffer TriangleDataBuffer {
     TriangleData triangles[];
@@ -65,7 +65,7 @@ void main() {
     uint packed = packVoxelPos(ivec4(voxel_pos, cascade));
     uint i = lowerBound(packed, b_triangle_isects.n_triangles);
     TriangleIntersection isect = b_triangle_isects.isects[i];
-    while (isect.ix_voxel == packed) {
+    while (isect.ix_voxel == packed && i < b_triangle_isects.n_triangles) {
         TriangleData triangle = b_triangle_data.triangles[isect.ix_triangle];
         coverage += triangle.coverage;
         

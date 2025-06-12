@@ -1,6 +1,6 @@
 #version 460
 
-#define MIN_VOXEL_SIZE 0.109375
+#define MIN_VOXEL_SIZE 0.244140625
 
 struct Vertex {
     vec3 position;
@@ -50,68 +50,6 @@ layout(std140, set = 2, binding = 0) uniform VoxelizeData {
 
 float voxelSize(uint cascade) {
     return MIN_VOXEL_SIZE * float(1 << cascade);
-}
-
-bool intersectVoxelTriangle(vec3 low, vec3 ext, vec3 p0, vec3 p1, vec3 p2) {
-    // https://omnigoat.github.io/2015/03/09/box-triangle-intersection/
-    vec3 n = normalize(cross(p1 - p0, p2 - p0));
-
-    vec3 c = vec3(
-        (n.x > 0.0) ? ext.x : 0.0,
-        (n.y > 0.0) ? ext.y : 0.0,
-        (n.z > 0.0) ? ext.z : 0.0
-    );
-    float d1 = dot(n, low + c - p0);
-    float d2 = dot(n, low + ext - c - p0);
-    if (d1 * d2 > 0.0) return false;
-
-    vec3 e0 = p1 - p0;
-    vec3 e1 = p2 - p1;
-    vec3 e2 = p0 - p2;
-
-    float xym = sign(n.z);
-
-    vec2 ne0xy = vec2(-e0.y, e0.x) * xym;
-    float de0xy = -dot(ne0xy, p0.xy) + max(0.0, ext.x * ne0xy.x) + max(0.0, ext.y * ne0xy.y);
-    if (dot(ne0xy, low.xy) + de0xy < 0.0) return false;
-
-    vec2 ne1xy = vec2(-e1.y, e1.x) * xym;
-    float de1xy = -dot(ne1xy, p1.xy) + max(0.0, ext.x * ne1xy.x) + max(0.0, ext.y * ne1xy.y);
-    if (dot(ne1xy, low.xy) + de1xy < 0.0) return false;
-
-    vec2 ne2xy = vec2(-e2.y, e2.x) * xym;
-    float de2xy = -dot(ne2xy, p2.xy) + max(0.0, ext.x * ne2xy.x) + max(0.0, ext.y * ne2xy.y);
-    if (dot(ne2xy, low.xy) + de2xy < 0.0) return false;
-
-    float yzm = sign(n.x);
-
-    vec2 ne0yz = vec2(-e0.z, e0.y) * yzm;
-    float de0yz = -dot(ne0yz, p0.yz) + max(0.0, ext.y * ne0yz.x) + max(0.0, ext.z * ne0yz.y);
-    if (dot(ne0yz, low.yz) + de0yz < 0.0) return false;
-
-    vec2 ne1yz = vec2(-e1.z, e1.y) * yzm;
-    float de1yz = -dot(ne1yz, p1.yz) + max(0.0, ext.y * ne1yz.x) + max(0.0, ext.z * ne1yz.y);
-    if (dot(ne1yz, low.yz) + de1yz < 0.0) return false;
-
-    vec2 ne2yz = vec2(-e2.z, e2.y) * yzm;
-    float de2yz = -dot(ne2yz, p2.yz) + max(0.0, ext.y * ne2yz.x) + max(0.0, ext.z * ne2yz.y);
-    if (dot(ne2yz, low.yz) + de2yz < 0.0) return false;
-
-    float zxm = sign(n.y);
-
-    vec2 ne0zx = vec2(-e0.x, e0.z) * zxm;
-    float de0zx = -dot(ne0zx, p0.zx) + max(0.0, ext.z * ne0zx.x) + max(0.0, ext.x * ne0zx.y);
-    if (dot(ne0zx, low.zx) + de0zx < 0.0) return false;
-
-    vec2 ne1zx = vec2(-e1.x, e1.z) * zxm;
-    float de1zx = -dot(ne1zx, p1.zx) + max(0.0, ext.z * ne1zx.x) + max(0.0, ext.x * ne1zx.y);
-    if (dot(ne1zx, low.zx) + de1zx < 0.0) return false;
-
-    vec2 ne2zx = vec2(-e2.x, e2.z) * zxm;
-    float de2zx = -dot(ne2zx, p2.zx) + max(0.0, ext.z * ne2zx.x) + max(0.0, ext.x * ne2zx.y);
-    if (dot(ne2zx, low.zx) + de2zx < 0.0) return false;
-
-    return true;
 }
 
 bool intersectVoxelTriangle2(
@@ -222,7 +160,6 @@ void main() {
                     ne0yz, ne1yz, ne2yz, de0yz, de1yz, de2yz,
                     ne0zx, ne1zx, ne2zx, de0zx, de1zx, de2zx
                 )) continue;
-                // if (!intersectVoxelTriangle(low, ext, p0, p1, p2)) continue;
 
                 // store triangle info
                 // we could store data per triangle once instead of per intersection

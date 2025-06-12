@@ -46,27 +46,28 @@ pub fn main() !void {
     try sdl.claimWindowForGPUDevice(device, window);
 
     try sdl.setWindowRelativeMouseMode(window, true);
-    if (sdl.windowSupportsGPUPresentMode(device, window, sdl.c.SDL_GPU_PRESENTMODE_MAILBOX)) {
-        log.info("Swapchain composition set to mailbox", .{});
-        try sdl.setGPUSwapchainParameters(
-            device,
-            window,
-            sdl.c.SDL_GPU_SWAPCHAINCOMPOSITION_SDR,
-            sdl.c.SDL_GPU_PRESENTMODE_MAILBOX,
-        );
-    } else if (sdl.windowSupportsGPUPresentMode(
-        device,
-        window,
-        sdl.c.SDL_GPU_PRESENTMODE_IMMEDIATE,
-    )) {
-        log.info("Swapchain composition set to immediate", .{});
-        try sdl.setGPUSwapchainParameters(
-            device,
-            window,
-            sdl.c.SDL_GPU_SWAPCHAINCOMPOSITION_SDR,
-            sdl.c.SDL_GPU_PRESENTMODE_IMMEDIATE,
-        );
-    }
+
+    // if (sdl.windowSupportsGPUPresentMode(device, window, sdl.c.SDL_GPU_PRESENTMODE_MAILBOX)) {
+    //     log.info("Swapchain composition set to mailbox", .{});
+    //     try sdl.setGPUSwapchainParameters(
+    //         device,
+    //         window,
+    //         sdl.c.SDL_GPU_SWAPCHAINCOMPOSITION_SDR,
+    //         sdl.c.SDL_GPU_PRESENTMODE_MAILBOX,
+    //     );
+    // } else if (sdl.windowSupportsGPUPresentMode(
+    //     device,
+    //     window,
+    //     sdl.c.SDL_GPU_PRESENTMODE_IMMEDIATE,
+    // )) {
+    //     log.info("Swapchain composition set to immediate", .{});
+    //     try sdl.setGPUSwapchainParameters(
+    //         device,
+    //         window,
+    //         sdl.c.SDL_GPU_SWAPCHAINCOMPOSITION_SDR,
+    //         sdl.c.SDL_GPU_PRESENTMODE_IMMEDIATE,
+    //     );
+    // }
 
     var input = Input.init(gpa);
     try input.map.put(.{ .keyboard = sdl.c.SDL_SCANCODE_W }, .forward);
@@ -295,9 +296,9 @@ const VoxelizePass = struct {
                 .num_readwrite_storage_textures = 2,
                 .num_readwrite_storage_buffers = 0,
                 .num_uniform_buffers = 0,
-                .threadcount_x = 4,
+                .threadcount_x = 8,
                 .threadcount_y = 4,
-                .threadcount_z = 4,
+                .threadcount_z = 2,
             });
         };
         errdefer sdl.releaseGPUComputePipeline(device, shading_pipeline);
@@ -316,7 +317,7 @@ const VoxelizePass = struct {
         const triangle_data_buffer = try sdl.createGPUBuffer(device, &.{
             .usage = sdl.c.SDL_GPU_BUFFERUSAGE_COMPUTE_STORAGE_READ |
                 sdl.c.SDL_GPU_BUFFERUSAGE_COMPUTE_STORAGE_WRITE,
-            .size = 64 * 1024 * 1024,
+            .size = 128 * 1024 * 1024,
         });
         errdefer sdl.releaseGPUBuffer(device, triangle_data_buffer);
 
@@ -389,7 +390,7 @@ const VoxelizePass = struct {
             &.{.{ .buffer = pass.triangle_list_buffer, .cycle = true }},
         );
         sdl.bindGPUComputePipeline(clear_pass, pass.clear_pipeline);
-        sdl.dispatchGPUCompute(clear_pass, 132, 99, 17);
+        sdl.dispatchGPUCompute(clear_pass, 1, 1, 1);
         sdl.endGPUComputePass(clear_pass);
         sdl.popGPUDebugGroup(command_buffer);
 
@@ -463,7 +464,7 @@ const VoxelizePass = struct {
             pass.triangle_data_buffer,
             pass.triangle_list_buffer,
         });
-        sdl.dispatchGPUCompute(shading_pass, 132, 99, 17);
+        sdl.dispatchGPUCompute(shading_pass, 66, 99, 33);
         sdl.endGPUComputePass(shading_pass);
         sdl.popGPUDebugGroup(command_buffer);
     }
