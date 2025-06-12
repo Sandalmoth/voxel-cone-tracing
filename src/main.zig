@@ -645,6 +645,8 @@ const SortPass = struct {
         sdl.endGPUComputePass(dispatch_pass);
 
         for (0..4) |i| {
+            const bit_shift: u32 = @intCast(i * 8);
+
             const histogram_pass = try sdl.beginGPUComputePass(
                 command_buffer,
                 &.{},
@@ -654,7 +656,7 @@ const SortPass = struct {
             sdl.bindGPUComputeStorageBuffers(histogram_pass, 0, &.{
                 if (i % 2 == 0) data else pass.output_buffer,
             });
-            sdl.pushGPUComputeUniformData(command_buffer, 0, &@as(u32, @intCast(i * 8)), 4);
+            sdl.pushGPUComputeUniformData(command_buffer, 0, &bit_shift, 4);
             sdl.dispatchGPUComputeIndirect(histogram_pass, pass.dispatch_buffer, 0);
             sdl.endGPUComputePass(histogram_pass);
 
@@ -682,7 +684,7 @@ const SortPass = struct {
             sdl.bindGPUComputeStorageBuffers(scatter_pass, 0, &.{
                 if (i % 2 == 0) data else pass.output_buffer,
             });
-            sdl.pushGPUComputeUniformData(command_buffer, 0, &@as(u32, @intCast(i * 8)), 4);
+            sdl.pushGPUComputeUniformData(command_buffer, 0, &bit_shift, 4);
             sdl.dispatchGPUComputeIndirect(scatter_pass, pass.dispatch_buffer, 0);
             sdl.endGPUComputePass(scatter_pass);
         }
@@ -1473,6 +1475,7 @@ test "gpu_sorting" {
             buffer.data.n = n;
             for (0..buffer.data.data.len) |i| buffer.data.data[i] = .{
                 rand.int(u32),
+                // rand.uintLessThan(u32, 256),
                 rand.int(u32),
             };
             return buffer;
@@ -1570,14 +1573,14 @@ test "gpu_sorting" {
     try buf.download(gpu_device);
 
     // std.debug.print("--- after --- {}\n", .{buf.data.n});
-    for (buf.data.data[0..buf.data.n]) |pair|
-        std.debug.print("{}\t{}\t{x}\n", .{ pair[0], pair[1], pair[0] });
+    // for (buf.data.data[0..buf.data.n]) |pair|
+    //     std.debug.print("{}\t{}\t{x}\n", .{ pair[0], pair[1], pair[0] });
 
-    // var x: u32 = buf.data.data[0][0];
-    // for (buf.data.data[1..buf.data.n]) |y| {
-    //     if (x > y[0]) try std.testing.expect(false);
-    //     x = y[0];
-    // }
+    var x: u32 = buf.data.data[0][0];
+    for (buf.data.data[1..buf.data.n]) |y| {
+        if (x > y[0]) try std.testing.expect(false);
+        x = y[0];
+    }
 
     buf.release(gpu_device);
     buf.deinit();
