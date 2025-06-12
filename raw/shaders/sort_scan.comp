@@ -44,7 +44,7 @@ void main() {
     }
     barrier();
 
-    for (uint i = 128 / 2; i > 0; i /= 2) {
+    for (uint i = 256 / 2; i > 0; i /= 2) {
         uint j = (local_id + 1) * i * 2 - 1;
         if (j < 256) {
             uint tmp = local_hist[j - i];

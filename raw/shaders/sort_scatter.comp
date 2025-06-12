@@ -30,6 +30,7 @@ layout(std140, set = 2, binding = 0) uniform UBO {
 
 shared uint local_hist[256];
 shared uint local_offsets[256];
+shared uint local_counters[256];
 
 void main() {
     uint global_id = gl_GlobalInvocationID.x;
@@ -43,6 +44,7 @@ void main() {
     if (local_id < 256) {
         local_hist[local_id] = histograms[local_id + 256 * workgroup_id];
         local_offsets[local_id] = 0;
+        local_counters[local_id] = 0;
     }
     barrier();
 
@@ -56,19 +58,12 @@ void main() {
     }
     barrier();
 
-    uint counters[256];
-    for (int i = 0; i < 256; ++i) {
-        counters[i] = 0;
-    }
     for (int i = 0; i < BLOCK_SIZE; ++i) {
         uint ix = WORKGROUP_SIZE * i + WORKGROUP_SIZE * BLOCK_SIZE * workgroup_id + local_id;
         if (ix < n_kvs_in) {
             KV kv = kvs_in[ix];
             uint radix = (kv.key >> bit_shift) & 0xFFu;
-            kvs_out[local_offsets[radix] + counters[radix]] = kv;
-            ++counters[radix];
+            kvs_out[local_offsets[radix] + atomicAdd(local_counters[radix], 1)] = kv;
         }
     }
-
-    barrier();
 }

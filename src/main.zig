@@ -1462,7 +1462,7 @@ test "gpu_sorting" {
     const SortableBuffer = struct {
         const Data = extern struct {
             n: u32,
-            data: [1024][2]u32,
+            data: [1024 * 1024][2]u32,
         };
 
         data: Data,
@@ -1514,6 +1514,9 @@ test "gpu_sorting" {
         }
 
         fn download(buffer: *@This(), device: *sdl.GPUDevice) !void {
+            var sum_before: u32 = 0;
+            for (buffer.data.data[0..buffer.data.n]) |x| sum_before +%= x[0] *% x[1];
+
             const transfer_buffer = try sdl.createGPUTransferBuffer(device, &.{
                 .usage = sdl.c.SDL_GPU_TRANSFERBUFFERUSAGE_DOWNLOAD,
                 .size = @sizeOf(Data),
@@ -1539,6 +1542,10 @@ test "gpu_sorting" {
             ));
             buffer.data = bytes.*;
             sdl.unmapGPUTransferBuffer(device, transfer_buffer);
+
+            var sum_after: u32 = 0;
+            for (buffer.data.data[0..buffer.data.n]) |x| sum_after +%= x[0] *% x[1];
+            try std.testing.expectEqual(sum_before, sum_after);
         }
 
         fn release(buffer: *@This(), device: *sdl.GPUDevice) void {
@@ -1546,11 +1553,11 @@ test "gpu_sorting" {
         }
     };
 
-    var buf = try SortableBuffer.init(10, rng.random());
+    var buf = try SortableBuffer.init(8192, rng.random());
     try buf.upload(gpu_device);
 
-    std.debug.print("--- before --- {}\n", .{buf.data.n});
-    for (buf.data.data[0..buf.data.n]) |pair| std.debug.print("{}\t{}\n", .{ pair[0], pair[1] });
+    // std.debug.print("--- before --- {}\n", .{buf.data.n});
+    // for (buf.data.data[0..buf.data.n]) |pair| std.debug.print("{}\t{}\n", .{ pair[0], pair[1] });
 
     var sort_pass = try SortPass.init(std.testing.allocator, gpu_device);
     defer sort_pass.deinit();
@@ -1562,8 +1569,15 @@ test "gpu_sorting" {
 
     try buf.download(gpu_device);
 
-    std.debug.print("--- after --- {}\n", .{buf.data.n});
-    for (buf.data.data[0..buf.data.n]) |pair| std.debug.print("{}\t{}\n", .{ pair[0], pair[1] });
+    // std.debug.print("--- after --- {}\n", .{buf.data.n});
+    for (buf.data.data[0..buf.data.n]) |pair|
+        std.debug.print("{}\t{}\t{x}\n", .{ pair[0], pair[1], pair[0] });
+
+    // var x: u32 = buf.data.data[0][0];
+    // for (buf.data.data[1..buf.data.n]) |y| {
+    //     if (x > y[0]) try std.testing.expect(false);
+    //     x = y[0];
+    // }
 
     buf.release(gpu_device);
     buf.deinit();
