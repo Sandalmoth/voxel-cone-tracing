@@ -382,6 +382,7 @@ const VoxelizePass = struct {
     fn begin(pass: *VoxelizePass, command_buffer: *sdl.GPUCommandBuffer) !void {
         sdl.pushGPUDebugGroup(command_buffer, "voxelize");
 
+        sdl.pushGPUDebugGroup(command_buffer, "clear");
         const clear_pass = try sdl.beginGPUComputePass(
             command_buffer,
             &.{},
@@ -390,6 +391,7 @@ const VoxelizePass = struct {
         sdl.bindGPUComputePipeline(clear_pass, pass.clear_pipeline);
         sdl.dispatchGPUCompute(clear_pass, 132, 99, 17);
         sdl.endGPUComputePass(clear_pass);
+        sdl.popGPUDebugGroup(command_buffer);
 
         pass.voxelize_pass = try sdl.beginGPUComputePass(
             command_buffer,
@@ -447,6 +449,7 @@ const VoxelizePass = struct {
 
         try sort_pass.sort(command_buffer, pass.triangle_list_buffer);
 
+        sdl.pushGPUDebugGroup(command_buffer, "shading");
         const shading_pass = try sdl.beginGPUComputePass(
             command_buffer,
             &.{
@@ -462,6 +465,7 @@ const VoxelizePass = struct {
         });
         sdl.dispatchGPUCompute(shading_pass, 132, 99, 17);
         sdl.endGPUComputePass(shading_pass);
+        sdl.popGPUDebugGroup(command_buffer);
     }
 };
 
@@ -647,6 +651,7 @@ const SortPass = struct {
         for (0..4) |i| {
             const bit_shift: u32 = @intCast(i * 8);
 
+            sdl.pushGPUDebugGroup(command_buffer, "histogram");
             const histogram_pass = try sdl.beginGPUComputePass(
                 command_buffer,
                 &.{},
@@ -659,7 +664,9 @@ const SortPass = struct {
             sdl.pushGPUComputeUniformData(command_buffer, 0, &bit_shift, 4);
             sdl.dispatchGPUComputeIndirect(histogram_pass, pass.dispatch_buffer, 0);
             sdl.endGPUComputePass(histogram_pass);
+            sdl.popGPUDebugGroup(command_buffer);
 
+            sdl.pushGPUDebugGroup(command_buffer, "scan");
             const scan_pass = try sdl.beginGPUComputePass(
                 command_buffer,
                 &.{},
@@ -671,7 +678,9 @@ const SortPass = struct {
             });
             sdl.dispatchGPUCompute(scan_pass, 1, 1, 1);
             sdl.endGPUComputePass(scan_pass);
+            sdl.popGPUDebugGroup(command_buffer);
 
+            sdl.pushGPUDebugGroup(command_buffer, "scatter");
             const scatter_pass = try sdl.beginGPUComputePass(
                 command_buffer,
                 &.{},
@@ -687,6 +696,7 @@ const SortPass = struct {
             sdl.pushGPUComputeUniformData(command_buffer, 0, &bit_shift, 4);
             sdl.dispatchGPUComputeIndirect(scatter_pass, pass.dispatch_buffer, 0);
             sdl.endGPUComputePass(scatter_pass);
+            sdl.popGPUDebugGroup(command_buffer);
         }
     }
 };
