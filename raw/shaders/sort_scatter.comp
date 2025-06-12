@@ -28,9 +28,12 @@ layout(std140, set = 2, binding = 0) uniform UBO {
     uint bit_shift;
 };
 
-shared uint local_hist[256];
 shared uint local_offsets[256];
-shared uint local_counters[256];
+
+struct Flags {
+    uint flags[WORKGROUP_SIZE / 32];
+};
+shared Flags[256] flags;
 
 void main() {
     uint global_id = gl_GlobalInvocationID.x;
@@ -42,38 +45,63 @@ void main() {
         n_kvs_out = n_kvs_in;
     }
     if (local_id < 256) {
-        local_hist[local_id] = histograms[local_id + 256 * workgroup_id];
-        local_offsets[local_id] = 0;
-        local_counters[local_id] = 0;
-    }
-    barrier();
-
-    if (local_id < 256) {
-        if (local_hist[local_id] > 0) {
-            local_offsets[local_id] = atomicAdd(
-                histograms[local_id + 256 * n_workgroups + 256],
-                local_hist[local_id]
-            );
+        uint offset = 0;
+        for (int i = 0; i < workgroup_id; ++i) {
+            offset += histograms[256 * i + local_id];
         }
+        // now holds the offset for this radix for this workgroup in kvs_out
+        local_offsets[local_id] = offset + histograms[local_id + 256 * n_workgroups];
     }
     barrier();
 
-    for (int t = 0; t < WORKGROUP_SIZE; ++t) {
-        if (t == local_id) {
-            
+    // stable scatter pass based entirely on https://github.com/MircoWerner/VkRadixSort/
+    // the idea is, within a block, we mark the number of kvs with each radix
+    // and then, we can reference that for each one to figure out what slot it goes into
+    const uint flags_bin = local_id / 32;
+    const uint flags_bit = 1 << (local_id % 32);
 
     for (int i = 0; i < BLOCK_SIZE; ++i) {
-        // uint ix = WORKGROUP_SIZE * i + WORKGROUP_SIZE * BLOCK_SIZE * workgroup_id + local_id;
-        uint ix = i + WORKGROUP_SIZE * BLOCK_SIZE * workgroup_id + local_id * BLOCK_SIZE;
-        if (ix < n_kvs_in) {
-            KV kv = kvs_in[ix];
-            uint radix = (kv.key >> bit_shift) & 0xFFu;
-            kvs_out[local_offsets[radix] + atomicAdd(local_counters[radix], 1)] = kv;
-        }
-    }
+        uint ix = WORKGROUP_SIZE * i + WORKGROUP_SIZE * BLOCK_SIZE * workgroup_id + local_id;
 
+        if (local_id < 256) {
+            for (int j = 0; j < WORKGROUP_SIZE/ 32; ++j) {
+                flags[local_id].flags[j] = 0;
+            }
+        }
+        barrier();
+        
+        // set a flag saying this worker wants to put an item into this radix
+        KV kv;
+        uint radix;
+        uint offset;
+        if (ix < n_kvs_in) {
+            kv = kvs_in[ix];
+            radix = (kv.key >> bit_shift) & 0xFFu;
+            offset = local_offsets[radix];
+            atomicOr(flags[radix].flags[flags_bin], flags_bit);
+        }
+        barrier();
+
+        if (ix < n_kvs_in) {
+            uint prefix = 0;
+            uint count = 0;
+            for (uint j = 0; j < WORKGROUP_SIZE / 32; ++j) {
+                // count the nuber of set flags for this radix before this worker
+                // that's the offset for this element
+                // that way, we preserve the order from kvs_in
+                const uint bits = flags[radix].flags[j];
+                const uint full_count = bitCount(bits);
+                const uint partial_count = bitCount(bits & (flags_bit - 1));
+                prefix += (j < flags_bin) ? full_count : 0;
+                prefix += (j == flags_bin) ? partial_count : 0;
+                count += full_count;
+            }
+            kvs_out[offset + prefix] = kv;
+            // finally, we need to update the offsets to account for what we inserted
+            if (prefix == count - 1) {
+                atomicAdd(local_offsets[radix], count);
+            }
         }
         barrier();
     }
-
 }

@@ -56,7 +56,7 @@ void main() {
 
     if (local_id < 256) {
         histograms[local_id + 256 * n_workgroups] = local_hist[local_id];
-        histograms[local_id + 256 * n_workgroups + 256] = local_hist[local_id];
+        histograms[local_id + 256 * n_workgroups + 256] = bin_total;
     }
 }
 

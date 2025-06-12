@@ -1548,7 +1548,7 @@ test "gpu_sorting" {
 
             var sum_after: u32 = 0;
             for (buffer.data.data[0..buffer.data.n]) |x| sum_after +%= x[0] *% x[1];
-            // try std.testing.expectEqual(sum_before, sum_after);
+            try std.testing.expectEqual(sum_before, sum_after);
         }
 
         fn release(buffer: *@This(), device: *sdl.GPUDevice) void {
@@ -1556,7 +1556,7 @@ test "gpu_sorting" {
         }
     };
 
-    var buf = try SortableBuffer.init(10000, rng.random());
+    var buf = try SortableBuffer.init(1_000_000, rng.random());
     try buf.upload(gpu_device);
 
     // std.debug.print("--- before --- {}\n", .{buf.data.n});
@@ -1573,26 +1573,26 @@ test "gpu_sorting" {
     try buf.download(gpu_device);
 
     // std.debug.print("--- after --- {}\n", .{buf.data.n});
-    var prev: u32 = 0;
-    for (buf.data.data[0..buf.data.n]) |pair| {
-        const bad = prev > pair[0];
-        prev = pair[0];
-        std.debug.print("{}\t{}\t{:03}\t{:03}\t{:03}\t{:03}\t{s}\n", .{
-            pair[0],
-            pair[1],
-            (pair[0] & 0xFF000000) >> 24,
-            (pair[0] & 0x00FF0000) >> 16,
-            (pair[0] & 0x0000FF00) >> 8,
-            (pair[0] & 0x000000FF) >> 0,
-            if (bad) "*" else "",
-        });
-    }
-
-    // var x: u32 = buf.data.data[0][0];
-    // for (buf.data.data[1..buf.data.n]) |y| {
-    //     if (x > y[0]) try std.testing.expect(false);
-    //     x = y[0];
+    // var prev: u32 = 0;
+    // for (buf.data.data[0..buf.data.n]) |pair| {
+    //     const bad = prev > pair[0];
+    //     prev = pair[0];
+    //     std.debug.print("{}\t{}\t{:03}\t{:03}\t{:03}\t{:03}\t{s}\n", .{
+    //         pair[0],
+    //         pair[1],
+    //         (pair[0] & 0xFF000000) >> 24,
+    //         (pair[0] & 0x00FF0000) >> 16,
+    //         (pair[0] & 0x0000FF00) >> 8,
+    //         (pair[0] & 0x000000FF) >> 0,
+    //         if (bad) "*" else "",
+    //     });
     // }
+
+    var x: u32 = buf.data.data[0][0];
+    for (buf.data.data[1..buf.data.n]) |y| {
+        if (x > y[0]) try std.testing.expect(false);
+        x = y[0];
+    }
 
     buf.release(gpu_device);
     buf.deinit();
