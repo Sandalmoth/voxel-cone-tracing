@@ -25,8 +25,18 @@ vec4 voxelAt(vec3 pos) {
     if (cascade == 8) return vec4(0.0, 0.0, 0.0, 0.0);
     float voxel_size = voxelSize(cascade);
     ivec3 voxel_pos = ivec3(floor(pos / voxel_size)) + 33;
-    vec4 c = texelFetch(u_opacity_cascades, ivec3(voxel_pos.x + 66 * cascade, voxel_pos.yz), 0);
-    c = vec4(2.0, 2.0, 2.0, c.r);
+
+    vec4 c0 = texelFetch(u_opacity_cascades, ivec3(voxel_pos.x + 66 * cascade, voxel_pos.yz), 0);
+
+    vec4 c = vec4(0.0, 0.0, 0.0, 0.0);
+    c += ((v_ray_dir.x < 0) ? -v_ray_dir.x : 0) * texelFetch(u_radiance_cascades, ivec3(voxel_pos.x + 66 * cascade, voxel_pos.y + 66 * 0, voxel_pos.z), 0);
+    c += ((v_ray_dir.x > 0) ? v_ray_dir.x : 0) * texelFetch(u_radiance_cascades, ivec3(voxel_pos.x + 66 * cascade, voxel_pos.y + 66 * 1, voxel_pos.z), 0);
+    c += ((v_ray_dir.y < 0) ? -v_ray_dir.y : 0) * texelFetch(u_radiance_cascades, ivec3(voxel_pos.x + 66 * cascade, voxel_pos.y + 66 * 2, voxel_pos.z), 0);
+    c += ((v_ray_dir.y > 0) ? v_ray_dir.y : 0) * texelFetch(u_radiance_cascades, ivec3(voxel_pos.x + 66 * cascade, voxel_pos.y + 66 * 3, voxel_pos.z), 0);
+    c += ((v_ray_dir.z < 0) ? -v_ray_dir.z : 0) * texelFetch(u_radiance_cascades, ivec3(voxel_pos.x + 66 * cascade, voxel_pos.y + 66 * 4, voxel_pos.z), 0);
+    c += ((v_ray_dir.z > 0) ? v_ray_dir.z : 0) * texelFetch(u_radiance_cascades, ivec3(voxel_pos.x + 66 * cascade, voxel_pos.y + 66 * 5, voxel_pos.z), 0);
+    c.a = c0.r;
+    
     return c;
 }
 
@@ -38,7 +48,7 @@ void main() {
     float d = 0.0;
     
     for (int i = 0; i < 1024; ++i) {
-        float step = 0.5 * voxelSize(cascadeAt(pos));
+        float step = 0.25 * voxelSize(cascadeAt(pos));
         d += step;
         pos += step * v_ray_dir;
         vec4 voxel_color = voxelAt(pos);

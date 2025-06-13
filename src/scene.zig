@@ -156,6 +156,21 @@ pub fn init(gpa: std.mem.Allocator, device: *sdl.c.SDL_GPUDevice) !Scene {
         .roughness = 0.5,
     });
 
+    // also a bunny on top of the box (for shadows)
+    try scene.objects.append(gpa, .{
+        .model = scene.bunny,
+        .position = zm.f32x4(0, 4, 0, 1),
+        .rotation = zm.qidentity(),
+        .scale = zm.f32x4(1, 1, 1, 0),
+        .prev_position = zm.f32x4(0, 4, 0, 1),
+        .prev_rotation = zm.qidentity(),
+        .prev_scale = zm.f32x4(1, 1, 1, 0),
+        .angular_velocity = zm.quatFromRollPitchYaw(0.0, 1.0, 0.0),
+        .diffuse = zm.f32x4(0.7, 0.7, 0.7, 1.0),
+        .emissive = zm.f32x4s(0.0),
+        .roughness = 0.5,
+    });
+
     // floor
     try scene.objects.append(gpa, .{
         .model = scene.cube,

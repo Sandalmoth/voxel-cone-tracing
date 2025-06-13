@@ -47,27 +47,27 @@ pub fn main() !void {
 
     try sdl.setWindowRelativeMouseMode(window, true);
 
-    // if (sdl.windowSupportsGPUPresentMode(device, window, sdl.c.SDL_GPU_PRESENTMODE_MAILBOX)) {
-    //     log.info("Swapchain composition set to mailbox", .{});
-    //     try sdl.setGPUSwapchainParameters(
-    //         device,
-    //         window,
-    //         sdl.c.SDL_GPU_SWAPCHAINCOMPOSITION_SDR,
-    //         sdl.c.SDL_GPU_PRESENTMODE_MAILBOX,
-    //     );
-    // } else if (sdl.windowSupportsGPUPresentMode(
-    //     device,
-    //     window,
-    //     sdl.c.SDL_GPU_PRESENTMODE_IMMEDIATE,
-    // )) {
-    //     log.info("Swapchain composition set to immediate", .{});
-    //     try sdl.setGPUSwapchainParameters(
-    //         device,
-    //         window,
-    //         sdl.c.SDL_GPU_SWAPCHAINCOMPOSITION_SDR,
-    //         sdl.c.SDL_GPU_PRESENTMODE_IMMEDIATE,
-    //     );
-    // }
+    if (sdl.windowSupportsGPUPresentMode(device, window, sdl.c.SDL_GPU_PRESENTMODE_MAILBOX)) {
+        log.info("Swapchain composition set to mailbox", .{});
+        try sdl.setGPUSwapchainParameters(
+            device,
+            window,
+            sdl.c.SDL_GPU_SWAPCHAINCOMPOSITION_SDR,
+            sdl.c.SDL_GPU_PRESENTMODE_MAILBOX,
+        );
+    } else if (sdl.windowSupportsGPUPresentMode(
+        device,
+        window,
+        sdl.c.SDL_GPU_PRESENTMODE_IMMEDIATE,
+    )) {
+        log.info("Swapchain composition set to immediate", .{});
+        try sdl.setGPUSwapchainParameters(
+            device,
+            window,
+            sdl.c.SDL_GPU_SWAPCHAINCOMPOSITION_SDR,
+            sdl.c.SDL_GPU_PRESENTMODE_IMMEDIATE,
+        );
+    }
 
     var input = Input.init(gpa);
     try input.map.put(.{ .keyboard = sdl.c.SDL_SCANCODE_W }, .forward);
@@ -114,6 +114,8 @@ pub fn main() !void {
     defer perf_counter.deinit();
     var perf_print_timer = try std.time.Timer.start();
     var frame_counter: u32 = 0;
+
+    var first_frame: bool = true;
 
     frame_timer.reset();
     main_loop: while (true) {
@@ -194,6 +196,8 @@ pub fn main() !void {
         );
 
         try sdl.submitGPUCommandBuffer(command_buffer);
+
+        first_frame = false;
     }
 }
 

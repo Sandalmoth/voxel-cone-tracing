@@ -37,14 +37,24 @@ uint packVoxelPos(ivec4 v) {
 }
 
 uint lowerBound(uint value, uint n) {
-    uint left = 0;
-    uint right = n;
-    for (uint step = n >> 1; step > 0; step >>= 1) {
-        uint mid = left + step;
-        bool cond = (mid < right) && (b_triangle_isects.isects[mid].ix_voxel < value);
-        left = cond ? mid : left;
+    uint step = 1;
+    while ((step << 1) < n) {
+        step <<= 1;
     }
-    return (b_triangle_isects.isects[left].ix_voxel < value) ? left + 1 : left;
+
+    uint left = 0;
+    for (; step > 0; step >>= 1) {
+        uint mid = left + step;
+        if (mid < n && b_triangle_isects.isects[mid].ix_voxel < value) {
+            left = mid;
+        }
+    }
+
+    if (b_triangle_isects.isects[left].ix_voxel < value) {
+        return left + 1;
+    } else {
+        return left;
+    }
 }
 
 void main() {
@@ -61,19 +71,92 @@ void main() {
         voxel_pos.z < -33 || voxel_pos.z > 32) return;
 
     float coverage = 0.0;
+    vec4 radiance = vec4(0.0, 0.0, 0.0, 0.0);
+
+    float total_weight = 1e-6;
+    vec4 diffuse = vec4(0.0, 0.0, 0.0, 0.0);
 
     uint packed = packVoxelPos(ivec4(voxel_pos, cascade));
     uint i = lowerBound(packed, b_triangle_isects.n_triangles);
     TriangleIntersection isect = b_triangle_isects.isects[i];
     while (isect.ix_voxel == packed && i < b_triangle_isects.n_triangles) {
         TriangleData triangle = b_triangle_data.triangles[isect.ix_triangle];
+
         coverage += triangle.coverage;
+
+        float weight;
+        switch (face) {
+        case 0:
+            weight = (triangle.normal.x > 0) ? triangle.normal.x : 0;
+            break;
+        case 1:
+            weight = (triangle.normal.x < 0) ? -triangle.normal.x : 0;
+            break;
+        case 2:
+            weight = (triangle.normal.y > 0) ? triangle.normal.y : 0;
+            break;
+        case 3:
+            weight = (triangle.normal.y < 0) ? -triangle.normal.y : 0;
+            break;
+        case 4:
+            weight = (triangle.normal.z > 0) ? triangle.normal.z : 0;
+            break;
+        case 5:
+            weight = (triangle.normal.z < 0) ? -triangle.normal.z : 0;
+            break;
+        }
+
+        total_weight += weight;
+        diffuse += weight * triangle.diffuse;
+        radiance += weight * vec4(triangle.emissive, 0.0);
+        radiance += vec4(0.0, 0.0, 0.0, weight * triangle.coverage);
         
         isect = b_triangle_isects.isects[++i];
     }
 
+    diffuse /= total_weight;
+    radiance.a /= total_weight;
+
+    vec3 normal;
+    switch (face) {
+    case 0:
+        normal = vec3(1.0, 0.0, 0.0);
+        break;
+    case 1:
+        normal = vec3(-1.0, 0.0, 0.0);
+        break;
+    case 2:
+        normal = vec3(0.0, 1.0, 0.0);
+        break;
+    case 3:
+        normal = vec3(0.0, -1.0, 0.0);
+        break;
+    case 4:
+        normal = vec3(0.0, 0.0, 1.0);
+        break;
+    case 5:
+        normal = vec3(0.0, 0.0, -1.0);
+        break;
+    }
+
+    vec3 light_dir = normalize(vec3(1.0, 2.0, 0.5));
+    float light_intensity = 1.0;
+    radiance +=
+        diffuse *
+        light_intensity *
+        max(dot(normal, light_dir), 0.0);
+
     if (face == 0) {
         coverage = clamp(coverage, 0, 1);
-        imageStore(u_opacity_cascades, voxel_pos + ivec3(33 + cascade * 66, 33, 33), vec4(coverage));
+        imageStore(
+            u_opacity_cascades,
+            voxel_pos + ivec3(33 + cascade * 66, 33, 33),
+            vec4(coverage)
+        );
     }
+    imageStore(
+        u_radiance_cascades,
+        voxel_pos + ivec3(33 + cascade * 66, 33 + face * 66, 33),
+        vec4(radiance.rgb, clamp(radiance.a, 0, 1))
+    );
 }
