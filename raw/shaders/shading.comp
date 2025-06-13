@@ -87,22 +87,28 @@ void main() {
         float weight;
         switch (face) {
         case 0:
-            weight = (triangle.normal.x > 0) ? triangle.normal.x : 0;
+            weight = max(0, triangle.normal.x);
+            // weight = (triangle.normal.x > 0) ? triangle.normal.x : 0;
             break;
         case 1:
-            weight = (triangle.normal.x < 0) ? -triangle.normal.x : 0;
+            weight = max(0, -triangle.normal.x);
+            // weight = (triangle.normal.x < 0) ? -triangle.normal.x : 0;
             break;
         case 2:
-            weight = (triangle.normal.y > 0) ? triangle.normal.y : 0;
+            weight = max(0, triangle.normal.y);
+            // weight = (triangle.normal.y > 0) ? triangle.normal.y : 0;
             break;
         case 3:
-            weight = (triangle.normal.y < 0) ? -triangle.normal.y : 0;
+            weight = max(0, -triangle.normal.y);
+            // weight = (triangle.normal.y < 0) ? -triangle.normal.y : 0;
             break;
         case 4:
-            weight = (triangle.normal.z > 0) ? triangle.normal.z : 0;
+            weight = max(0, triangle.normal.z);
+            // weight = (triangle.normal.z > 0) ? triangle.normal.z : 0;
             break;
         case 5:
-            weight = (triangle.normal.z < 0) ? -triangle.normal.z : 0;
+            weight = max(0, -triangle.normal.z);
+            // weight = (triangle.normal.z < 0) ? -triangle.normal.z : 0;
             break;
         }
 
@@ -117,27 +123,15 @@ void main() {
     diffuse /= total_weight;
     radiance.a /= total_weight;
 
-    vec3 normal;
-    switch (face) {
-    case 0:
-        normal = vec3(1.0, 0.0, 0.0);
-        break;
-    case 1:
-        normal = vec3(-1.0, 0.0, 0.0);
-        break;
-    case 2:
-        normal = vec3(0.0, 1.0, 0.0);
-        break;
-    case 3:
-        normal = vec3(0.0, -1.0, 0.0);
-        break;
-    case 4:
-        normal = vec3(0.0, 0.0, 1.0);
-        break;
-    case 5:
-        normal = vec3(0.0, 0.0, -1.0);
-        break;
-    }
+    const vec3 normal_table[6] = {
+        vec3(1.0, 0.0, 0.0),
+        vec3(-1.0, 0.0, 0.0),
+        vec3(0.0, 1.0, 0.0),
+        vec3(0.0, -1.0, 0.0),
+        vec3(0.0, 0.0, 1.0),
+        vec3(0.0, 0.0, -1.0)
+    };
+    vec3 normal = normal_table[face];
 
     vec3 light_dir = normalize(vec3(1.0, 2.0, 0.5));
     float light_intensity = 1.0;

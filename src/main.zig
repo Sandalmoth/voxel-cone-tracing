@@ -47,27 +47,27 @@ pub fn main() !void {
 
     try sdl.setWindowRelativeMouseMode(window, true);
 
-    if (sdl.windowSupportsGPUPresentMode(device, window, sdl.c.SDL_GPU_PRESENTMODE_MAILBOX)) {
-        log.info("Swapchain composition set to mailbox", .{});
-        try sdl.setGPUSwapchainParameters(
-            device,
-            window,
-            sdl.c.SDL_GPU_SWAPCHAINCOMPOSITION_SDR,
-            sdl.c.SDL_GPU_PRESENTMODE_MAILBOX,
-        );
-    } else if (sdl.windowSupportsGPUPresentMode(
-        device,
-        window,
-        sdl.c.SDL_GPU_PRESENTMODE_IMMEDIATE,
-    )) {
-        log.info("Swapchain composition set to immediate", .{});
-        try sdl.setGPUSwapchainParameters(
-            device,
-            window,
-            sdl.c.SDL_GPU_SWAPCHAINCOMPOSITION_SDR,
-            sdl.c.SDL_GPU_PRESENTMODE_IMMEDIATE,
-        );
-    }
+    // if (sdl.windowSupportsGPUPresentMode(device, window, sdl.c.SDL_GPU_PRESENTMODE_MAILBOX)) {
+    //     log.info("Swapchain composition set to mailbox", .{});
+    //     try sdl.setGPUSwapchainParameters(
+    //         device,
+    //         window,
+    //         sdl.c.SDL_GPU_SWAPCHAINCOMPOSITION_SDR,
+    //         sdl.c.SDL_GPU_PRESENTMODE_MAILBOX,
+    //     );
+    // } else if (sdl.windowSupportsGPUPresentMode(
+    //     device,
+    //     window,
+    //     sdl.c.SDL_GPU_PRESENTMODE_IMMEDIATE,
+    // )) {
+    //     log.info("Swapchain composition set to immediate", .{});
+    //     try sdl.setGPUSwapchainParameters(
+    //         device,
+    //         window,
+    //         sdl.c.SDL_GPU_SWAPCHAINCOMPOSITION_SDR,
+    //         sdl.c.SDL_GPU_PRESENTMODE_IMMEDIATE,
+    //     );
+    // }
 
     var input = Input.init(gpa);
     try input.map.put(.{ .keyboard = sdl.c.SDL_SCANCODE_W }, .forward);
