@@ -1,6 +1,6 @@
 #version 460
 
-layout(local_size_x = 4, local_size_y = 4, local_size_z = 4) in;
+layout(local_size_x = 16, local_size_y = 2, local_size_z = 2) in;
 
 layout(set = 0, binding = 0) uniform usampler3D u_opacity_targets;
 
@@ -16,22 +16,23 @@ void main() {
     uint cascade = target_cascades[texcoords.x / 66];
     uint temporal = temporal_slots[gl_GlobalInvocationID.x / 66];
 
-    if (texcoords.x >= 132 &&
-        texcoords.y >= 66 &&
-        texcoords.z >= 66) return;
+    if (texcoords.x < 132 &&
+        texcoords.y < 66 &&
+        texcoords.z < 66) {;
 
-    uint voxel = texelFetch(
-        u_opacity_targets,
-        texcoords,
-        0
-    ).r;
-    imageStore(
-        u_opacity_cascades,
-        ivec3(
-            texcoords.x % 66 + 66 * cascade,
-            texcoords.y,
-            texcoords.z
-        ),
-        vec4(voxel, 0.0, 0.0, 0.0)
-    );
+        uint voxel = texelFetch(
+            u_opacity_targets,
+            texcoords,
+            0
+        ).r;
+        imageStore(
+            u_opacity_cascades,
+            ivec3(
+                texcoords.x % 66 + 66 * cascade,
+                texcoords.y + 66 * temporal,
+                texcoords.z
+            ),
+            vec4(voxel, 0.0, 0.0, 0.0)
+        );
+    }
 }

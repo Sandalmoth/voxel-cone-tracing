@@ -47,27 +47,27 @@ pub fn main() !void {
 
     try sdl.setWindowRelativeMouseMode(window, true);
 
-    if (sdl.windowSupportsGPUPresentMode(device, window, sdl.c.SDL_GPU_PRESENTMODE_MAILBOX)) {
-        log.info("Swapchain composition set to mailbox", .{});
-        try sdl.setGPUSwapchainParameters(
-            device,
-            window,
-            sdl.c.SDL_GPU_SWAPCHAINCOMPOSITION_SDR,
-            sdl.c.SDL_GPU_PRESENTMODE_MAILBOX,
-        );
-    } else if (sdl.windowSupportsGPUPresentMode(
-        device,
-        window,
-        sdl.c.SDL_GPU_PRESENTMODE_IMMEDIATE,
-    )) {
-        log.info("Swapchain composition set to immediate", .{});
-        try sdl.setGPUSwapchainParameters(
-            device,
-            window,
-            sdl.c.SDL_GPU_SWAPCHAINCOMPOSITION_SDR,
-            sdl.c.SDL_GPU_PRESENTMODE_IMMEDIATE,
-        );
-    }
+    // if (sdl.windowSupportsGPUPresentMode(device, window, sdl.c.SDL_GPU_PRESENTMODE_MAILBOX)) {
+    //     log.info("Swapchain composition set to mailbox", .{});
+    //     try sdl.setGPUSwapchainParameters(
+    //         device,
+    //         window,
+    //         sdl.c.SDL_GPU_SWAPCHAINCOMPOSITION_SDR,
+    //         sdl.c.SDL_GPU_PRESENTMODE_MAILBOX,
+    //     );
+    // } else if (sdl.windowSupportsGPUPresentMode(
+    //     device,
+    //     window,
+    //     sdl.c.SDL_GPU_PRESENTMODE_IMMEDIATE,
+    // )) {
+    //     log.info("Swapchain composition set to immediate", .{});
+    //     try sdl.setGPUSwapchainParameters(
+    //         device,
+    //         window,
+    //         sdl.c.SDL_GPU_SWAPCHAINCOMPOSITION_SDR,
+    //         sdl.c.SDL_GPU_PRESENTMODE_IMMEDIATE,
+    //     );
+    // }
 
     var input = Input.init(gpa);
     try input.map.put(.{ .keyboard = sdl.c.SDL_SCANCODE_W }, .forward);
@@ -210,16 +210,32 @@ const VoxelizePass = struct {
         temporal_slots: [2]u32 align(8),
     };
 
+    const time_slices = [8][2]u32{
+        .{ 0, 1 },
+        .{ 2, 3 },
+        .{ 0, 1 },
+        .{ 4, 5 },
+        .{ 0, 1 },
+        .{ 2, 3 },
+        .{ 0, 1 },
+        .{ 6, 7 },
+    };
+
     device: *sdl.GPUDevice,
     clear_pipeline: *sdl.GPUComputePipeline,
     voxelization_pipeline: *sdl.GPUComputePipeline,
     averaging_pipeline: *sdl.GPUComputePipeline,
 
-    voxelize_pass: ?*sdl.GPUComputePass,
+    voxelize_pass: ?*sdl.GPUComputePass = null,
     opacity_targets: *sdl.GPUTexture,
     opacity_cascades: *sdl.GPUTexture,
 
     sampler: *sdl.GPUSampler,
+
+    ix_time_slice: u32 = @intCast(time_slices.len - 1),
+    cascade_ages: [8]u32 = [_]u32{0} ** time_slices.len,
+    new_cascades: [8]u32 = [_]u32{0} ** time_slices.len,
+    old_cascades: [8]u32 = [_]u32{1} ** time_slices.len,
 
     fn init(gpa: std.mem.Allocator, device: *sdl.GPUDevice) !VoxelizePass {
         const clear_pipeline = blk: {
@@ -321,8 +337,8 @@ const VoxelizePass = struct {
             .format = sdl.c.SDL_GPU_TEXTUREFORMAT_R8_UNORM,
             .usage = sdl.c.SDL_GPU_TEXTUREUSAGE_COMPUTE_STORAGE_SIMULTANEOUS_READ_WRITE |
                 sdl.c.SDL_GPU_TEXTUREUSAGE_SAMPLER,
-            .width = 66 * 8,
-            .height = 66 * 2,
+            .width = 66 * 8, // eight cascades of larger and larger voxels
+            .height = 66 * 3, // two time slices, and the interpolation for the current frame
             .layer_count_or_depth = 66,
             .num_levels = 1,
             .sample_count = sdl.c.SDL_GPU_SAMPLECOUNT_1,
@@ -338,7 +354,6 @@ const VoxelizePass = struct {
             .clear_pipeline = clear_pipeline,
             .voxelization_pipeline = voxelization_pipeline,
             .averaging_pipeline = averaging_pipeline,
-            .voxelize_pass = null,
             .sampler = sampler,
             .opacity_targets = opacity_targets,
             .opacity_cascades = opacity_cascades,
@@ -356,6 +371,14 @@ const VoxelizePass = struct {
     }
 
     fn begin(pass: *VoxelizePass, command_buffer: *sdl.GPUCommandBuffer) !void {
+        pass.ix_time_slice = (pass.ix_time_slice + 1) % @as(u32, @intCast(time_slices.len));
+        const time_slice = time_slices[pass.ix_time_slice];
+        std.mem.swap(u32, &pass.new_cascades[time_slice[0]], &pass.old_cascades[time_slice[0]]);
+        std.mem.swap(u32, &pass.new_cascades[time_slice[1]], &pass.old_cascades[time_slice[1]]);
+        for (0..time_slices.len) |i| pass.cascade_ages[i] += 1;
+        pass.cascade_ages[time_slice[0]] = 0;
+        pass.cascade_ages[time_slice[1]] = 0;
+
         sdl.pushGPUDebugGroup(command_buffer, "voxelize");
 
         sdl.pushGPUDebugGroup(command_buffer, "clear");
@@ -394,7 +417,7 @@ const VoxelizePass = struct {
             0,
             &VoxelizationUBO{
                 .model_matrix = zm.matToArr(transform),
-                .target_cascades = .{ 0, 1 },
+                .target_cascades = time_slices[pass.ix_time_slice],
                 .n_triangles = n_triangles,
             },
             @sizeOf(VoxelizationUBO),
@@ -411,6 +434,8 @@ const VoxelizePass = struct {
         pass: *VoxelizePass,
         command_buffer: *sdl.GPUCommandBuffer,
     ) !void {
+        const time_slice = time_slices[pass.ix_time_slice];
+
         defer sdl.popGPUDebugGroup(command_buffer);
 
         sdl.endGPUComputePass(pass.voxelize_pass.?);
@@ -420,7 +445,7 @@ const VoxelizePass = struct {
         const averaging_pass = try sdl.beginGPUComputePass(
             command_buffer,
             &.{
-                .{ .texture = pass.opacity_cascades, .cycle = true },
+                .{ .texture = pass.opacity_cascades },
             },
             &.{},
         );
@@ -432,12 +457,15 @@ const VoxelizePass = struct {
             command_buffer,
             0,
             &AveragingUBO{
-                .target_cascades = .{ 0, 1 },
-                .temporal_slots = .{ 0, 0 },
+                .target_cascades = time_slice,
+                .temporal_slots = .{
+                    pass.new_cascades[time_slice[0]],
+                    pass.new_cascades[time_slice[1]],
+                },
             },
             @sizeOf(VoxelizationUBO),
         );
-        sdl.dispatchGPUCompute(averaging_pass, 33, 17, 17);
+        sdl.dispatchGPUCompute(averaging_pass, 33, 33, 33);
         sdl.endGPUComputePass(averaging_pass);
         sdl.popGPUDebugGroup(command_buffer);
     }

@@ -40,7 +40,7 @@ void main() {
         pos += step * v_ray_dir;
         float occlusion = voxelAt(pos);
         vec4 voxel_color = vec4(1.0, 1.0, 1.0, occlusion);
-        voxel_color = vec4(clamp(voxel_color.rgb * exp(-d*0.02), 0.01, 10.0), voxel_color.a);
+        voxel_color = vec4(voxel_color.rgb * exp(-d*0.03), voxel_color.a);
         float a = voxel_color.a;
         acc.rgb += voxel_color.rgb * a * (1.0 - acc.a);
         acc.a += a * (1.0 - acc.a);
