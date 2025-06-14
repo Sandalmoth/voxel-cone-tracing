@@ -7,46 +7,23 @@ struct Vertex {
     vec3 normal;  
 };
 
-struct TriangleData {
-    vec3 normal;
-    vec4 diffuse;
-    vec3 emissive;
-    float roughness;
-    float coverage;
-};
-
-struct TriangleIntersection {
-    uint ix_voxel;
-    uint ix_triangle;
-};
-
 layout(local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
 
 layout(std430, set = 0, binding = 0) readonly buffer VertexBuffer {
     Vertex vertices[];
-} b_vertices;
+};
 
 layout(std430, set = 0, binding = 1) readonly buffer IndexBuffer {
     uint indices[];
-} b_indices;
+};
 
-layout(std430, set = 1, binding = 0) buffer TriangleDataBuffer {
-    TriangleData triangles[];
-} b_triangle_data;
+layout(r32ui, set = 1, binding = 0) uniform uimage3D u_radiance_targets;
 
-layout(std430, set = 1, binding = 1) buffer TriangleListBuffer {
-    uint n_triangles;
-    TriangleIntersection isects[];
-} b_triangle_isects;
-
-layout(std140, set = 2, binding = 0) uniform VoxelizeData {
+layout(std140, set = 2, binding = 0) uniform VoxelizeUBO {
     mat4 model_matrix;
-    mat4 normal_matrix;
-    vec4 diffuse;
-    vec4 emissive;
-    float roughness;
+    uvec2 target_cascades;
     uint n_triangles;
-} voxelize_data;
+};
 
 float voxelSize(uint cascade) {
     return MIN_VOXEL_SIZE * float(1 << cascade);
@@ -91,26 +68,21 @@ uint packVoxelPos(ivec4 v) {
 
 void main() {
     uint ix_src_triangle = gl_GlobalInvocationID.x;
-    if (ix_src_triangle >= voxelize_data.n_triangles) return;
-    uint ix_cascade = gl_GlobalInvocationID.y;
+    if (ix_src_triangle >= n_triangles) return;
+    uint ix_cascade = target_cascades[gl_GlobalInvocationID.y];
 
     uint first_index = 3 * ix_src_triangle;
-    uint i0 = b_indices.indices[first_index + 0];
-    uint i1 = b_indices.indices[first_index + 1];
-    uint i2 = b_indices.indices[first_index + 2];
+    uint i0 = indices[first_index + 0];
+    uint i1 = indices[first_index + 1];
+    uint i2 = indices[first_index + 2];
 
-    vec3 p0_model = b_vertices.vertices[i0].position;
-    vec3 p1_model = b_vertices.vertices[i1].position;
-    vec3 p2_model = b_vertices.vertices[i2].position;
+    vec3 p0_model = vertices[i0].position;
+    vec3 p1_model = vertices[i1].position;
+    vec3 p2_model = vertices[i2].position;
 
-    vec3 p0 = (voxelize_data.model_matrix * vec4(p0_model, 1.0)).xyz;
-    vec3 p1 = (voxelize_data.model_matrix * vec4(p1_model, 1.0)).xyz;
-    vec3 p2 = (voxelize_data.model_matrix * vec4(p2_model, 1.0)).xyz;
-    vec3 normal = normalize(mat3(voxelize_data.normal_matrix) * normalize(
-        b_vertices.vertices[i0].normal +
-        b_vertices.vertices[i1].normal +
-        b_vertices.vertices[i2].normal
-    ));
+    vec3 p0 = (model_matrix * vec4(p0_model, 1.0)).xyz;
+    vec3 p1 = (model_matrix * vec4(p1_model, 1.0)).xyz;
+    vec3 p2 = (model_matrix * vec4(p2_model, 1.0)).xyz;
 
     float voxel_size = voxelSize(ix_cascade);
     float coverage = 0.25 * clamp(triangleArea(p0, p1, p2) / (voxel_size * voxel_size), 0, 4.0);
@@ -161,27 +133,8 @@ void main() {
                     ne0zx, ne1zx, ne2zx, de0zx, de1zx, de2zx
                 )) continue;
 
-                // store triangle info
-                // we could store data per triangle once instead of per intersection
-                // however, if we want to allow for textured models, not just triangle colors
-                // and we don't have bindless
-                // then it doesn't seem possible to actually light it later
-                // so by storing color and normal per intersection
-                // we could do the texture lookupts here, and this shader could bind the resource
-                // since this is called per mesh (or similar) that works with a bindful renderer
-                uint ix_dst_triangle = atomicAdd(b_triangle_isects.n_triangles, 1);
-                b_triangle_data.triangles[ix_dst_triangle] = TriangleData(
-                    normal,
-                    voxelize_data.diffuse, voxelize_data.emissive.rgb, voxelize_data.roughness,
-                    coverage
-                );
-
-                // store the intersection info
-                ivec3 voxel_pos = ivec3(x + 64 * ix_cascade, y, z) + 33;
-                b_triangle_isects.isects[ix_dst_triangle] = TriangleIntersection(
-                    packVoxelPos(ivec4(x, y, z, ix_cascade)),
-                    ix_dst_triangle
-                );
+                ivec3 voxel_pos = ivec3(x + 66 * gl_GlobalInvocationID.y, y, z) + 33;
+                imageAtomicOr(u_radiance_targets, voxel_pos, 1);
             }
         }
     }

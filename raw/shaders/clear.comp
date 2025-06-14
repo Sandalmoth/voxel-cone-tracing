@@ -1,17 +1,14 @@
 #version 460
 
-struct TriangleIntersection {
-    uint ix_voxel;
-    uint ix_triangle;
-};
+layout(local_size_x = 4, local_size_y = 4, local_size_z = 4) in;
 
-layout(local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
-
-layout(std430, set = 1, binding = 0) buffer TriangleListBuffer {
-    uint n_triangles;
-    TriangleIntersection isects[];
-} b_triangle_isects;
+layout(r32ui, set = 1, binding = 0) uniform uimage3D u_radiance_targets;
 
 void main() {
-    b_triangle_isects.n_triangles = 0;        
+    ivec3 texcoords = ivec3(gl_GlobalInvocationID);
+    if (texcoords.x < 132 &&
+        texcoords.y < 66 &&
+        texcoords.z < 66) {
+        imageStore(u_radiance_targets, texcoords, uvec4(0, 0, 0, 0));
+    }
 }

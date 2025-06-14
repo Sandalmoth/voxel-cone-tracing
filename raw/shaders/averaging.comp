@@ -1,0 +1,37 @@
+#version 460
+
+layout(local_size_x = 4, local_size_y = 4, local_size_z = 4) in;
+
+layout(set = 0, binding = 0) uniform usampler3D u_opacity_targets;
+
+layout(r8, set = 1, binding = 0) uniform image3D u_opacity_cascades;
+
+layout(std140, set = 2, binding = 0) uniform VoxelizeUBO {
+    uvec2 target_cascades;
+    uvec2 temporal_slots;
+};
+
+void main() {
+    ivec3 texcoords = ivec3(gl_GlobalInvocationID);
+    uint cascade = target_cascades[texcoords.x / 66];
+    uint temporal = temporal_slots[gl_GlobalInvocationID.x / 66];
+
+    if (texcoords.x >= 132 &&
+        texcoords.y >= 66 &&
+        texcoords.z >= 66) return;
+
+    uint voxel = texelFetch(
+        u_opacity_targets,
+        texcoords,
+        0
+    ).r;
+    imageStore(
+        u_opacity_cascades,
+        ivec3(
+            texcoords.x % 66 + 66 * cascade,
+            texcoords.y,
+            texcoords.z
+        ),
+        vec4(voxel, 0.0, 0.0, 0.0)
+    );
+}

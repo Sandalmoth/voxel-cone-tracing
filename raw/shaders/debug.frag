@@ -8,7 +8,6 @@ layout(location = 1) in vec3 v_ray_dir;
 layout(location = 0) out vec4 o_color;
 
 layout(set = 2, binding = 0) uniform sampler3D u_opacity_cascades;
-layout(set = 2, binding = 1) uniform sampler3D u_radiance_cascades;
 
 uint cascadeAt(vec3 pos) {
     vec3 a = abs(pos);
@@ -20,24 +19,12 @@ float voxelSize(uint cascade) {
     return MIN_VOXEL_SIZE * float(1 << cascade);
 }
 
-vec4 voxelAt(vec3 pos) {
+float voxelAt(vec3 pos) {
     uint cascade = cascadeAt(pos);
-    if (cascade == 8) return vec4(0.0, 0.0, 0.0, 0.0);
+    if (cascade == 8) return 0.0;
     float voxel_size = voxelSize(cascade);
     ivec3 voxel_pos = ivec3(floor(pos / voxel_size)) + 33;
-
-    vec4 c0 = texelFetch(u_opacity_cascades, ivec3(voxel_pos.x + 66 * cascade, voxel_pos.yz), 0);
-
-    vec4 c = vec4(0.0, 0.0, 0.0, 0.0);
-    c += ((v_ray_dir.x < 0) ? -v_ray_dir.x : 0) * texelFetch(u_radiance_cascades, ivec3(voxel_pos.x + 66 * cascade, voxel_pos.y + 66 * 0, voxel_pos.z), 0);
-    c += ((v_ray_dir.x > 0) ? v_ray_dir.x : 0) * texelFetch(u_radiance_cascades, ivec3(voxel_pos.x + 66 * cascade, voxel_pos.y + 66 * 1, voxel_pos.z), 0);
-    c += ((v_ray_dir.y < 0) ? -v_ray_dir.y : 0) * texelFetch(u_radiance_cascades, ivec3(voxel_pos.x + 66 * cascade, voxel_pos.y + 66 * 2, voxel_pos.z), 0);
-    c += ((v_ray_dir.y > 0) ? v_ray_dir.y : 0) * texelFetch(u_radiance_cascades, ivec3(voxel_pos.x + 66 * cascade, voxel_pos.y + 66 * 3, voxel_pos.z), 0);
-    c += ((v_ray_dir.z < 0) ? -v_ray_dir.z : 0) * texelFetch(u_radiance_cascades, ivec3(voxel_pos.x + 66 * cascade, voxel_pos.y + 66 * 4, voxel_pos.z), 0);
-    c += ((v_ray_dir.z > 0) ? v_ray_dir.z : 0) * texelFetch(u_radiance_cascades, ivec3(voxel_pos.x + 66 * cascade, voxel_pos.y + 66 * 5, voxel_pos.z), 0);
-    c.a = c0.r;
-    
-    return c;
+    return texelFetch(u_opacity_cascades, ivec3(voxel_pos.x + 66 * cascade, voxel_pos.yz), 0).r;
 }
 
 void main() {
@@ -51,7 +38,8 @@ void main() {
         float step = 0.25 * voxelSize(cascadeAt(pos));
         d += step;
         pos += step * v_ray_dir;
-        vec4 voxel_color = voxelAt(pos);
+        float occlusion = voxelAt(pos);
+        vec4 voxel_color = vec4(1.0, 1.0, 1.0, occlusion);
         voxel_color = vec4(clamp(voxel_color.rgb * exp(-d*0.02), 0.01, 10.0), voxel_color.a);
         float a = voxel_color.a;
         acc.rgb += voxel_color.rgb * a * (1.0 - acc.a);
