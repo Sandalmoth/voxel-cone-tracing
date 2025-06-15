@@ -252,9 +252,9 @@ pub fn init(gpa: std.mem.Allocator, device: *sdl.c.SDL_GPUDevice) !Scene {
     const rand = rng.random();
     for (0..200) |_| {
         const position = zm.f32x4(
-            100 * (rand.float(f32) - 0.5),
-            100 * (rand.float(f32) - 0.5),
-            100 * (rand.float(f32) - 0.5),
+            100 * rand.floatNorm(f32),
+            100 * rand.floatNorm(f32),
+            100 * rand.floatNorm(f32),
             1,
         );
         const rotation = zm.quatFromRollPitchYaw(
@@ -262,7 +262,7 @@ pub fn init(gpa: std.mem.Allocator, device: *sdl.c.SDL_GPUDevice) !Scene {
             2 * std.math.pi * rand.float(f32),
             2 * std.math.pi * rand.float(f32),
         );
-        const scale = zm.f32x4s(9.5 * rand.float(f32) + 0.5);
+        const scale = zm.f32x4s(19.5 * rand.float(f32) + 0.5);
         const angular_velocity = zm.quatFromRollPitchYaw(
             std.math.pi * rand.float(f32),
             std.math.pi * rand.float(f32),

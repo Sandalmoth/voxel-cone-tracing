@@ -9,16 +9,19 @@ layout(r8, set = 1, binding = 0) uniform image3D u_opacity_cascades;
 layout(std140, set = 2, binding = 0) uniform VoxelizeUBO {
     uvec2 target_cascades;
     uvec2 temporal_slots;
+    uint new_cascades_packed;
+    vec4 blending_factors[2];
 };
 
 void main() {
     ivec3 texcoords = ivec3(gl_GlobalInvocationID);
-    uint cascade = target_cascades[texcoords.x / 66];
+    uint cascade = texcoords.x / 66;
     uint temporal = temporal_slots[gl_GlobalInvocationID.x / 66];
 
+    // for the cascades that were just updated, update their data
     if (texcoords.x < 132 &&
         texcoords.y < 66 &&
-        texcoords.z < 66) {;
+        texcoords.z < 66) {
 
         uint voxel = texelFetch(
             u_opacity_targets,
@@ -28,11 +31,50 @@ void main() {
         imageStore(
             u_opacity_cascades,
             ivec3(
-                texcoords.x % 66 + 66 * cascade,
+                texcoords.x % 66 + 66 * target_cascades[texcoords.x / 66],
                 texcoords.y + 66 * temporal,
                 texcoords.z
             ),
             vec4(voxel, 0.0, 0.0, 0.0)
         );
+
+    }
+
+    // if we formulate the indices correctly, we don't need this
+    barrier();
+    memoryBarrierImage();
+
+    // then for all voxels, temporally blend between their last states
+    if (texcoords.x < 528 &&
+        texcoords.y < 66 &&
+        texcoords.z < 66) {
+
+        uint ix_new = (new_cascades_packed >> cascade) & 1;
+        uint ix_old = 1 - ix_new;
+        float new_voxel = imageLoad(u_opacity_cascades, ivec3(
+            texcoords.x,
+            texcoords.y + 66 * ix_new,
+            texcoords.z
+        )).r;
+        float old_voxel = imageLoad(u_opacity_cascades, ivec3(
+            texcoords.x,
+            texcoords.y + 66 * ix_old,
+            texcoords.z
+        )).r;
+    
+        imageStore(
+            u_opacity_cascades,
+            ivec3(
+                texcoords.x,
+                texcoords.y + 132,
+                texcoords.z
+            ),
+            vec4(mix(
+                old_voxel,
+                new_voxel,
+                blending_factors[cascade / 4][cascade % 4]
+            ), 0.0, 0.0, 0.0)
+        );
+
     }
 }

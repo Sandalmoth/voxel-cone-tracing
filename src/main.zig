@@ -201,14 +201,23 @@ pub fn main() !void {
 const VoxelizePass = struct {
     const VoxelizationUBO = extern struct {
         model_matrix: [16]f32 align(16),
-        target_cascades: [2]u32 align(16),
-        n_triangles: u32 align(8),
+        target_cascades: [2]u32,
+        n_triangles: u32,
     };
 
     const AveragingUBO = extern struct {
         target_cascades: [2]u32 align(16),
-        temporal_slots: [2]u32 align(8),
+        temporal_slots: [2]u32,
+        new_cascades_packed: u32,
+        blending_factors: [8]f32 align(16),
     };
+
+    comptime {
+        std.debug.assert(@offsetOf(AveragingUBO, "target_cascades") == 0);
+        std.debug.assert(@offsetOf(AveragingUBO, "temporal_slots") == 8);
+        std.debug.assert(@offsetOf(AveragingUBO, "new_cascades_packed") == 16);
+        std.debug.assert(@offsetOf(AveragingUBO, "blending_factors") == 32);
+    }
 
     const time_slices = [8][2]u32{
         .{ 0, 1 },
@@ -220,6 +229,7 @@ const VoxelizePass = struct {
         .{ 0, 1 },
         .{ 6, 7 },
     };
+    const maximum_ages = [8]f32{ 2.0, 2.0, 4.0, 4.0, 8.0, 8.0, 8.0, 8.0 };
 
     device: *sdl.GPUDevice,
     clear_pipeline: *sdl.GPUComputePipeline,
@@ -234,8 +244,7 @@ const VoxelizePass = struct {
 
     ix_time_slice: u32 = @intCast(time_slices.len - 1),
     cascade_ages: [8]u32 = [_]u32{0} ** time_slices.len,
-    new_cascades: [8]u32 = [_]u32{0} ** time_slices.len,
-    old_cascades: [8]u32 = [_]u32{1} ** time_slices.len,
+    new_cascades_packed: u32 = 0,
 
     fn init(gpa: std.mem.Allocator, device: *sdl.GPUDevice) !VoxelizePass {
         const clear_pipeline = blk: {
@@ -373,11 +382,16 @@ const VoxelizePass = struct {
     fn begin(pass: *VoxelizePass, command_buffer: *sdl.GPUCommandBuffer) !void {
         pass.ix_time_slice = (pass.ix_time_slice + 1) % @as(u32, @intCast(time_slices.len));
         const time_slice = time_slices[pass.ix_time_slice];
-        std.mem.swap(u32, &pass.new_cascades[time_slice[0]], &pass.old_cascades[time_slice[0]]);
-        std.mem.swap(u32, &pass.new_cascades[time_slice[1]], &pass.old_cascades[time_slice[1]]);
+        pass.new_cascades_packed ^= (@as(u32, 1) << @intCast(time_slice[0]));
+        pass.new_cascades_packed ^= (@as(u32, 1) << @intCast(time_slice[1]));
         for (0..time_slices.len) |i| pass.cascade_ages[i] += 1;
         pass.cascade_ages[time_slice[0]] = 0;
         pass.cascade_ages[time_slice[1]] = 0;
+
+        // std.debug.print("---\n", .{});
+        // std.debug.print("{any}\n", .{time_slice});
+        // std.debug.print("{any}\n", .{pass.cascade_ages});
+        // std.debug.print("{b:08}\n", .{pass.new_cascades_packed});
 
         sdl.pushGPUDebugGroup(command_buffer, "voxelize");
 
@@ -435,6 +449,12 @@ const VoxelizePass = struct {
         command_buffer: *sdl.GPUCommandBuffer,
     ) !void {
         const time_slice = time_slices[pass.ix_time_slice];
+        var blending_factors: [8]f32 = undefined;
+        for (0..8) |i| {
+            const age: f32 = @floatFromInt(pass.cascade_ages[i]);
+            blending_factors[i] = age / maximum_ages[i];
+        }
+        // std.debug.print("{any}\n", .{blending_factors});
 
         defer sdl.popGPUDebugGroup(command_buffer);
 
@@ -459,9 +479,11 @@ const VoxelizePass = struct {
             &AveragingUBO{
                 .target_cascades = time_slice,
                 .temporal_slots = .{
-                    pass.new_cascades[time_slice[0]],
-                    pass.new_cascades[time_slice[1]],
+                    (pass.new_cascades_packed >> @intCast(time_slice[0])) & 1,
+                    (pass.new_cascades_packed >> @intCast(time_slice[1])) & 1,
                 },
+                .new_cascades_packed = pass.new_cascades_packed,
+                .blending_factors = blending_factors,
             },
             @sizeOf(VoxelizationUBO),
         );

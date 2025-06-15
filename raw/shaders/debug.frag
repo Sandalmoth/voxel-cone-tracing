@@ -23,9 +23,24 @@ float voxelAt(vec3 pos) {
     uint cascade = cascadeAt(pos);
     if (cascade == 8) return 0.0;
     float voxel_size = voxelSize(cascade);
-    ivec3 voxel_pos = ivec3(floor(pos / voxel_size)) + 33;
-    return texelFetch(u_opacity_cascades, ivec3(voxel_pos.x + 66 * cascade, voxel_pos.yz), 0).r;
+    ivec3 voxel_pos = ivec3(floor(pos / voxel_size)) + ivec3(33, 33, 33);
+    return texelFetch(
+        u_opacity_cascades,
+        ivec3(voxel_pos.x + 66 * cascade, voxel_pos.y + 132, voxel_pos.z),
+        0
+    ).r;
 }
+
+const vec3 cascade_colors[8] = {
+    vec3(1.0, 1.0, 1.0),
+    vec3(1.0, 1.0, 0.0),
+    vec3(1.0, 0.0, 1.0),
+    vec3(0.0, 1.0, 1.0),
+    vec3(1.0, 0.0, 0.0),
+    vec3(0.0, 1.0, 0.0),
+    vec3(0.0, 0.0, 1.0),
+    vec3(0.0, 0.0, 0.0),
+};
 
 void main() {
     o_color = vec4(0.5 * v_ray_dir + 0.5, 1.0);
@@ -35,11 +50,11 @@ void main() {
     float d = 0.0;
     
     for (int i = 0; i < 1024; ++i) {
-        float step = 0.25 * voxelSize(cascadeAt(pos));
+        float step = 0.5 * voxelSize(cascadeAt(pos));
         d += step;
         pos += step * v_ray_dir;
         float occlusion = voxelAt(pos);
-        vec4 voxel_color = vec4(1.0, 1.0, 1.0, occlusion);
+        vec4 voxel_color = vec4(cascade_colors[cascadeAt(pos)], occlusion);
         voxel_color = vec4(voxel_color.rgb * exp(-d*0.03), voxel_color.a);
         float a = voxel_color.a;
         acc.rgb += voxel_color.rgb * a * (1.0 - acc.a);
