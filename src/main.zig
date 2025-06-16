@@ -176,7 +176,7 @@ pub fn main() !void {
                 camera.p(alpha),
             );
         } else {
-            try draw_pass.begin(command_buffer);
+            try draw_pass.begin(command_buffer, voxelize_pass.opacity_cascades);
             defer draw_pass.end(command_buffer);
             const vp_matrix = camera.vp(alpha);
             for (scene.objects.items) |object| draw_pass.drawObject(
@@ -508,9 +508,10 @@ const DrawPass = struct {
     device: *sdl.GPUDevice,
     pipeline: *sdl.GPUGraphicsPipeline,
 
-    draw_pass: ?*sdl.GPURenderPass,
+    draw_pass: ?*sdl.GPURenderPass = null,
     color_target: *sdl.GPUTexture,
     depth_target: *sdl.GPUTexture,
+    sampler: *sdl.GPUSampler,
 
     fn init(gpa: std.mem.Allocator, device: *sdl.GPUDevice) !DrawPass {
         const vertex_shader = blk: {
@@ -551,7 +552,7 @@ const DrawPass = struct {
                 .entrypoint = "main",
                 .format = sdl.c.SDL_GPU_SHADERFORMAT_SPIRV,
                 .stage = sdl.c.SDL_GPU_SHADERSTAGE_FRAGMENT,
-                .num_samplers = 0,
+                .num_samplers = 1,
                 .num_storage_textures = 0,
                 .num_storage_buffers = 0,
                 .num_uniform_buffers = 1,
@@ -641,16 +642,25 @@ const DrawPass = struct {
         });
         errdefer sdl.releaseGPUTexture(device, depth_target);
 
+        const sampler = try sdl.createGPUSampler(device, &.{
+            .min_filter = sdl.c.SDL_GPU_FILTER_LINEAR,
+            .mag_filter = sdl.c.SDL_GPU_FILTER_LINEAR,
+            .address_mode_u = sdl.c.SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE,
+            .address_mode_v = sdl.c.SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE,
+        });
+        errdefer sdl.releaseGPUSampler(device, sampler);
+
         return .{
             .device = device,
             .pipeline = pipeline,
-            .draw_pass = null,
             .color_target = color_target,
             .depth_target = depth_target,
+            .sampler = sampler,
         };
     }
 
     fn deinit(pass: *DrawPass) void {
+        sdl.releaseGPUSampler(pass.device, pass.sampler);
         sdl.releaseGPUTexture(pass.device, pass.depth_target);
         sdl.releaseGPUTexture(pass.device, pass.color_target);
         sdl.releaseGPUGraphicsPipeline(pass.device, pass.pipeline);
@@ -660,6 +670,7 @@ const DrawPass = struct {
     fn begin(
         pass: *DrawPass,
         command_buffer: *sdl.GPUCommandBuffer,
+        opacity_cascades: *sdl.GPUTexture,
     ) !void {
         sdl.pushGPUDebugGroup(command_buffer, "draw");
 
@@ -681,6 +692,9 @@ const DrawPass = struct {
             },
         );
         sdl.bindGPUGraphicsPipeline(pass.draw_pass.?, pass.pipeline);
+        sdl.bindGPUFragmentSamplers(pass.draw_pass.?, 0, &.{
+            .{ .texture = opacity_cascades, .sampler = pass.sampler },
+        });
     }
 
     fn drawObject(
