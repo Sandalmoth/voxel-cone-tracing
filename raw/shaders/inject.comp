@@ -1,6 +1,7 @@
 #version 460
 
 #define MIN_VOXEL_SIZE 0.244140625
+#define MAX_CAS_TRIES 2
 
 layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
 
@@ -72,12 +73,14 @@ void main() {
     uint current_packed;
     uint new_packed;
     uint original_packed;
+    uint tries;
 
     for (int i = 0; i < 3; ++i) {
 
         ivec3 voxel_pos_0 = raw_voxel_pos + ivec3(cascade * 66, faces[i] * 66, 0);
         ivec3 voxel_pos_1 = raw_voxel_pos + ivec3(cascade * 66, faces[i] * 66, 66);
 
+        tries = MAX_CAS_TRIES;
         do {
             current_packed = imageLoad(u_radiance_targets, voxel_pos_0).r;
             new_packed = packHalf2x16(
@@ -89,8 +92,9 @@ void main() {
                 current_packed,
                 new_packed
             );
-        } while (original_packed != current_packed);
+        } while (--tries > 0 && original_packed != current_packed);
 
+        tries = MAX_CAS_TRIES;
         do {
             current_packed = imageLoad(u_radiance_targets, voxel_pos_1).r;
             new_packed = packHalf2x16(
@@ -102,7 +106,7 @@ void main() {
                 current_packed,
                 new_packed
             );
-        } while (original_packed != current_packed);
+        } while (--tries > 0 && original_packed != current_packed);
         
     }
 
