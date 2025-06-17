@@ -1,0 +1,41 @@
+#version 460
+
+#define DECAY_RATE 0.5
+
+layout(local_size_x = 4, local_size_y = 4, local_size_z = 4) in;
+
+layout(set = 0, binding = 0) uniform usampler3D u_radiance_targets;
+layout(set = 0, binding = 1) uniform sampler3D u_opacity_cascades;
+
+layout(rgba16, set = 1, binding = 0) uniform image3D u_radiance_cache_cascades;
+
+void main() {
+    ivec3 texcoords = ivec3(gl_GlobalInvocationID);
+
+    if (texcoords.x >= 528 &&
+        texcoords.y >= 396 &&
+        texcoords.z >= 66) return;
+
+    vec2 count_red = unpackHalf2x16(
+        texelFetch(u_radiance_targets, texcoords, 0).r
+    );
+    vec2 green_blue = unpackHalf2x16(
+        texelFetch(u_radiance_targets, texcoords + ivec3(0, 0, 66), 0).r
+    );
+    float opacity = texelFetch(
+        u_opacity_cascades,
+        ivec3(texcoords.x, texcoords.y % 66 + 132, texcoords.z),
+        0
+    ).r;
+
+    if (count_red.r > 0) {
+        vec3 radiance = vec3(count_red.g, green_blue) / count_red.r;
+        imageStore(u_radiance_cache_cascades, texcoords, vec4(radiance, opacity));
+    } else {
+        vec3 radiance = DECAY_RATE * imageLoad(u_radiance_cache_cascades, texcoords).rgb;
+        imageStore(u_radiance_cache_cascades, texcoords, vec4(radiance, opacity));
+    }
+
+    imageStore(u_radiance_cache_cascades, texcoords, vec4(1.0, 1.0, 1.0, 1.0));
+    
+}
