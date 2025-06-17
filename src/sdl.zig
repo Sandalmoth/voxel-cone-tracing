@@ -469,6 +469,20 @@ pub fn bindGPUComputeStorageBuffers(
     );
 }
 
+pub fn bindGPUComputeStorageTextures(
+    pass: *GPUComputePass,
+    first_slot: u32,
+    bindings: []const *GPUTexture,
+) void {
+    std.debug.assert(bindings.len > 0);
+    c.SDL_BindGPUComputeStorageTextures(
+        pass,
+        first_slot,
+        &bindings[0],
+        @intCast(bindings.len),
+    );
+}
+
 pub fn pushGPUComputeUniformData(
     command_buffer: *GPUCommandBuffer,
     slot_index: u32,

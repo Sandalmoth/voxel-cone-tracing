@@ -80,6 +80,7 @@ pub fn main() !void {
     try input.map.put(.{ .keyboard = sdl.c.SDL_SCANCODE_GRAVE }, .toggle_voxels_follow_camera);
     try input.map.put(.{ .keyboard = sdl.c.SDL_SCANCODE_Q }, .prev_debug_view);
     try input.map.put(.{ .keyboard = sdl.c.SDL_SCANCODE_E }, .next_debug_view);
+    try input.map.put(.{ .keyboard = sdl.c.SDL_SCANCODE_F1 }, .trigger_capture);
     defer input.deinit();
 
     var draw_pass = try DrawPass.init(gpa, device);
@@ -133,6 +134,11 @@ pub fn main() !void {
             frame_counter = 0;
         }
 
+        // if we had a lagspike, capture a trace
+        if (perf_print_timer.read() > 900_000_000 and frame_timer.read() > 20_000_000) {
+            try trigger();
+        }
+
         lag += @min(frame_timer.lap(), max_tick_ns);
 
         var event: sdl.c.SDL_Event = undefined;
@@ -149,6 +155,7 @@ pub fn main() !void {
             camera.update(&input);
             for (scene.objects.items) |*object| object.update(tick);
             if (input.peek(.toggle_debug_view).pressed) debug_mode = !debug_mode;
+            if (input.peek(.trigger_capture).pressed) try trigger();
 
             input.decay();
             lag -= tick_ns;
@@ -177,13 +184,21 @@ pub fn main() !void {
             );
         } else {
             try draw_pass.begin(command_buffer, voxelize_pass.opacity_cascades);
-            defer draw_pass.end(command_buffer);
             const vp_matrix = camera.vp(alpha);
             for (scene.objects.items) |object| draw_pass.drawObject(
                 command_buffer,
                 object,
                 vp_matrix,
                 alpha,
+            );
+            draw_pass.end(command_buffer);
+
+            try voxelize_pass.inject(
+                command_buffer,
+                draw_pass.color_target,
+                draw_pass.depth_target,
+                draw_pass.normal_target,
+                zm.inverse(camera.vp(alpha)),
             );
         }
         try present_pass.run(
@@ -212,6 +227,10 @@ const VoxelizePass = struct {
         blending_factors: [8]f32 align(16),
     };
 
+    const InjectionUBO = extern struct {
+        inverse_vp_matrix: [16]f32 align(16),
+    };
+
     comptime {
         std.debug.assert(@offsetOf(AveragingUBO, "target_cascades") == 0);
         std.debug.assert(@offsetOf(AveragingUBO, "temporal_slots") == 8);
@@ -235,10 +254,13 @@ const VoxelizePass = struct {
     clear_pipeline: *sdl.GPUComputePipeline,
     voxelization_pipeline: *sdl.GPUComputePipeline,
     averaging_pipeline: *sdl.GPUComputePipeline,
+    injection_pipeline: *sdl.GPUComputePipeline,
 
     voxelize_pass: ?*sdl.GPUComputePass = null,
     opacity_targets: *sdl.GPUTexture,
     opacity_cascades: *sdl.GPUTexture,
+    radiance_targets: *sdl.GPUTexture,
+    radiance_cache_cascades: *sdl.GPUTexture,
 
     sampler: *sdl.GPUSampler,
 
@@ -264,7 +286,7 @@ const VoxelizePass = struct {
                 .num_samplers = 0,
                 .num_readonly_storage_textures = 0,
                 .num_readonly_storage_buffers = 0,
-                .num_readwrite_storage_textures = 1,
+                .num_readwrite_storage_textures = 2,
                 .num_readwrite_storage_buffers = 0,
                 .num_uniform_buffers = 0,
                 .threadcount_x = 4,
@@ -326,14 +348,41 @@ const VoxelizePass = struct {
                 .threadcount_z = 4,
             });
         };
-        errdefer sdl.releaseGPUComputePipeline(device, voxelization_pipeline);
+        errdefer sdl.releaseGPUComputePipeline(device, averaging_pipeline);
+
+        const injection_pipeline = blk: {
+            const file = try std.fs.cwd().openFile(
+                "data/shaders/inject.comp.spv",
+                .{ .mode = .read_only },
+            );
+            defer file.close();
+            const bytes = try file.reader().readAllAlloc(gpa, 1_000_000);
+            defer gpa.free(bytes);
+
+            break :blk try sdl.createGPUComputePipeline(device, &.{
+                .code_size = bytes.len,
+                .code = bytes.ptr,
+                .entrypoint = "main",
+                .format = sdl.c.SDL_GPU_SHADERFORMAT_SPIRV,
+                .num_samplers = 3,
+                .num_readonly_storage_textures = 0,
+                .num_readonly_storage_buffers = 0,
+                .num_readwrite_storage_textures = 1,
+                .num_readwrite_storage_buffers = 0,
+                .num_uniform_buffers = 1,
+                .threadcount_x = 8,
+                .threadcount_y = 8,
+                .threadcount_z = 1,
+            });
+        };
+        errdefer sdl.releaseGPUComputePipeline(device, injection_pipeline);
 
         const opacity_targets = try sdl.createGPUTexture(device, &.{
             .type = sdl.c.SDL_GPU_TEXTURETYPE_3D,
             .format = sdl.c.SDL_GPU_TEXTUREFORMAT_R32_UINT,
             .usage = sdl.c.SDL_GPU_TEXTUREUSAGE_COMPUTE_STORAGE_SIMULTANEOUS_READ_WRITE |
                 sdl.c.SDL_GPU_TEXTUREUSAGE_SAMPLER,
-            .width = 66 * 2,
+            .width = 66 * 2, // two cascades are voxelized each frame
             .height = 66,
             .layer_count_or_depth = 66,
             .num_levels = 1,
@@ -354,8 +403,38 @@ const VoxelizePass = struct {
         });
         errdefer sdl.releaseGPUTexture(device, opacity_cascades);
 
-        // we need a sampler for the binding, but will only texelFetch, so details don't matter
-        const sampler = try sdl.createGPUSampler(device, &.{});
+        const radiance_targets = try sdl.createGPUTexture(device, &.{
+            .type = sdl.c.SDL_GPU_TEXTURETYPE_3D,
+            .format = sdl.c.SDL_GPU_TEXTUREFORMAT_R32_UINT,
+            .usage = sdl.c.SDL_GPU_TEXTUREUSAGE_COMPUTE_STORAGE_SIMULTANEOUS_READ_WRITE |
+                sdl.c.SDL_GPU_TEXTUREUSAGE_SAMPLER,
+            .width = 66 * 8,
+            .height = 66 * 6, // radiance is stored per face in six orthogonal (cubic) directions
+            .layer_count_or_depth = 66 * 2, // pack (red, green) and (blue, norm) separately
+            .num_levels = 1,
+            .sample_count = sdl.c.SDL_GPU_SAMPLECOUNT_1,
+        });
+        errdefer sdl.releaseGPUTexture(device, radiance_targets);
+
+        const radiance_cache_cascades = try sdl.createGPUTexture(device, &.{
+            .type = sdl.c.SDL_GPU_TEXTURETYPE_3D,
+            .format = sdl.c.SDL_GPU_TEXTUREFORMAT_R16G16B16A16_UNORM,
+            .usage = sdl.c.SDL_GPU_TEXTUREUSAGE_COMPUTE_STORAGE_SIMULTANEOUS_READ_WRITE |
+                sdl.c.SDL_GPU_TEXTUREUSAGE_SAMPLER,
+            .width = 66 * 8,
+            .height = 66 * 6,
+            .layer_count_or_depth = 66,
+            .num_levels = 1,
+            .sample_count = sdl.c.SDL_GPU_SAMPLECOUNT_1,
+        });
+        errdefer sdl.releaseGPUTexture(device, radiance_cache_cascades);
+
+        const sampler = try sdl.createGPUSampler(device, &.{
+            .min_filter = sdl.c.SDL_GPU_FILTER_NEAREST,
+            .mag_filter = sdl.c.SDL_GPU_FILTER_NEAREST,
+            .address_mode_u = sdl.c.SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE,
+            .address_mode_v = sdl.c.SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE,
+        });
         errdefer sdl.releaseGPUSampler(device, sampler);
 
         return .{
@@ -363,16 +442,22 @@ const VoxelizePass = struct {
             .clear_pipeline = clear_pipeline,
             .voxelization_pipeline = voxelization_pipeline,
             .averaging_pipeline = averaging_pipeline,
+            .injection_pipeline = injection_pipeline,
             .sampler = sampler,
             .opacity_targets = opacity_targets,
             .opacity_cascades = opacity_cascades,
+            .radiance_targets = radiance_targets,
+            .radiance_cache_cascades = radiance_cache_cascades,
         };
     }
 
     fn deinit(pass: *VoxelizePass) void {
         sdl.releaseGPUSampler(pass.device, pass.sampler);
-        sdl.releaseGPUTexture(pass.device, pass.opacity_targets);
+        sdl.releaseGPUTexture(pass.device, pass.radiance_cache_cascades);
+        sdl.releaseGPUTexture(pass.device, pass.radiance_targets);
         sdl.releaseGPUTexture(pass.device, pass.opacity_cascades);
+        sdl.releaseGPUTexture(pass.device, pass.opacity_targets);
+        sdl.releaseGPUComputePipeline(pass.device, pass.injection_pipeline);
         sdl.releaseGPUComputePipeline(pass.device, pass.averaging_pipeline);
         sdl.releaseGPUComputePipeline(pass.device, pass.voxelization_pipeline);
         sdl.releaseGPUComputePipeline(pass.device, pass.clear_pipeline);
@@ -398,11 +483,14 @@ const VoxelizePass = struct {
         sdl.pushGPUDebugGroup(command_buffer, "clear");
         const clear_pass = try sdl.beginGPUComputePass(
             command_buffer,
-            &.{.{ .texture = pass.opacity_targets, .cycle = true }},
+            &.{
+                .{ .texture = pass.opacity_targets, .cycle = true },
+                .{ .texture = pass.radiance_targets, .cycle = true },
+            },
             &.{},
         );
         sdl.bindGPUComputePipeline(clear_pass, pass.clear_pipeline);
-        sdl.dispatchGPUCompute(clear_pass, 33, 17, 17);
+        sdl.dispatchGPUCompute(clear_pass, 132, 99, 33);
         sdl.endGPUComputePass(clear_pass);
         sdl.popGPUDebugGroup(command_buffer);
 
@@ -464,9 +552,7 @@ const VoxelizePass = struct {
         sdl.pushGPUDebugGroup(command_buffer, "average");
         const averaging_pass = try sdl.beginGPUComputePass(
             command_buffer,
-            &.{
-                .{ .texture = pass.opacity_cascades },
-            },
+            &.{.{ .texture = pass.opacity_cascades }},
             &.{},
         );
         sdl.bindGPUComputePipeline(averaging_pass, pass.averaging_pipeline);
@@ -491,6 +577,40 @@ const VoxelizePass = struct {
         sdl.endGPUComputePass(averaging_pass);
         sdl.popGPUDebugGroup(command_buffer);
     }
+
+    fn inject(
+        pass: *VoxelizePass,
+        command_buffer: *sdl.GPUCommandBuffer,
+        hdr: *sdl.GPUTexture,
+        depth: *sdl.GPUTexture,
+        normals: *sdl.GPUTexture,
+        inverse_vp_matrix: zm.Mat,
+    ) !void {
+        sdl.pushGPUDebugGroup(command_buffer, "inject");
+        defer sdl.popGPUDebugGroup(command_buffer);
+
+        const inject_pass = try sdl.beginGPUComputePass(
+            command_buffer,
+            &.{.{ .texture = pass.radiance_targets }},
+            &.{},
+        );
+        sdl.bindGPUComputePipeline(inject_pass, pass.injection_pipeline);
+        sdl.bindGPUComputeSamplers(inject_pass, 0, &.{
+            .{ .texture = hdr, .sampler = pass.sampler },
+            .{ .texture = depth, .sampler = pass.sampler },
+            .{ .texture = normals, .sampler = pass.sampler },
+        });
+        sdl.pushGPUComputeUniformData(
+            command_buffer,
+            0,
+            &InjectionUBO{
+                .inverse_vp_matrix = zm.matToArr(inverse_vp_matrix),
+            },
+            @sizeOf(VoxelizationUBO),
+        );
+        sdl.dispatchGPUCompute(inject_pass, window_width / 16, window_height / 16, 1);
+        sdl.endGPUComputePass(inject_pass);
+    }
 };
 
 const DrawPass = struct {
@@ -511,6 +631,7 @@ const DrawPass = struct {
     draw_pass: ?*sdl.GPURenderPass = null,
     color_target: *sdl.GPUTexture,
     depth_target: *sdl.GPUTexture,
+    normal_target: *sdl.GPUTexture,
     sampler: *sdl.GPUSampler,
 
     fn init(gpa: std.mem.Allocator, device: *sdl.GPUDevice) !DrawPass {
@@ -577,10 +698,10 @@ const DrawPass = struct {
             .location = 1,
             .offset = @offsetOf(Scene.Vertex, "normal"),
         } };
-        const color_target_descriptions = [_]sdl.GPUColorTargetDescription{.{
-            .format = sdl.c.SDL_GPU_TEXTUREFORMAT_R16G16B16A16_FLOAT,
-            .blend_state = .{},
-        }};
+        const color_target_descriptions = [_]sdl.GPUColorTargetDescription{
+            .{ .format = sdl.c.SDL_GPU_TEXTUREFORMAT_R16G16B16A16_FLOAT }, // hdr color
+            .{ .format = sdl.c.SDL_GPU_TEXTUREFORMAT_R16G16_FLOAT }, // normals
+        };
         // i don't like how there's no obvious name for this function in my renaming scheme...
         const depth_stencil_format = if (sdl.c.SDL_GPUTextureSupportsFormat(
             device,
@@ -633,7 +754,8 @@ const DrawPass = struct {
         const depth_target = try sdl.createGPUTexture(device, &.{
             .type = sdl.c.SDL_GPU_TEXTURETYPE_2D,
             .format = @intCast(depth_stencil_format),
-            .usage = sdl.c.SDL_GPU_TEXTUREUSAGE_DEPTH_STENCIL_TARGET,
+            .usage = sdl.c.SDL_GPU_TEXTUREUSAGE_DEPTH_STENCIL_TARGET |
+                sdl.c.SDL_GPU_TEXTUREUSAGE_SAMPLER,
             .width = window_width,
             .height = window_height,
             .layer_count_or_depth = 1,
@@ -641,6 +763,18 @@ const DrawPass = struct {
             .sample_count = sdl.c.SDL_GPU_SAMPLECOUNT_1,
         });
         errdefer sdl.releaseGPUTexture(device, depth_target);
+
+        const normal_target = try sdl.createGPUTexture(device, &.{
+            .type = sdl.c.SDL_GPU_TEXTURETYPE_2D,
+            .format = sdl.c.SDL_GPU_TEXTUREFORMAT_R16G16_FLOAT,
+            .usage = sdl.c.SDL_GPU_TEXTUREUSAGE_COLOR_TARGET | sdl.c.SDL_GPU_TEXTUREUSAGE_SAMPLER,
+            .width = window_width,
+            .height = window_height,
+            .layer_count_or_depth = 1,
+            .num_levels = 1,
+            .sample_count = sdl.c.SDL_GPU_SAMPLECOUNT_1,
+        });
+        errdefer sdl.releaseGPUTexture(device, normal_target);
 
         const sampler = try sdl.createGPUSampler(device, &.{
             .min_filter = sdl.c.SDL_GPU_FILTER_LINEAR,
@@ -655,12 +789,14 @@ const DrawPass = struct {
             .pipeline = pipeline,
             .color_target = color_target,
             .depth_target = depth_target,
+            .normal_target = normal_target,
             .sampler = sampler,
         };
     }
 
     fn deinit(pass: *DrawPass) void {
         sdl.releaseGPUSampler(pass.device, pass.sampler);
+        sdl.releaseGPUTexture(pass.device, pass.normal_target);
         sdl.releaseGPUTexture(pass.device, pass.depth_target);
         sdl.releaseGPUTexture(pass.device, pass.color_target);
         sdl.releaseGPUGraphicsPipeline(pass.device, pass.pipeline);
@@ -674,13 +810,20 @@ const DrawPass = struct {
     ) !void {
         sdl.pushGPUDebugGroup(command_buffer, "draw");
 
-        const clear_color: sdl.FColor = .{ .r = 0.05, .g = 0.05, .b = 0.05, .a = 1.0 };
-        const color_target_infos = [_]sdl.GPUColorTargetInfo{.{
-            .texture = pass.color_target,
-            .clear_color = clear_color,
-            .load_op = sdl.c.SDL_GPU_LOADOP_CLEAR,
-            .store_op = sdl.c.SDL_GPU_STOREOP_STORE,
-        }};
+        const color_target_infos = [_]sdl.GPUColorTargetInfo{
+            .{
+                .texture = pass.color_target,
+                .clear_color = sdl.FColor{ .r = 0.05, .g = 0.05, .b = 0.05, .a = 1.0 },
+                .load_op = sdl.c.SDL_GPU_LOADOP_CLEAR,
+                .store_op = sdl.c.SDL_GPU_STOREOP_STORE,
+            },
+            .{
+                .texture = pass.normal_target,
+                .clear_color = sdl.FColor{ .r = 0.0, .g = 0.0, .b = 0.0, .a = 0.0 },
+                .load_op = sdl.c.SDL_GPU_LOADOP_CLEAR,
+                .store_op = sdl.c.SDL_GPU_STOREOP_STORE,
+            },
+        };
         pass.draw_pass = try sdl.beginGPURenderPass(
             command_buffer,
             &color_target_infos,
@@ -1258,4 +1401,13 @@ pub fn perspectiveFovRhInv(fovy: f32, aspect: f32, near: f32, far: f32) zm.Mat {
         zm.f32x4(0.0, 0.0, -r - 1.0, -1.0),
         zm.f32x4(0.0, 0.0, -r * near, 0.0),
     };
+}
+
+fn trigger() !void {
+    if (@import("builtin").os.tag != .linux) return;
+
+    var dir = try std.fs.openDirAbsolute("/tmp", .{});
+    defer dir.close();
+    var file = try dir.createFile("trigger", .{ .truncate = true });
+    defer file.close();
 }

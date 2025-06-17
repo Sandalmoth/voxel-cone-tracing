@@ -6,6 +6,7 @@ layout(location = 0) in vec3 v_position;
 layout(location = 1) in vec3 v_normal;
 
 layout(location = 0) out vec4 o_color;
+layout(location = 1) out vec2 o_normal;
 
 layout(set = 2, binding = 0) uniform sampler3D u_opacity_cascades;
 
@@ -82,6 +83,20 @@ float shadowRay(vec3 origin, vec3 normal, vec3 light_dir) {
     return (acc > 0.99) ? 1.0 : acc;
 }
 
+// https://jcgt.org/published/0003/02/01/
+vec2 signNotZero(vec2 v) {
+    return vec2((v.x >= 0.0) ? +1.0 : -1.0, (v.y >= 0.0) ? +1.0 : -1.0);
+}
+vec2 encodeOctahedral(vec3 v) {
+    vec2 p = v.xy * (1.0 / (abs(v.x) + abs(v.y) + abs(v.z)));
+    return (v.z <= 0.0) ? ((1.0 - abs(p.yx)) * signNotZero(p)) : p;
+}
+vec3 decodeOctahedral(vec2 e) {
+    vec3 v = vec3(e.xy, 1.0 - abs(e.x) - abs(e.y));
+    if (v.z < 0) v.xy = (1.0 - abs(v.yx)) * signNotZero(v.xy);
+    return normalize(v);
+}
+
 void main() {
 
     vec3 light_dir = normalize(vec3(-1.0, 2.0, 0.5));
@@ -89,12 +104,12 @@ void main() {
 
     vec3 rad = u_material_data.diffuse.rgb * max(0.01,
         light_intensity *
-        max(dot(v_normal, light_dir), 0.0) *
-        (1.0 - shadowRay(v_position, v_normal, light_dir))
+        max(dot(v_normal, light_dir), 0.0)
     );
     rad += u_material_data.emissive.rgb;
     
     o_color = vec4(rad, 1.0);
+    o_normal = encodeOctahedral(v_normal);
 
     // o_color = vec4(u_material_data.diffuse.rgb, 1.0);
 }

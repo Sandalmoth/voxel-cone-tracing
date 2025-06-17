@@ -29,6 +29,7 @@ const GameInput = enum {
     next_debug_view,
     prev_debug_view,
     toggle_voxels_follow_camera,
+    trigger_capture,
 };
 
 map: std.AutoArrayHashMap(SdlInput, GameInput),

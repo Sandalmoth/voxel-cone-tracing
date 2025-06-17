@@ -5,5 +5,6 @@ glslc --target-env=vulkan1.0 raw/shaders/present.frag -o data/shaders/present.fr
 glslc --target-env=vulkan1.0 raw/shaders/clear.comp -o data/shaders/clear.comp.spv
 glslc --target-env=vulkan1.0 raw/shaders/voxelization.comp -o data/shaders/voxelization.comp.spv
 glslc --target-env=vulkan1.0 raw/shaders/averaging.comp -o data/shaders/averaging.comp.spv
+glslc --target-env=vulkan1.0 raw/shaders/inject.comp -o data/shaders/inject.comp.spv
 glslc --target-env=vulkan1.0 raw/shaders/debug.vert -o data/shaders/debug.vert.spv
 glslc --target-env=vulkan1.0 raw/shaders/debug.frag -o data/shaders/debug.frag.spv
