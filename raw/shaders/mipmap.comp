@@ -9,9 +9,10 @@ layout(std140, set = 2, binding = 0) uniform UBO {
 };
 
 void main() {
-    ivec3 voxel_pos = ivec3(gl_GlobalInvocationID) - 16;
-    ivec3 src_base = 2 * voxel_pos + ivec3(33 + 66 * (cascade - 1), 33, 33);
-    ivec3 dst_base = voxel_pos + ivec3(33 + 66 * cascade, 33, 33);
+    ivec3 voxel_pos = ivec3(gl_GlobalInvocationID % 32) - 16;
+    uint face = gl_GlobalInvocationID.y / 6;
+    ivec3 src_base = 2 * voxel_pos + ivec3(33 + 66 * (cascade - 1), 33 + 66 * face, 33);
+    ivec3 dst_base = voxel_pos + ivec3(33 + 66 * cascade, 33 + 66 * face, 33);
 
     vec4 acc = vec4(0.0, 0.0, 0.0, 0.0);
     acc += imageLoad(u_radiance_cache_cascades, src_base + ivec3(0, 0, 0));

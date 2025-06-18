@@ -179,7 +179,11 @@ pub fn main() !void {
         }
 
         {
-            try draw_pass.begin(command_buffer, voxelize_pass.opacity_cascades);
+            try draw_pass.begin(
+                command_buffer,
+                voxelize_pass.opacity_cascades,
+                voxelize_pass.radiance_cache_cascades,
+            );
             const vp_matrix = camera.vp(alpha);
             for (scene.objects.items) |object| draw_pass.drawObject(
                 command_buffer,
@@ -704,7 +708,7 @@ const VoxelizePass = struct {
                 &@as(u32, @intCast(i)),
                 @sizeOf(u32),
             );
-            sdl.dispatchGPUCompute(mipmap_pass, 8, 8, 8);
+            sdl.dispatchGPUCompute(mipmap_pass, 8, 48, 8);
             sdl.endGPUComputePass(mipmap_pass);
         }
     }
@@ -770,7 +774,7 @@ const DrawPass = struct {
                 .entrypoint = "main",
                 .format = sdl.c.SDL_GPU_SHADERFORMAT_SPIRV,
                 .stage = sdl.c.SDL_GPU_SHADERSTAGE_FRAGMENT,
-                .num_samplers = 1,
+                .num_samplers = 2,
                 .num_storage_textures = 0,
                 .num_storage_buffers = 0,
                 .num_uniform_buffers = 1,
@@ -904,6 +908,7 @@ const DrawPass = struct {
         pass: *DrawPass,
         command_buffer: *sdl.GPUCommandBuffer,
         opacity_cascades: *sdl.GPUTexture,
+        radiance_cache_cascades: *sdl.GPUTexture,
     ) !void {
         sdl.pushGPUDebugGroup(command_buffer, "draw");
 
@@ -934,6 +939,7 @@ const DrawPass = struct {
         sdl.bindGPUGraphicsPipeline(pass.draw_pass.?, pass.pipeline);
         sdl.bindGPUFragmentSamplers(pass.draw_pass.?, 0, &.{
             .{ .texture = opacity_cascades, .sampler = pass.sampler },
+            .{ .texture = radiance_cache_cascades, .sampler = pass.sampler },
         });
     }
 

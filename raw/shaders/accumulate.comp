@@ -1,6 +1,7 @@
 #version 460
 
-#define DECAY_RATE 0.95
+#define INJECT_WEIGHT 0.8
+#define DECAY_RATE 0.5
 
 layout(local_size_x = 4, local_size_y = 4, local_size_z = 4) in;
 
@@ -29,7 +30,8 @@ void main() {
     ).r;
 
     if (count_red.r > 0) {
-        vec3 radiance = vec3(count_red.g, green_blue) / count_red.r;
+        vec3 radiance = INJECT_WEIGHT * vec3(count_red.g, green_blue) / count_red.r + 
+                        (1 - INJECT_WEIGHT) * imageLoad(u_radiance_cache_cascades, texcoords).rgb;
         imageStore(u_radiance_cache_cascades, texcoords, vec4(radiance, opacity));
     } else {
         vec3 radiance = DECAY_RATE * imageLoad(u_radiance_cache_cascades, texcoords).rgb;
