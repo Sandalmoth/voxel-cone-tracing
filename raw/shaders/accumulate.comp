@@ -1,6 +1,6 @@
 #version 460
 
-#define DECAY_RATE 0.5
+#define DECAY_RATE 0.95
 
 layout(local_size_x = 4, local_size_y = 4, local_size_z = 4) in;
 
@@ -12,8 +12,8 @@ layout(rgba16, set = 1, binding = 0) uniform image3D u_radiance_cache_cascades;
 void main() {
     ivec3 texcoords = ivec3(gl_GlobalInvocationID);
 
-    if (texcoords.x >= 528 &&
-        texcoords.y >= 396 &&
+    if (texcoords.x >= 528 ||
+        texcoords.y >= 396 ||
         texcoords.z >= 66) return;
 
     vec2 count_red = unpackHalf2x16(
@@ -35,7 +35,4 @@ void main() {
         vec3 radiance = DECAY_RATE * imageLoad(u_radiance_cache_cascades, texcoords).rgb;
         imageStore(u_radiance_cache_cascades, texcoords, vec4(radiance, opacity));
     }
-
-    imageStore(u_radiance_cache_cascades, texcoords, vec4(1.0, 1.0, 1.0, 1.0));
-    
 }

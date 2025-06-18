@@ -177,15 +177,8 @@ pub fn main() !void {
             );
             try voxelize_pass.end(command_buffer);
         }
-        if (debug_mode) {
-            try debug_pass.run(
-                command_buffer,
-                voxelize_pass.opacity_cascades,
-                voxelize_pass.radiance_cache_cascades,
-                camera.v(alpha),
-                camera.p(alpha),
-            );
-        } else {
+
+        {
             try draw_pass.begin(command_buffer, voxelize_pass.opacity_cascades);
             const vp_matrix = camera.vp(alpha);
             for (scene.objects.items) |object| draw_pass.drawObject(
@@ -195,15 +188,26 @@ pub fn main() !void {
                 alpha,
             );
             draw_pass.end(command_buffer);
+        }
 
-            try voxelize_pass.inject(
+        try voxelize_pass.inject(
+            command_buffer,
+            draw_pass.color_target,
+            draw_pass.depth_target,
+            draw_pass.normal_target,
+            zm.inverse(camera.vp(alpha)),
+        );
+
+        if (debug_mode) {
+            try debug_pass.run(
                 command_buffer,
-                draw_pass.color_target,
-                draw_pass.depth_target,
-                draw_pass.normal_target,
-                zm.inverse(camera.vp(alpha)),
+                voxelize_pass.opacity_cascades,
+                voxelize_pass.radiance_cache_cascades,
+                camera.v(alpha),
+                camera.p(alpha),
             );
         }
+
         try present_pass.run(
             window,
             command_buffer,
@@ -449,7 +453,7 @@ const VoxelizePass = struct {
 
         const radiance_cache_cascades = try sdl.createGPUTexture(device, &.{
             .type = sdl.c.SDL_GPU_TEXTURETYPE_3D,
-            .format = sdl.c.SDL_GPU_TEXTUREFORMAT_R16G16B16A16_UNORM,
+            .format = sdl.c.SDL_GPU_TEXTUREFORMAT_R16G16B16A16_FLOAT,
             .usage = sdl.c.SDL_GPU_TEXTUREUSAGE_COMPUTE_STORAGE_SIMULTANEOUS_READ_WRITE |
                 sdl.c.SDL_GPU_TEXTUREUSAGE_SAMPLER,
             .width = 66 * 8,
@@ -641,7 +645,7 @@ const VoxelizePass = struct {
             },
             @sizeOf(VoxelizationUBO),
         );
-        sdl.dispatchGPUCompute(inject_pass, window_width / 16, window_height / 16, 1);
+        sdl.dispatchGPUCompute(inject_pass, window_width / 8, window_height / 8, 1);
         sdl.endGPUComputePass(inject_pass);
 
         const accumulate_pass = try sdl.beginGPUComputePass(

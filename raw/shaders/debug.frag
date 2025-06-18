@@ -48,7 +48,7 @@ vec4 voxelAt2(vec3 pos, vec3 dir) {
         (dir.y > 0) ? 3 : 2,  
         (dir.z > 0) ? 5 : 4  
     );
-    vec3 weights = abs(dir);
+    vec3 weights = abs(dir * dir);
     
     return
         weights[0] * texelFetch(

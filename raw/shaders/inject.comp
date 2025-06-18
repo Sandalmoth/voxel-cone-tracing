@@ -1,7 +1,7 @@
 #version 460
 
 #define MIN_VOXEL_SIZE 0.244140625
-#define MAX_CAS_TRIES 2
+#define MAX_CAS_TRIES 4
 
 layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
 
@@ -40,11 +40,13 @@ vec3 decodeOctahedral(vec2 e) {
 }
 
 void main() {
-    vec2 texcoords =
-        vec2(gl_GlobalInvocationID.xy) / (vec2(gl_WorkGroupSize * gl_NumWorkGroups) - 1);
+    vec2 texcoords = vec2(
+        gl_GlobalInvocationID.x / float(gl_WorkGroupSize.x * gl_NumWorkGroups.x - 1),
+        gl_GlobalInvocationID.y / float(gl_WorkGroupSize.y * gl_NumWorkGroups.y - 1)
+    );
 
     vec3 hdr = texture(u_src_hdr, texcoords).rgb;
-    float depth = 1.0 - texture(u_src_depth, texcoords).r;
+    float depth = texture(u_src_depth, texcoords).r;
     vec3 normal = decodeOctahedral(texture(u_src_normal, texcoords).rg);
 
     uvec3 faces = uvec3(
@@ -52,7 +54,7 @@ void main() {
         (normal.y < 0) ? 3 : 2,  
         (normal.z < 0) ? 5 : 4  
     );
-    vec3 weights = abs(normal);
+    vec3 weights = abs(normal * normal);
 
     vec4 ndc = vec4(
         2.0 * texcoords.xy - 1.0,
@@ -66,9 +68,9 @@ void main() {
     float voxel_size = voxelSize(cascade);
     ivec3 raw_voxel_pos = ivec3(world_pos / voxel_size) + ivec3(33, 33, 33);
 
-    if (raw_voxel_pos.x < -33 || raw_voxel_pos.x > 32 ||
-        raw_voxel_pos.y < -33 || raw_voxel_pos.y > 32 ||
-        raw_voxel_pos.z < -33 || raw_voxel_pos.z > 32) return;
+    if (raw_voxel_pos.x >= 66 ||
+        raw_voxel_pos.y >= 66 ||
+        raw_voxel_pos.z >= 66) return;
 
     uint current_packed;
     uint new_packed;
@@ -98,7 +100,7 @@ void main() {
         do {
             current_packed = imageLoad(u_radiance_targets, voxel_pos_1).r;
             new_packed = packHalf2x16(
-                unpackHalf2x16(current_packed) + hdr.bg * weights[i]
+                unpackHalf2x16(current_packed) + hdr.gb * weights[i]
             );
             original_packed = imageAtomicCompSwap(
                 u_radiance_targets,
