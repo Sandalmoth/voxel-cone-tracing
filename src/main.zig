@@ -645,7 +645,7 @@ const VoxelizePass = struct {
             },
             @sizeOf(VoxelizationUBO),
         );
-        sdl.dispatchGPUCompute(inject_pass, window_width / 8, window_height / 8, 1);
+        sdl.dispatchGPUCompute(inject_pass, window_width / 16, window_height / 16, 1);
         sdl.endGPUComputePass(inject_pass);
 
         const accumulate_pass = try sdl.beginGPUComputePass(

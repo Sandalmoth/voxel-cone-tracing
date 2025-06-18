@@ -57,7 +57,8 @@ void main() {
     vec3 weights = abs(normal * normal);
 
     vec4 ndc = vec4(
-        2.0 * texcoords.xy - 1.0,
+        2.0 * texcoords.x - 1.0,
+        1.0 - 2.0 * texcoords.y,
         depth,
         1.0
     );
@@ -66,7 +67,7 @@ void main() {
 
     uint cascade = cascadeAt(world_pos.xyz);
     float voxel_size = voxelSize(cascade);
-    ivec3 raw_voxel_pos = ivec3(world_pos / voxel_size) + ivec3(33, 33, 33);
+    ivec3 raw_voxel_pos = ivec3(floor(world_pos / voxel_size)) + ivec3(33, 33, 33);
 
     if (raw_voxel_pos.x >= 66 ||
         raw_voxel_pos.y >= 66 ||
