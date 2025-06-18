@@ -263,6 +263,7 @@ const VoxelizePass = struct {
     averaging_pipeline: *sdl.GPUComputePipeline,
     injection_pipeline: *sdl.GPUComputePipeline,
     accumulate_pipeline: *sdl.GPUComputePipeline,
+    mipmap_pipeline: *sdl.GPUComputePipeline,
 
     voxelize_pass: ?*sdl.GPUComputePass = null,
     opacity_targets: *sdl.GPUTexture,
@@ -412,6 +413,33 @@ const VoxelizePass = struct {
         };
         errdefer sdl.releaseGPUComputePipeline(device, accumulate_pipeline);
 
+        const mipmap_pipeline = blk: {
+            const file = try std.fs.cwd().openFile(
+                "data/shaders/mipmap.comp.spv",
+                .{ .mode = .read_only },
+            );
+            defer file.close();
+            const bytes = try file.reader().readAllAlloc(gpa, 1_000_000);
+            defer gpa.free(bytes);
+
+            break :blk try sdl.createGPUComputePipeline(device, &.{
+                .code_size = bytes.len,
+                .code = bytes.ptr,
+                .entrypoint = "main",
+                .format = sdl.c.SDL_GPU_SHADERFORMAT_SPIRV,
+                .num_samplers = 0,
+                .num_readonly_storage_textures = 0,
+                .num_readonly_storage_buffers = 0,
+                .num_readwrite_storage_textures = 1,
+                .num_readwrite_storage_buffers = 0,
+                .num_uniform_buffers = 1,
+                .threadcount_x = 4,
+                .threadcount_y = 4,
+                .threadcount_z = 4,
+            });
+        };
+        errdefer sdl.releaseGPUComputePipeline(device, mipmap_pipeline);
+
         const opacity_targets = try sdl.createGPUTexture(device, &.{
             .type = sdl.c.SDL_GPU_TEXTURETYPE_3D,
             .format = sdl.c.SDL_GPU_TEXTUREFORMAT_R32_UINT,
@@ -479,6 +507,7 @@ const VoxelizePass = struct {
             .averaging_pipeline = averaging_pipeline,
             .injection_pipeline = injection_pipeline,
             .accumulate_pipeline = accumulate_pipeline,
+            .mipmap_pipeline = mipmap_pipeline,
             .sampler = sampler,
             .opacity_targets = opacity_targets,
             .opacity_cascades = opacity_cascades,
@@ -493,6 +522,7 @@ const VoxelizePass = struct {
         sdl.releaseGPUTexture(pass.device, pass.radiance_targets);
         sdl.releaseGPUTexture(pass.device, pass.opacity_cascades);
         sdl.releaseGPUTexture(pass.device, pass.opacity_targets);
+        sdl.releaseGPUComputePipeline(pass.device, pass.mipmap_pipeline);
         sdl.releaseGPUComputePipeline(pass.device, pass.accumulate_pipeline);
         sdl.releaseGPUComputePipeline(pass.device, pass.injection_pipeline);
         sdl.releaseGPUComputePipeline(pass.device, pass.averaging_pipeline);
@@ -660,6 +690,23 @@ const VoxelizePass = struct {
         });
         sdl.dispatchGPUCompute(accumulate_pass, 132, 99, 17);
         sdl.endGPUComputePass(accumulate_pass);
+
+        for (1..8) |i| {
+            const mipmap_pass = try sdl.beginGPUComputePass(
+                command_buffer,
+                &.{.{ .texture = pass.radiance_cache_cascades }},
+                &.{},
+            );
+            sdl.bindGPUComputePipeline(mipmap_pass, pass.mipmap_pipeline);
+            sdl.pushGPUComputeUniformData(
+                command_buffer,
+                0,
+                &@as(u32, @intCast(i)),
+                @sizeOf(u32),
+            );
+            sdl.dispatchGPUCompute(mipmap_pass, 8, 8, 8);
+            sdl.endGPUComputePass(mipmap_pass);
+        }
     }
 };
 

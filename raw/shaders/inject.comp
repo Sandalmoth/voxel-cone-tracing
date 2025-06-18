@@ -1,5 +1,16 @@
 #version 460
 
+// known issues
+// - unlimited cas causes frame spikes
+// - limited cas causes flickering color
+// - we could stabilize the hue by packing count/r_g_b instead of count_r/g_b
+//   but it would still have flicker on light energy
+//   would be resolved by u64 atomics
+//   and could also try very agressive packing of count_r_g_b into one u32
+// - interpolation border (0 and 65) does not get any light for simplicity
+//   otherwise we'd have to inject into multiple voxels for certain pixels
+// - unsure if we should inject with less directionality, to mimic diffuse lighting better?
+
 #define MIN_VOXEL_SIZE 0.244140625
 #define MAX_CAS_TRIES 4
 
