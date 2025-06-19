@@ -8,7 +8,7 @@ layout(location = 1) in vec3 v_ray_dir;
 layout(location = 0) out vec4 o_color;
 
 layout(set = 2, binding = 0) uniform sampler3D u_opacity_cascades;
-layout(set = 2, binding = 1) uniform sampler3D u_radiance_cache_cascades;
+layout(set = 2, binding = 1) uniform sampler3D u_radiance_cascades;
 
 layout(set = 3, binding = 0) uniform UBO {
     uint draw_mode;
@@ -52,15 +52,15 @@ vec4 voxelAt2(vec3 pos, vec3 dir) {
     
     return
         weights[0] * texelFetch(
-            u_radiance_cache_cascades,
+            u_radiance_cascades,
             ivec3(voxel_pos.x + 66 * cascade, voxel_pos.y + 66 * faces[0], voxel_pos.z),
             0
         ) + weights[1] * texelFetch(
-            u_radiance_cache_cascades,
+            u_radiance_cascades,
             ivec3(voxel_pos.x + 66 * cascade, voxel_pos.y + 66 * faces[1], voxel_pos.z),
             0
         ) + weights[2] * texelFetch(
-            u_radiance_cache_cascades,
+            u_radiance_cascades,
             ivec3(voxel_pos.x + 66 * cascade, voxel_pos.y + 66 * faces[2], voxel_pos.z),
             0
         );

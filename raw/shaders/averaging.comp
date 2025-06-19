@@ -3,8 +3,12 @@
 layout(local_size_x = 16, local_size_y = 2, local_size_z = 2) in;
 
 layout(set = 0, binding = 0) uniform usampler3D u_opacity_targets;
+layout(set = 0, binding = 1) uniform usampler3D u_diffuse_targets;
+layout(set = 0, binding = 2) uniform usampler3D u_emissive_targets;
 
 layout(r8, set = 1, binding = 0) uniform image3D u_opacity_cascades;
+layout(r32ui, set = 1, binding = 1) uniform uimage3D u_diffuse_cascades;
+layout(r32ui, set = 1, binding = 2) uniform uimage3D u_emissive_cascades;
 
 layout(std140, set = 2, binding = 0) uniform VoxelizeUBO {
     uvec2 target_cascades;
@@ -12,6 +16,7 @@ layout(std140, set = 2, binding = 0) uniform VoxelizeUBO {
     uint new_cascades_packed;
     vec4 blending_factors[2];
 };
+
 
 void main() {
     ivec3 texcoords = ivec3(gl_GlobalInvocationID);
@@ -23,72 +28,152 @@ void main() {
     
         // for the cascades that were just updated, update their data
         if (cascade == target_cascades[0]) {
-            uint voxel = texelFetch(
+            uint voxel;
+            voxel = texelFetch(
                 u_opacity_targets,
-                ivec3(
-                    texcoords.x % 66,
-                    texcoords.y,
-                    texcoords.z
-                ),
+                ivec3(texcoords.x % 66, texcoords.y, texcoords.z),
                 0
             ).r;
             imageStore(
                 u_opacity_cascades,
-                ivec3(
-                    texcoords.x,
-                    texcoords.y + 66 * temporal_slots[0],
-                    texcoords.z
-                ),
+                ivec3(texcoords.x, texcoords.y + 66 * temporal_slots[0], texcoords.z),
                 vec4(voxel, 0.0, 0.0, 0.0)
             );
+            voxel = texelFetch(
+                u_diffuse_targets,
+                ivec3(texcoords.x % 66, texcoords.y, texcoords.z),
+                0
+            ).r;
+            imageStore(
+                u_diffuse_cascades,
+                ivec3(texcoords.x, texcoords.y + 66 * temporal_slots[0], texcoords.z),
+                uvec4(voxel, 0, 0, 0)
+            );
+            voxel = texelFetch(
+                u_emissive_targets,
+                ivec3(texcoords.x % 66, texcoords.y, texcoords.z),
+                0
+            ).r;
+            imageStore(
+                u_emissive_cascades,
+                ivec3(texcoords.x, texcoords.y + 66 * temporal_slots[0], texcoords.z),
+                uvec4(voxel, 0, 0, 0)
+            );
         } else if (cascade == target_cascades[1]) {
-            uint voxel = texelFetch(
+            uint voxel;
+            voxel = texelFetch(
                 u_opacity_targets,
-                ivec3(
-                    texcoords.x % 66 + 66,
-                    texcoords.y,
-                    texcoords.z
-                ),
+                ivec3(texcoords.x % 66 + 66, texcoords.y, texcoords.z),
                 0
             ).r;
             imageStore(
                 u_opacity_cascades,
-                ivec3(
-                    texcoords.x,
-                    texcoords.y + 66 * temporal_slots[1],
-                    texcoords.z
-                ),
+                ivec3(texcoords.x, texcoords.y + 66 * temporal_slots[1], texcoords.z),
                 vec4(voxel, 0.0, 0.0, 0.0)
+            );
+            voxel = texelFetch(
+                u_diffuse_targets,
+                ivec3(texcoords.x % 66 + 66, texcoords.y, texcoords.z),
+                0
+            ).r;
+            imageStore(
+                u_diffuse_cascades,
+                ivec3(texcoords.x, texcoords.y + 66 * temporal_slots[1], texcoords.z),
+                uvec4(voxel, 0, 0, 0)
+            );
+            voxel = texelFetch(
+                u_emissive_targets,
+                ivec3(texcoords.x % 66 + 66, texcoords.y, texcoords.z),
+                0
+            ).r;
+            imageStore(
+                u_emissive_cascades,
+                ivec3(texcoords.x, texcoords.y + 66 * temporal_slots[1], texcoords.z),
+                uvec4(voxel, 0, 0, 0)
             );
         }
 
         // then for all voxels, temporally blend between their last states
         uint ix_new = (new_cascades_packed >> cascade) & 1;
         uint ix_old = 1 - ix_new;
-        float new_voxel = imageLoad(u_opacity_cascades, ivec3(
+
+        float new_voxel_opacity = imageLoad(u_opacity_cascades, ivec3(
             texcoords.x,
             texcoords.y + 66 * ix_new,
             texcoords.z
         )).r;
-        float old_voxel = imageLoad(u_opacity_cascades, ivec3(
+        float old_voxel_opacity = imageLoad(u_opacity_cascades, ivec3(
             texcoords.x,
             texcoords.y + 66 * ix_old,
             texcoords.z
         )).r;
-    
+        float mixed_voxel_opacity = mix(
+            old_voxel_opacity,
+            new_voxel_opacity,
+            blending_factors[cascade / 4][cascade % 4]
+        );
         imageStore(
             u_opacity_cascades,
-            ivec3(
-                texcoords.x,
-                texcoords.y + 132,
-                texcoords.z
-            ),
-            vec4(mix(
-                old_voxel,
-                new_voxel,
-                blending_factors[cascade / 4][cascade % 4]
-            ), 0.0, 0.0, 0.0)
+            ivec3(texcoords.x, texcoords.y + 132, texcoords.z),
+            vec4(mixed_voxel_opacity, 0.0, 0.0, 0.0)
         );
 
+        if (mixed_voxel_opacity > 0) {
+
+            uint new_voxel_diffuse = imageLoad(u_diffuse_cascades, ivec3(
+                texcoords.x,
+                texcoords.y + 66 * ix_new,
+                texcoords.z
+            )).r;
+            // float old_voxel_diffuse = imageLoad(u_diffuse_cascades, ivec3(
+            //     texcoords.x,
+            //     texcoords.y + 66 * ix_old,
+            //     texcoords.z
+            // )).r;
+            imageStore(
+                u_diffuse_cascades,
+                ivec3(texcoords.x, texcoords.y + 132, texcoords.z),
+                // vec4(mix(
+                //     old_voxel_diffuse,
+                //     new_voxel_diffuse,
+                //     blending_factors[cascade / 4][cascade % 4]
+                // ), 0.0, 0.0, 0.0)
+                uvec4(new_voxel_diffuse, 0, 0, 0)
+            );
+
+            uint new_voxel_emissive = imageLoad(u_emissive_cascades, ivec3(
+                texcoords.x,
+                texcoords.y + 66 * ix_new,
+                texcoords.z
+            )).r;
+            // float old_voxel_emissive = imageLoad(u_emissive_cascades, ivec3(
+            //     texcoords.x,
+            //     texcoords.y + 66 * ix_old,
+            //     texcoords.z
+            // )).r;
+            imageStore(
+                u_emissive_cascades,
+                ivec3(texcoords.x, texcoords.y + 132, texcoords.z),
+                // vec4(mix(
+                //     old_voxel_emissive,
+                //     new_voxel_emissive,
+                //     blending_factors[cascade / 4][cascade % 4]
+                // ), 0.0, 0.0, 0.0)
+                uvec4(new_voxel_emissive, 0, 0, 0)
+            );
+
+        } else {
+            imageStore(
+                u_diffuse_cascades,
+                ivec3(texcoords.x, texcoords.y + 132, texcoords.z),
+                uvec4(0, 0, 0, 0)
+            );
+            imageStore(
+                u_emissive_cascades,
+                ivec3(texcoords.x, texcoords.y + 132, texcoords.z),
+                uvec4(0, 0, 0, 0)
+            );
+            
+        }
     }
 }

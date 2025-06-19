@@ -148,12 +148,12 @@ void main() {
     );
     rad += u_material_data.emissive.rgb;
 
-    mat3 amat = getAlignmentMatrix(v_normal);
-    vec3 bounced = vec3(0.0, 0.0, 0.0);
-    for (int i = 0; i < 6; ++i) {
-        bounced += gatherRadiance(v_position, v_normal, amat * diffuse_cones[i]);
-    }
-    rad += u_material_data.diffuse.rgb * bounced;
+    // mat3 amat = getAlignmentMatrix(v_normal);
+    // vec3 bounced = vec3(0.0, 0.0, 0.0);
+    // for (int i = 0; i < 6; ++i) {
+    //     bounced += gatherRadiance(v_position, v_normal, amat * diffuse_cones[i]);
+    // }
+    // rad += u_material_data.diffuse.rgb * bounced;
     
     o_color = vec4(rad, 1.0);
     o_normal = encodeOctahedral(v_normal);

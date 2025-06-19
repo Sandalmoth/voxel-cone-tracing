@@ -1,30 +1,14 @@
 #version 460
 
-// known issues
-// - unlimited cas causes frame spikes
-// - limited cas causes flickering color
-// - we could stabilize the hue by packing count/r_g_b instead of count_r/g_b
-//   but it would still have flicker on light energy
-//   would be resolved by u64 atomics
-//   and could also try very agressive packing of count_r_g_b into one u32
-// - interpolation border (0 and 65) does not get any light for simplicity
-//   otherwise we'd have to inject into multiple voxels for certain pixels
-// - unsure if we should inject with less directionality, to mimic diffuse lighting better?
-
 #define MIN_VOXEL_SIZE 0.244140625
-#define MAX_CAS_TRIES 64
 
-layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+layout(local_size_x = 16, local_size_y = 2, local_size_z = 2) in;
 
-layout(set = 0, binding = 0) uniform sampler2D u_src_hdr;
-layout(set = 0, binding = 1) uniform sampler2D u_src_depth;
-layout(set = 0, binding = 2) uniform sampler2D u_src_normal;
+layout(set = 0, binding = 0) uniform sampler3D u_opacity_cascades;
+layout(set = 0, binding = 1) uniform usampler3D u_diffuse_cascades;
+layout(set = 0, binding = 2) uniform usampler3D u_emissive_cascades;
 
-layout(r32ui, set = 1, binding = 0) uniform uimage3D u_radiance_targets;
-
-layout(std140, set = 2, binding = 0) uniform UBO {
-    mat4 inverse_vp_matrix;
-};
+layout(rgba16f, set = 1, binding = 0) uniform image3D u_radiance_cache_cascades;
 
 uint cascadeAt(vec3 pos) {
     vec3 a = abs(pos);
@@ -36,92 +20,55 @@ float voxelSize(uint cascade) {
     return MIN_VOXEL_SIZE * float(1 << cascade);
 }
 
-// https://jcgt.org/published/0003/02/01/
-vec2 signNotZero(vec2 v) {
-    return vec2((v.x >= 0.0) ? +1.0 : -1.0, (v.y >= 0.0) ? +1.0 : -1.0);
+float dequantizeFromBitmask(uint bits, int nbits) {
+    int q = bitCount(bits);
+    return float(q) / float(nbits);
 }
-vec2 encodeOctahedral(vec3 v) {
-    vec2 p = v.xy * (1.0 / (abs(v.x) + abs(v.y) + abs(v.z)));
-    return (v.z <= 0.0) ? ((1.0 - abs(p.yx)) * signNotZero(p)) : p;
+
+vec3 unpackDiffuse(uint packed) {
+    uint r_pos_bits = (packed >> 27) & 0x1Fu;
+    uint r_neg_bits = (packed >> 22) & 0x1Fu;
+    uint g_pos_bits = (packed >> 16) & 0x3Fu;
+    uint g_neg_bits = (packed >> 10) & 0x3Fu;
+    uint b_pos_bits = (packed >>  5) & 0x1Fu;
+    uint b_neg_bits =  packed        & 0x1Fu;
+
+    float r_pos = dequantizeFromBitmask(r_pos_bits, 5);
+    float r_neg = dequantizeFromBitmask(r_neg_bits, 5);
+    float g_pos = dequantizeFromBitmask(g_pos_bits, 6);
+    float g_neg = dequantizeFromBitmask(g_neg_bits, 6);
+    float b_pos = dequantizeFromBitmask(b_pos_bits, 5);
+    float b_neg = dequantizeFromBitmask(b_neg_bits, 5);
+
+    float r = 0.5 + 0.5 * (r_pos - r_neg);
+    float g = 0.5 + 0.5 * (g_pos - g_neg);
+    float b = 0.5 + 0.5 * (b_pos - b_neg);
+
+    return vec3(r, g, b);
 }
-vec3 decodeOctahedral(vec2 e) {
-    vec3 v = vec3(e.xy, 1.0 - abs(e.x) - abs(e.y));
-    if (v.z < 0) v.xy = (1.0 - abs(v.yx)) * signNotZero(v.xy);
-    return normalize(v);
-}
+
+// vec3 unpackEmissiveEnergy(uint c) {
+// }
+
+// vec3 unpackEmissiveNormal(uint c) {
+// }
 
 void main() {
-    vec2 texcoords = vec2(
-        gl_GlobalInvocationID.x / float(gl_WorkGroupSize.x * gl_NumWorkGroups.x - 1),
-        gl_GlobalInvocationID.y / float(gl_WorkGroupSize.y * gl_NumWorkGroups.y - 1)
-    );
+    ivec3 texcoords = ivec3(gl_GlobalInvocationID);
+    if (texcoords.x >= 528 ||
+        texcoords.y >= 66 ||
+        texcoords.z >= 66) return;
 
-    vec3 hdr = texture(u_src_hdr, texcoords).rgb;
-    float depth = texture(u_src_depth, texcoords).r;
-    vec3 normal = decodeOctahedral(texture(u_src_normal, texcoords).rg);
+    float opacity = texelFetch(u_opacity_cascades, texcoords + ivec3(0, 132, 0), 0).r;
+    if (opacity == 0) return;
 
-    uvec3 faces = uvec3(
-        (normal.x < 0) ? 1 : 0,  
-        (normal.y < 0) ? 3 : 2,  
-        (normal.z < 0) ? 5 : 4  
-    );
-    vec3 weights = abs(normal * normal);
+    vec3 diffuse = unpackDiffuse(texelFetch(u_diffuse_cascades, texcoords + ivec3(0, 132, 0), 0).r);
 
-    vec4 ndc = vec4(
-        2.0 * texcoords.x - 1.0,
-        1.0 - 2.0 * texcoords.y,
-        depth,
-        1.0
-    );
-    vec4 world_pos = inverse_vp_matrix * ndc;
-    world_pos /= world_pos.w;
-
-    uint cascade = cascadeAt(world_pos.xyz);
-    float voxel_size = voxelSize(cascade);
-    ivec3 raw_voxel_pos = ivec3(floor(world_pos / voxel_size)) + ivec3(33, 33, 33);
-
-    if (raw_voxel_pos.x >= 66 ||
-        raw_voxel_pos.y >= 66 ||
-        raw_voxel_pos.z >= 66) return;
-
-    uint current_packed;
-    uint new_packed;
-    uint original_packed;
-    uint tries;
-
-    for (int i = 0; i < 3; ++i) {
-
-        ivec3 voxel_pos_0 = raw_voxel_pos + ivec3(cascade * 66, faces[i] * 66, 0);
-        ivec3 voxel_pos_1 = raw_voxel_pos + ivec3(cascade * 66, faces[i] * 66, 66);
-
-        tries = MAX_CAS_TRIES;
-        do {
-            current_packed = imageLoad(u_radiance_targets, voxel_pos_0).r;
-            new_packed = packHalf2x16(
-                unpackHalf2x16(current_packed) + vec2(1.0, hdr.r) * weights[i]
-            );
-            original_packed = imageAtomicCompSwap(
-                u_radiance_targets,
-                voxel_pos_0,
-                current_packed,
-                new_packed
-            );
-        } while (--tries > 0 && original_packed != current_packed);
-
-        tries = MAX_CAS_TRIES;
-        do {
-            current_packed = imageLoad(u_radiance_targets, voxel_pos_1).r;
-            new_packed = packHalf2x16(
-                unpackHalf2x16(current_packed) + hdr.gb * weights[i]
-            );
-            original_packed = imageAtomicCompSwap(
-                u_radiance_targets,
-                voxel_pos_1,
-                current_packed,
-                new_packed
-            );
-        } while (--tries > 0 && original_packed != current_packed);
-        
+    for (int i = 0; i < 6; ++i) {
+        imageStore(
+            u_radiance_cache_cascades,
+            texcoords + ivec3(0, 66 * i, 0),
+            vec4(diffuse.rgb, opacity)
+        );
     }
-
 }

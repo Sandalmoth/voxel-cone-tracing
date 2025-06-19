@@ -18,9 +18,14 @@ layout(std430, set = 0, binding = 1) readonly buffer IndexBuffer {
 };
 
 layout(r32ui, set = 1, binding = 0) uniform uimage3D u_radiance_targets;
+layout(r32ui, set = 1, binding = 1) uniform uimage3D u_diffuse_targets;
+layout(r32ui, set = 1, binding = 2) uniform uimage3D u_emissive_targets;
 
 layout(std140, set = 2, binding = 0) uniform VoxelizeUBO {
     mat4 model_matrix;
+    mat4 normal_matrix;
+    vec4 diffuse;
+    vec4 emissive;
     uvec2 target_cascades;
     uint n_triangles;
 };
@@ -66,6 +71,62 @@ uint packVoxelPos(ivec4 v) {
            ((u.w & 0xFFu) << 24);
 }
 
+uint quantizeToBitmask(float v, int bits) {
+    int q = int(v * float(bits) + 0.5);
+    return 0xFFFFFFFFu >> (32 - q);
+}
+
+
+uint packDiffuse(vec3 c) {
+    // this could be converted to a lookup table, it's only 1573 possible colors I think
+    float r_pos = max(0, 2.0 * (c.r - 0.5));
+    float r_neg = max(0, 2.0 * (0.5 - c.r));
+    float g_pos = max(0, 2.0 * (c.g - 0.5));
+    float g_neg = max(0, 2.0 * (0.5 - c.g));
+    float b_pos = max(0, 2.0 * (c.b - 0.5));
+    float b_neg = max(0, 2.0 * (0.5 - c.b));
+
+    uint r_pos_bits = quantizeToBitmask(r_pos, 5);
+    uint r_neg_bits = quantizeToBitmask(r_neg, 5);
+    uint g_pos_bits = quantizeToBitmask(g_pos, 6);
+    uint g_neg_bits = quantizeToBitmask(g_neg, 6);
+    uint b_pos_bits = quantizeToBitmask(b_pos, 5);
+    uint b_neg_bits = quantizeToBitmask(b_neg, 5);
+
+    return (r_pos_bits << 27) |
+           (r_neg_bits << 22) |
+           (g_pos_bits << 16) |
+           (g_neg_bits << 10) |
+           (b_pos_bits <<  5) |
+           (b_neg_bits      );
+}
+
+uint packEmissive(vec3 c, float e, vec3 n) {
+    vec3 rgb = c * e;
+    float max_rgb = max(rgb.r, max(rgb.g, rgb.b));
+    if (max_rgb < 1e-8) return 0;
+    float exp_f = floor(log2(max_rgb));
+    float scale = exp2(exp_f);
+    int exp_i = int(exp_f);
+    exp_i = clamp(exp_i, 0, 63);
+    vec3 mantissa = rgb / exp2(float(exp_i));
+    mantissa = clamp(mantissa, 0.0, 1.0);
+    uint r = uint(round(mantissa.r * 127.0));
+    uint g = uint(round(mantissa.g * 127.0));
+    uint b = uint(round(mantissa.b * 127.0));
+
+    vec3 a = abs(n);
+    vec3 s = sign(n);
+    ivec3 q = ivec3(
+        (a.x > 0.5) ? s.x : 0,
+        (a.y > 0.5) ? s.y : 0,
+        (a.z > 0.5) ? s.z : 0
+    ) + 1;
+    uint h = q.x + 3 * q.y + 9 * q.z;
+    
+    return (exp_i << 26) | (h << 21) | (r << 14) | (g << 7) | b;
+}
+
 void main() {
     uint ix_src_triangle = gl_GlobalInvocationID.x;
     if (ix_src_triangle >= n_triangles) return;
@@ -86,6 +147,10 @@ void main() {
 
     float voxel_size = voxelSize(ix_cascade);
     float coverage = 0.25 * clamp(triangleArea(p0, p1, p2) / (voxel_size * voxel_size), 0, 4.0);
+
+    vec3 normal = normalize(mat3(normal_matrix) * normalize(
+        vertices[i0].normal + vertices[i1].normal + vertices[i2].normal
+    ));
 
     // setup for the intersection
     vec3 ext = vec3(voxel_size, voxel_size, voxel_size);
@@ -135,6 +200,14 @@ void main() {
 
                 ivec3 voxel_pos = ivec3(x + 66 * gl_GlobalInvocationID.y, y, z) + 33;
                 imageAtomicOr(u_radiance_targets, voxel_pos, 1);
+                // realistically, normals and colors should be computed with barycentric coords
+                // or by doing texture lookups
+                imageAtomicOr(u_diffuse_targets, voxel_pos, packDiffuse(diffuse.rgb));
+                imageAtomicOr(u_emissive_targets, voxel_pos, packEmissive(
+                    emissive.rgb,
+                    emissive.a,
+                    normal
+                ));
             }
         }
     }
