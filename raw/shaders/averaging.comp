@@ -125,20 +125,16 @@ void main() {
                 texcoords.y + 66 * ix_new,
                 texcoords.z
             )).r;
-            // float old_voxel_diffuse = imageLoad(u_diffuse_cascades, ivec3(
-            //     texcoords.x,
-            //     texcoords.y + 66 * ix_old,
-            //     texcoords.z
-            // )).r;
+            uint old_voxel_diffuse = imageLoad(u_diffuse_cascades, ivec3(
+                texcoords.x,
+                texcoords.y + 66 * ix_old,
+                texcoords.z
+            )).r;
             imageStore(
                 u_diffuse_cascades,
                 ivec3(texcoords.x, texcoords.y + 132, texcoords.z),
-                // vec4(mix(
-                //     old_voxel_diffuse,
-                //     new_voxel_diffuse,
-                //     blending_factors[cascade / 4][cascade % 4]
-                // ), 0.0, 0.0, 0.0)
-                uvec4(new_voxel_diffuse, 0, 0, 0)
+                // NOTE maybe try gradual blending
+                uvec4(old_voxel_diffuse | new_voxel_diffuse, 0, 0, 0)
             );
 
             uint new_voxel_emissive = imageLoad(u_emissive_cascades, ivec3(
@@ -146,20 +142,16 @@ void main() {
                 texcoords.y + 66 * ix_new,
                 texcoords.z
             )).r;
-            // float old_voxel_emissive = imageLoad(u_emissive_cascades, ivec3(
-            //     texcoords.x,
-            //     texcoords.y + 66 * ix_old,
-            //     texcoords.z
-            // )).r;
+            uint old_voxel_emissive = imageLoad(u_emissive_cascades, ivec3(
+                texcoords.x,
+                texcoords.y + 66 * ix_old,
+                texcoords.z
+            )).r;
             imageStore(
                 u_emissive_cascades,
                 ivec3(texcoords.x, texcoords.y + 132, texcoords.z),
-                // vec4(mix(
-                //     old_voxel_emissive,
-                //     new_voxel_emissive,
-                //     blending_factors[cascade / 4][cascade % 4]
-                // ), 0.0, 0.0, 0.0)
-                uvec4(new_voxel_emissive, 0, 0, 0)
+                // NOTE maybe try gradual blending
+                uvec4(max(old_voxel_emissive, new_voxel_emissive), 0, 0, 0)
             );
 
         } else {

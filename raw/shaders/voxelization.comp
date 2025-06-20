@@ -72,8 +72,9 @@ uint packVoxelPos(ivec4 v) {
 }
 
 uint quantizeToBitmask(float v, int bits) {
-    int q = int(v * float(bits) + 0.5);
-    return 0xFFFFFFFFu >> (32 - q);
+    uint q = uint(v * float(bits) + 0.5);
+    return (1u << q) - 1u;
+    // return (q == 0) ? 0u : 0xFFFFFFFFu >> (32 - q);
 }
 
 
