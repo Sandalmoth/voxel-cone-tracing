@@ -109,7 +109,7 @@ uint packEmissive(vec3 c, float e, vec3 n) {
     float exp_f = floor(log2(max_rgb));
     float scale = exp2(exp_f);
     int exp_i = int(exp_f);
-    exp_i = clamp(exp_i, 0, 63);
+    exp_i = clamp(exp_i, -32, 63);
     vec3 mantissa = rgb / exp2(float(exp_i));
     mantissa = clamp(mantissa, 0.0, 1.0);
     uint r = uint(round(mantissa.r * 127.0));
@@ -119,9 +119,9 @@ uint packEmissive(vec3 c, float e, vec3 n) {
     vec3 a = abs(n);
     vec3 s = sign(n);
     ivec3 q = ivec3(
-        (a.x > 0.5) ? s.x : 0,
-        (a.y > 0.5) ? s.y : 0,
-        (a.z > 0.5) ? s.z : 0
+        (a.x > 0.25) ? s.x : 0,
+        (a.y > 0.25) ? s.y : 0,
+        (a.z > 0.25) ? s.z : 0
     ) + 1;
     uint h = q.x + 3 * q.y + 9 * q.z;
     
@@ -204,7 +204,7 @@ void main() {
                 // realistically, normals and colors should be computed with barycentric coords
                 // or by doing texture lookups
                 imageAtomicOr(u_diffuse_targets, voxel_pos, packDiffuse(diffuse.rgb));
-                imageAtomicOr(u_emissive_targets, voxel_pos, packEmissive(
+                imageAtomicMax(u_emissive_targets, voxel_pos, packEmissive(
                     emissive.rgb,
                     emissive.a,
                     normal

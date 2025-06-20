@@ -274,7 +274,7 @@ pub fn init(gpa: std.mem.Allocator, device: *sdl.c.SDL_GPUDevice) !Scene {
             rand.float(f32),
             1.0,
         );
-        const emissive = if (rand.float(f32) > 0.0) zm.f32x4s(0.0) else zm.f32x4(
+        const emissive = if (rand.float(f32) > 0.1) zm.f32x4s(0.0) else zm.f32x4(
             rand.float(f32),
             rand.float(f32),
             rand.float(f32),
