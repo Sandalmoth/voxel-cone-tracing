@@ -275,10 +275,10 @@ pub fn init(gpa: std.mem.Allocator, device: *sdl.c.SDL_GPUDevice) !Scene {
             1.0,
         );
         const emissive = if (rand.float(f32) > 0.0) zm.f32x4s(0.0) else zm.f32x4(
-            rand.float(f32) * 10,
-            rand.float(f32) * 10,
-            rand.float(f32) * 10,
-            1.0,
+            rand.float(f32),
+            rand.float(f32),
+            rand.float(f32),
+            rand.float(f32) * 2,
         );
         const roughness = rand.float(f32);
         try scene.objects.append(gpa, .{

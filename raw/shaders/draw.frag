@@ -139,6 +139,7 @@ mat3 getAlignmentMatrix(vec3 normal) {
 
 void main() {
 
+    // TODO dynamic
     vec3 light_dir = normalize(vec3(-1.0, 2.0, 0.5));
     float light_intensity = 0.5;
 
