@@ -59,10 +59,6 @@ bool intersectVoxelTriangle2(
     return true;
 }
 
-float triangleArea(vec3 p0, vec3 p1, vec3 p2) {
-    return 0.5 * length(cross(p1 - p0, p2 - p0));
-}
-
 uint packVoxelPos(ivec4 v) {
     uvec4 u = uvec4(v + 33);
     return (u.x & 0xFFu) |
@@ -128,6 +124,23 @@ uint packEmissive(vec3 c, float e, vec3 n) {
     return (exp_i << 26) | (h << 21) | (r << 14) | (g << 7) | b;
 }
 
+float triangleArea(vec3 p0, vec3 p1, vec3 p2) {
+    return 0.5 * length(cross(p1 - p0, p2 - p0));
+}
+
+// https://math.stackexchange.com/questions/97850/get-the-size-of-an-area-defined-by-2-overlapping-circles
+// this is absurdly expensive though, see if we can find an approximation
+float circleOverlap(float r0, float r1, float d) {
+    float rr0 = r0 * r0;
+    float rr1 = r1 * r1;
+    float dd = d * d;
+    float phi =   2.0 * acos((rr0 + dd - rr1) / (2 * r0 * d));
+    float theta = 2.0 * acos((rr1 + dd - rr0) / (2 * r1 * d));
+    float area1 = 0.5 * (theta * rr1 - rr1 * sin(theta));
+    float area2 = 0.5 * (phi * rr0 - rr0 * sin(phi));
+    return area1 + area2;
+}
+
 void main() {
     uint ix_src_triangle = gl_GlobalInvocationID.x;
     if (ix_src_triangle >= n_triangles) return;
@@ -152,6 +165,10 @@ void main() {
     vec3 normal = normalize(mat3(normal_matrix) * normalize(
         vertices[i0].normal + vertices[i1].normal + vertices[i2].normal
     ));
+
+    vec3 triangle_center = (p0 + p1 + p2) / 3.0;
+    float triangle_area = triangleArea(p0, p1, p2);
+    float voxel_area = 1.5 * voxel_size * voxel_size;
 
     // setup for the intersection
     vec3 ext = vec3(voxel_size, voxel_size, voxel_size);
@@ -199,6 +216,9 @@ void main() {
                     ne0zx, ne1zx, ne2zx, de0zx, de1zx, de2zx
                 )) continue;
 
+                // estimate the coverage of the voxel by this triangle
+                float distance = length(low + 0.5 * voxel_size - triangle_center);
+                float cov = circleOverlap(triangle_area, voxel_area, distance) / voxel_area;
                 uint opacity = ~0u;
 
                 ivec3 voxel_pos = ivec3(x + 66 * gl_GlobalInvocationID.y, y, z) + 33;
