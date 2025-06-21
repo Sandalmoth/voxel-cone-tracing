@@ -233,10 +233,6 @@ const VoxelizePass = struct {
         blending_factors: [8]f32 align(16),
     };
 
-    const InjectionUBO = extern struct {
-        inverse_vp_matrix: [16]f32 align(16),
-    };
-
     comptime {
         std.debug.assert(@offsetOf(AveragingUBO, "target_cascades") == 0);
         std.debug.assert(@offsetOf(AveragingUBO, "temporal_slots") == 8);

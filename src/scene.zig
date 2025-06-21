@@ -246,55 +246,55 @@ pub fn init(gpa: std.mem.Allocator, device: *sdl.c.SDL_GPUDevice) !Scene {
         .roughness = 0.5,
     });
 
-    // var rng = std.Random.DefaultPrng.init(
-    //     @as(u64, @bitCast(std.time.microTimestamp())) *% 11400714819323198549,
-    // );
-    // const rand = rng.random();
-    // for (0..200) |_| {
-    //     const position = zm.f32x4(
-    //         100 * rand.floatNorm(f32),
-    //         100 * rand.floatNorm(f32),
-    //         100 * rand.floatNorm(f32),
-    //         1,
-    //     );
-    //     const rotation = zm.quatFromRollPitchYaw(
-    //         2 * std.math.pi * rand.float(f32),
-    //         2 * std.math.pi * rand.float(f32),
-    //         2 * std.math.pi * rand.float(f32),
-    //     );
-    //     const scale = zm.f32x4s(19.5 * rand.float(f32) + 0.5);
-    //     const angular_velocity = zm.quatFromRollPitchYaw(
-    //         std.math.pi * rand.float(f32),
-    //         std.math.pi * rand.float(f32),
-    //         std.math.pi * rand.float(f32),
-    //     );
-    //     const diffuse = if (rand.boolean()) zm.f32x4s(1.0) else zm.f32x4(
-    //         rand.float(f32),
-    //         rand.float(f32),
-    //         rand.float(f32),
-    //         1.0,
-    //     );
-    //     const emissive = if (rand.float(f32) > 0.1) zm.f32x4s(0.0) else zm.f32x4(
-    //         rand.float(f32),
-    //         rand.float(f32),
-    //         rand.float(f32),
-    //         rand.float(f32) * 2,
-    //     );
-    //     const roughness = rand.float(f32);
-    //     try scene.objects.append(gpa, .{
-    //         .model = scene.bunny,
-    //         .position = position,
-    //         .rotation = rotation,
-    //         .scale = scale,
-    //         .prev_position = position,
-    //         .prev_rotation = rotation,
-    //         .prev_scale = scale,
-    //         .angular_velocity = angular_velocity,
-    //         .diffuse = diffuse,
-    //         .emissive = emissive,
-    //         .roughness = roughness,
-    //     });
-    // }
+    var rng = std.Random.DefaultPrng.init(
+        @as(u64, @bitCast(std.time.microTimestamp())) *% 11400714819323198549,
+    );
+    const rand = rng.random();
+    for (0..200) |_| {
+        const position = zm.f32x4(
+            100 * rand.floatNorm(f32),
+            100 * rand.floatNorm(f32),
+            100 * rand.floatNorm(f32),
+            1,
+        );
+        const rotation = zm.quatFromRollPitchYaw(
+            2 * std.math.pi * rand.float(f32),
+            2 * std.math.pi * rand.float(f32),
+            2 * std.math.pi * rand.float(f32),
+        );
+        const scale = zm.f32x4s(19.5 * rand.float(f32) + 0.5);
+        const angular_velocity = zm.quatFromRollPitchYaw(
+            std.math.pi * rand.float(f32),
+            std.math.pi * rand.float(f32),
+            std.math.pi * rand.float(f32),
+        );
+        const diffuse = if (rand.boolean()) zm.f32x4s(1.0) else zm.f32x4(
+            rand.float(f32),
+            rand.float(f32),
+            rand.float(f32),
+            1.0,
+        );
+        const emissive = if (rand.float(f32) > 0.1) zm.f32x4s(0.0) else zm.f32x4(
+            rand.float(f32),
+            rand.float(f32),
+            rand.float(f32),
+            rand.float(f32) * 2,
+        );
+        const roughness = rand.float(f32);
+        try scene.objects.append(gpa, .{
+            .model = scene.bunny,
+            .position = position,
+            .rotation = rotation,
+            .scale = scale,
+            .prev_position = position,
+            .prev_rotation = rotation,
+            .prev_scale = scale,
+            .angular_velocity = angular_velocity,
+            .diffuse = diffuse,
+            .emissive = emissive,
+            .roughness = roughness,
+        });
+    }
 
     return scene;
 }

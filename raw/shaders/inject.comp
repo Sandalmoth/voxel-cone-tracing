@@ -110,6 +110,17 @@ float shadowRayInf(vec3 src, vec3 dir) {
     int max_delta = max(delta.x, max(delta.y, delta.z));
     ivec3 err = ivec3(max_delta, max_delta, max_delta) / 2;
 
+    // ivec3 debug_voxel = ivec3(25, 26, 33);
+    // if (gl_GlobalInvocationID == debug_voxel) {
+    //     for (int i = 0; i < 6; ++i) {
+    //         imageStore(
+    //             u_radiance_cache_cascades,
+    //             voxel_pos + ivec3(33 + cascade * 66, 33 + i * 66, 33),
+    //             vec4(0.0, 3.0, 0.0, 1.0)
+    //         );
+    //     }
+    // }
+
     while (opacity < 0.95) {
 
         err -= delta;
@@ -130,12 +141,22 @@ float shadowRayInf(vec3 src, vec3 dir) {
             voxel_pos.y < -32 || voxel_pos.y >= 32 ||
             voxel_pos.z < -32 || voxel_pos.z >= 32) {
 
-            cascade += 1000;
+            cascade += 1;
             voxel_pos /= 2;
             ivec3 err = ivec3(max_delta, max_delta, max_delta) / 2;
         }
 
         if (cascade >= 8) return 1.0 - opacity;
+
+        // if (gl_GlobalInvocationID == debug_voxel) {
+        //     for (int i = 0; i < 6; ++i) {
+        //         imageStore(
+        //             u_radiance_cache_cascades,
+        //             voxel_pos + ivec3(33 + cascade * 66, 33 + i * 66, 33),
+        //             vec4(3.0, 0.0, 3.0, 1.0)
+        //         );
+        //     }
+        // }
 
         float voxel_opacity = texelFetch(
             u_opacity_cascades,
@@ -166,7 +187,7 @@ void main() {
         texcoords.z % 66 - 33    
     );
     uint cascade = texcoords.x / 66; 
-    vec3 voxel_world_pos = vec3(voxel_pos) * voxelSize(cascade);    
+    vec3 voxel_world_pos = (vec3(voxel_pos) + 0.5) * voxelSize(cascade);    
 
     float opacity = texelFetch(u_opacity_cascades, texcoords + ivec3(0, 132, 0), 0).r;
     if (opacity == 0) return;
