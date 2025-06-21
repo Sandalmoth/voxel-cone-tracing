@@ -49,6 +49,7 @@ vec4 sampleRadianceAt(vec3 position, vec3 dir, uint cascade) {
         (dir.z > 0) ? 5 : 4  
     );
     vec3 weights = abs(dir) / (abs(dir.x) + abs(dir.y) + abs(dir.z));
+    // vec3 weights = dir * dir;
     return
         weights[0] * texture(u_radiance_cache_cascades, vec3(
             0.125 * (uvw.x + float(cascade)),
@@ -94,10 +95,12 @@ vec3 gatherRadiance(vec3 origin, vec3 normal, vec3 dir) {
     float d = 0;
     while (acc.a < 0.99 && inBounds(origin) && d < MIN_VOXEL_SIZE * 512) {
         vec4 rad = sampleRadianceAtDiameter(origin, dir, diameter);
-        acc += (1 - acc.a) * rad;
+        acc.rgb += (1 - acc.a) * rad.rgb /
+               (diameter * diameter);
+        acc.a += (1 - acc.a) * rad.a;
         d += diameter;
         origin += dir * diameter;
-        diameter = clamp(1.5 * diameter, MIN_VOXEL_SIZE, MIN_VOXEL_SIZE * 128);
+        diameter = clamp(1.3 * diameter, MIN_VOXEL_SIZE, MIN_VOXEL_SIZE * 128);
     }
 
     return acc.rgb;
@@ -149,12 +152,13 @@ void main() {
     );
     rad += u_material_data.emissive.rgb;
 
-    // mat3 amat = getAlignmentMatrix(v_normal);
-    // vec3 bounced = vec3(0.0, 0.0, 0.0);
-    // for (int i = 0; i < 6; ++i) {
-    //     bounced += gatherRadiance(v_position, v_normal, amat * diffuse_cones[i]);
-    // }
+    mat3 amat = getAlignmentMatrix(v_normal);
+    vec3 bounced = vec3(0.0, 0.0, 0.0);
+    for (int i = 0; i < 6; ++i) {
+        bounced += gatherRadiance(v_position, v_normal, amat * diffuse_cones[i]);
+    }
     // rad += u_material_data.diffuse.rgb * bounced;
+    rad = u_material_data.diffuse.rgb * bounced;
     
     o_color = vec4(rad, 1.0);
     o_normal = encodeOctahedral(v_normal);

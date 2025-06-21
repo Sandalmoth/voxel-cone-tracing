@@ -16,9 +16,11 @@ void main() {
         imageStore(u_diffuse_targets, texcoords, uvec4(0, 0, 0, 0));
         imageStore(u_emissive_targets, texcoords, uvec4(0, 0, 0, 0));
     }
+
+    vec4 prev_rad = imageLoad(u_radiance_cache_cascades, texcoords);
     if (texcoords.x < 528 &&
         texcoords.y < 396 &&
         texcoords.z < 132) {
-        imageStore(u_radiance_cache_cascades, texcoords, vec4(0, 0, 0, 0));
+        imageStore(u_radiance_cache_cascades, texcoords, 0.5 * prev_rad);
     }
 }

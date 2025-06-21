@@ -17,7 +17,7 @@ layout(std430, set = 0, binding = 1) readonly buffer IndexBuffer {
     uint indices[];
 };
 
-layout(r32ui, set = 1, binding = 0) uniform uimage3D u_radiance_targets;
+layout(r32ui, set = 1, binding = 0) uniform uimage3D u_opacity_targets;
 layout(r32ui, set = 1, binding = 1) uniform uimage3D u_diffuse_targets;
 layout(r32ui, set = 1, binding = 2) uniform uimage3D u_emissive_targets;
 
@@ -199,8 +199,10 @@ void main() {
                     ne0zx, ne1zx, ne2zx, de0zx, de1zx, de2zx
                 )) continue;
 
+                uint opacity = ~0u;
+
                 ivec3 voxel_pos = ivec3(x + 66 * gl_GlobalInvocationID.y, y, z) + 33;
-                imageAtomicOr(u_radiance_targets, voxel_pos, 1);
+                imageAtomicOr(u_opacity_targets, voxel_pos, opacity);
                 // realistically, normals and colors should be computed with barycentric coords
                 // or by doing texture lookups
                 imageAtomicOr(u_diffuse_targets, voxel_pos, packDiffuse(diffuse.rgb));

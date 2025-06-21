@@ -37,7 +37,7 @@ void main() {
             imageStore(
                 u_opacity_cascades,
                 ivec3(texcoords.x, texcoords.y + 66 * temporal_slots[0], texcoords.z),
-                vec4(voxel, 0.0, 0.0, 0.0)
+                vec4(bitCount(voxel) / 32.0, 0.0, 0.0, 0.0)
             );
             voxel = texelFetch(
                 u_diffuse_targets,
@@ -69,7 +69,7 @@ void main() {
             imageStore(
                 u_opacity_cascades,
                 ivec3(texcoords.x, texcoords.y + 66 * temporal_slots[1], texcoords.z),
-                vec4(voxel, 0.0, 0.0, 0.0)
+                vec4(bitCount(voxel) / 32.0, 0.0, 0.0, 0.0)
             );
             voxel = texelFetch(
                 u_diffuse_targets,
