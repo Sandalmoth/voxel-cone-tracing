@@ -112,6 +112,16 @@ void main() {
             new_voxel_opacity,
             blending_factors[cascade / 4][cascade % 4]
         );
+        float prev_voxel_opacity = imageLoad(u_opacity_cascades, ivec3(
+            texcoords.x,
+            texcoords.y + 132 * ix_old,
+            texcoords.z
+        )).r;
+        mixed_voxel_opacity = mix(
+            prev_voxel_opacity,
+            mixed_voxel_opacity,
+            0.5
+        );
         imageStore(
             u_opacity_cascades,
             ivec3(texcoords.x, texcoords.y + 132, texcoords.z),
