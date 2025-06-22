@@ -95,8 +95,9 @@ vec3 gatherRadiance(vec3 origin, vec3 normal, vec3 dir) {
     float d = 0;
     while (acc.a < 0.99 && inBounds(origin) && d < MIN_VOXEL_SIZE * 512) {
         vec4 rad = sampleRadianceAtDiameter(origin, dir, diameter);
-        acc.rgb += (1 - acc.a) * rad.rgb /
-               (diameter * diameter);
+        acc.rgb += (1 - acc.a) * rad.rgb *
+               exp(-MIN_VOXEL_SIZE * MIN_VOXEL_SIZE * diameter * diameter);
+        // acc.rgb += (1 - acc.a) * rad.rgb;
         acc.a += (1 - acc.a) * rad.a;
         d += diameter;
         origin += dir * diameter;

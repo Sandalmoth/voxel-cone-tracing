@@ -44,6 +44,8 @@ pub const GPUBufferBinding = c.SDL_GPUBufferBinding;
 pub const GPUTextureSamplerBinding = c.SDL_GPUTextureSamplerBinding;
 pub const FColor = c.SDL_FColor;
 pub const GPUFence = c.SDL_GPUFence;
+pub const GPUTextureTransferInfo = c.SDL_GPUTextureTransferInfo;
+pub const GPUTextureRegion = c.SDL_GPUTextureRegion;
 
 pub fn getError() [*c]const u8 {
     return c.SDL_GetError();
@@ -573,4 +575,13 @@ pub fn downloadFromGPUBuffer(
     destination: *const GPUTransferBufferLocation,
 ) void {
     c.SDL_DownloadFromGPUBuffer(pass, source, destination);
+}
+
+pub fn uploadToGPUTexture(
+    copy_pass: *GPUCopyPass,
+    source: *const GPUTextureTransferInfo,
+    destination: *const GPUTextureRegion,
+    cycle: bool,
+) void {
+    c.SDL_UploadToGPUTexture(copy_pass, source, destination, cycle);
 }

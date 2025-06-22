@@ -118,6 +118,7 @@ float shadowRayInf(vec3 src, vec3 dir, ivec3 face_normal) {
             0
         ).r;
         opacity += (1.0 - opacity) * voxel_opacity / ((cascade + 1) * (cascade + 1));
+        // opacity += (1.0 - opacity) * voxel_opacity;
 
         err -= delta;
         if (err.x < 0) {
