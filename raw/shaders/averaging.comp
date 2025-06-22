@@ -114,7 +114,7 @@ void main() {
         );
         float prev_voxel_opacity = imageLoad(u_opacity_cascades, ivec3(
             texcoords.x,
-            texcoords.y + 132 * ix_old,
+            texcoords.y + 132,
             texcoords.z
         )).r;
         mixed_voxel_opacity = mix(
