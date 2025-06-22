@@ -120,7 +120,7 @@ void main() {
         mixed_voxel_opacity = mix(
             prev_voxel_opacity,
             mixed_voxel_opacity,
-            0.5
+            0.25
         );
         imageStore(
             u_opacity_cascades,

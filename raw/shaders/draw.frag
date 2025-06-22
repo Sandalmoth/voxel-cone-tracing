@@ -92,11 +92,13 @@ vec3 gatherRadiance(vec3 origin, vec3 normal, vec3 dir) {
     origin += normal * diameter * 2.6;
 
     vec4 acc = vec4(0.0, 0.0, 0.0, 0.0);
-    float d = 0;
-    while (acc.a < 0.99 && inBounds(origin) && d < MIN_VOXEL_SIZE * 512) {
+    float d = diameter * 2.6;
+    while (acc.a < 0.95 && inBounds(origin) && d < MIN_VOXEL_SIZE * 256) {
         vec4 rad = sampleRadianceAtDiameter(origin, dir, diameter);
         acc.rgb += (1 - acc.a) * rad.rgb *
-               exp(-MIN_VOXEL_SIZE * MIN_VOXEL_SIZE * diameter * diameter);
+               exp(-0.002 * d * d);
+               // exp(-1 * diameter * diameter);
+        // acc.rgb += (1 - acc.a) * rad.rgb / (0.1 * d * d);
         // acc.rgb += (1 - acc.a) * rad.rgb;
         acc.a += (1 - acc.a) * rad.a;
         d += diameter;
@@ -121,6 +123,13 @@ vec3 decodeOctahedral(vec2 e) {
     return normalize(v);
 }
 
+// https://www.reedbeta.com/blog/hash-functions-for-gpu-rendering/
+uint pcg_hash(uint seed) {
+    uint state = seed * 747796405u + 2891336453u;
+    uint word = ((state >> ((state >> 28u) + 4u)) ^ state) * 277803737u;
+    return (word >> 22u) ^ word;
+}
+
 vec3 diffuse_cones[6] = vec3[](
     vec3(0.0, 1.0, 0.0),        
     vec3(0.894427, 0.447214, 0.0),
@@ -130,12 +139,22 @@ vec3 diffuse_cones[6] = vec3[](
     vec3(0.276393, 0.447214, -0.850651)
 );
 
-mat3 getAlignmentMatrix(vec3 normal) {
+vec3 randomHelper(vec3 normal, uint seed) {
+    float u = float(pcg_hash(seed)) / 4294967296.0;
+    float angle = u * 6.28318530718;
+    vec3 notN = abs(normal.y) < 0.999 ? vec3(0, 1, 0) : vec3(1, 0, 0);
+    vec3 tangent = normalize(cross(normal, notN));
+    vec3 bitangent = cross(normal, tangent);
+    return cos(angle) * tangent + sin(angle) * bitangent;
+}
+
+mat3 getAlignmentMatrix(vec3 normal, uint seed) {
     vec3 new_y = normalize(normal);
     vec3 helper = vec3(0.0, 1.0, 0.0);
     if (abs(dot(new_y, helper)) > 0.999) {
         helper = vec3(1.0, 0.0, 0.0);
     }
+    // vec3 helper = randomHelper(normal, seed);
     vec3 new_x = normalize(cross(helper, new_y));
     vec3 new_z = cross(new_y, new_x);
     return mat3(new_x, new_y, new_z);
@@ -153,7 +172,8 @@ void main() {
     );
     rad += u_material_data.emissive.rgb;
 
-    mat3 amat = getAlignmentMatrix(v_normal);
+    uint seed = uint(gl_FragCoord.x) + uint(gl_FragCoord.y) * 65536u;
+    mat3 amat = getAlignmentMatrix(v_normal, seed);
     vec3 bounced = vec3(0.0, 0.0, 0.0);
     for (int i = 0; i < 6; ++i) {
         bounced += gatherRadiance(v_position, v_normal, amat * diffuse_cones[i]);
