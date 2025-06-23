@@ -14,8 +14,8 @@ pub const tick: f32 = 1.0 / @as(f32, @floatFromInt(ticks_per_second));
 pub const tick_ns: u64 = 1_000_000_000 / ticks_per_second;
 pub const max_tick_ns: u64 = 250_000_000;
 
-const window_width = 1920;
-const window_height = 1080;
+const window_width = 1280;
+const window_height = 720;
 
 pub fn main() !void {
     sdl.setMainReady();
@@ -735,24 +735,24 @@ const VoxelizePass = struct {
         sdl.endGPUComputePass(inject_pass);
         sdl.popGPUDebugGroup(command_buffer);
 
-        sdl.pushGPUDebugGroup(command_buffer, "mipmap");
-        for (1..8) |i| {
-            const mipmap_pass = try sdl.beginGPUComputePass(
-                command_buffer,
-                &.{.{ .texture = pass.radiance_cache_cascades }},
-                &.{},
-            );
-            sdl.bindGPUComputePipeline(mipmap_pass, pass.mipmap_pipeline);
-            sdl.pushGPUComputeUniformData(
-                command_buffer,
-                0,
-                &@as(u32, @intCast(i)),
-                @sizeOf(u32),
-            );
-            sdl.dispatchGPUCompute(mipmap_pass, 8, 48, 8);
-            sdl.endGPUComputePass(mipmap_pass);
-        }
-        sdl.popGPUDebugGroup(command_buffer);
+        // sdl.pushGPUDebugGroup(command_buffer, "mipmap");
+        // for (1..8) |i| {
+        //     const mipmap_pass = try sdl.beginGPUComputePass(
+        //         command_buffer,
+        //         &.{.{ .texture = pass.radiance_cache_cascades }},
+        //         &.{},
+        //     );
+        //     sdl.bindGPUComputePipeline(mipmap_pass, pass.mipmap_pipeline);
+        //     sdl.pushGPUComputeUniformData(
+        //         command_buffer,
+        //         0,
+        //         &@as(u32, @intCast(i)),
+        //         @sizeOf(u32),
+        //     );
+        //     sdl.dispatchGPUCompute(mipmap_pass, 8, 48, 8);
+        //     sdl.endGPUComputePass(mipmap_pass);
+        // }
+        // sdl.popGPUDebugGroup(command_buffer);
     }
 };
 
@@ -924,6 +924,7 @@ const DrawPass = struct {
             .mag_filter = sdl.c.SDL_GPU_FILTER_LINEAR,
             .address_mode_u = sdl.c.SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE,
             .address_mode_v = sdl.c.SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE,
+            .address_mode_w = sdl.c.SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE,
         });
         errdefer sdl.releaseGPUSampler(device, sampler);
 

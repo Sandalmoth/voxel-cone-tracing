@@ -82,6 +82,7 @@ void main() {
     if (draw_mode == 0) {
     
         o_color = vec4(0.5 * v_ray_dir + 0.5, 1.0);
+        // o_color = vec4(0.0, 0.0, 0.0, 1.0);
 
         vec3 pos = v_ray_origin;
         vec4 acc = vec4(0.0, 0.0, 0.0, 0.0);
@@ -94,9 +95,8 @@ void main() {
             float occlusion = voxelAt(pos);
             vec4 voxel_color = vec4(cascade_colors[cascadeAt(pos)], occlusion);
             voxel_color = vec4(voxel_color.rgb * exp(-d*0.05), voxel_color.a);
-            float a = voxel_color.a;
-            acc.rgb += voxel_color.rgb * a * (1.0 - acc.a);
-            acc.a += a * (1.0 - acc.a);
+            acc.rgb += voxel_color.rgb * occlusion * (1.0 - acc.a);
+            acc.a += voxel_color.a * (1.0 - acc.a);
 
             if (acc.a > 0.99) break;
         }

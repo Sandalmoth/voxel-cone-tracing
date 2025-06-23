@@ -243,7 +243,6 @@ void main() {
                     sqrt(voxel_area / M_PI),
                     distance
                 ) / voxel_area;
-                // cov = cov * cov * (3.0f - 2.0f * cov);
                 uint rand = pcg_hash(
                     ix_src_triangle * 2654435761u +
                     (uint(x + 33) + 31 * uint(y + 33) + 89 * uint(z + 33))

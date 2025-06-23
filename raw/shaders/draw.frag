@@ -89,16 +89,18 @@ vec3 gatherRadiance(vec3 origin, vec3 normal, vec3 dir) {
     // 2.6 > 1.5 * sqrt(3)
     // so even if we are at the corner of a voxel moving diagonally through
     // we'll never sample the voxel we're starting in
-    origin += normal * diameter * 2.6;
+    const float initial_step = 2.6;
+    origin += normal * diameter * initial_step;
 
     vec4 acc = vec4(0.0, 0.0, 0.0, 0.0);
-    float d = diameter * 2.6;
+    float d = diameter * initial_step;
     while (acc.a < 0.95 && inBounds(origin) && d < MIN_VOXEL_SIZE * 256) {
         vec4 rad = sampleRadianceAtDiameter(origin, dir, diameter);
-        acc.rgb += (1 - acc.a) * rad.rgb *
-               exp(-0.002 * d * d);
+        // acc.rgb += (1 - acc.a) * rad.rgb *
+               // exp(-0.002 * d * d);
                // exp(-1 * diameter * diameter);
-        // acc.rgb += (1 - acc.a) * rad.rgb / (0.1 * d * d);
+        // acc.rgb += (1 - acc.a) * rad.a * rad.rgb / (d * d);
+        acc.rgb += (1 - acc.a) * rad.a * rad.rgb / (diameter);
         // acc.rgb += (1 - acc.a) * rad.rgb;
         acc.a += (1 - acc.a) * rad.a;
         d += diameter;
@@ -150,11 +152,13 @@ vec3 randomHelper(vec3 normal, uint seed) {
 
 mat3 getAlignmentMatrix(vec3 normal, uint seed) {
     vec3 new_y = normalize(normal);
-    vec3 helper = vec3(0.0, 1.0, 0.0);
-    if (abs(dot(new_y, helper)) > 0.999) {
-        helper = vec3(1.0, 0.0, 0.0);
-    }
-    // vec3 helper = randomHelper(normal, seed);
+
+    // vec3 helper = vec3(0.0, 1.0, 0.0);
+    // if (abs(dot(new_y, helper)) > 0.999) {
+    //     helper = vec3(1.0, 0.0, 0.0);
+    // }
+    vec3 helper = randomHelper(normal, seed);
+
     vec3 new_x = normalize(cross(helper, new_y));
     vec3 new_z = cross(new_y, new_x);
     return mat3(new_x, new_y, new_z);
