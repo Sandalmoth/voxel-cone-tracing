@@ -38,11 +38,6 @@ bool inBounds(vec3 position) {
 vec4 sampleRadianceAt(vec3 position, vec3 dir, uint cascade) {
     float cascade_world_size = 66.0 * MIN_VOXEL_SIZE * float(1 << cascade);
     vec3 uvw = position / cascade_world_size + 0.5;
-    // cannot happen
-    // if (uvw.x < 0.0 || uvw.x > 1.0 || uvw.y < 0.0 || uvw.y > 1.0 ||
-    //     uvw.z < 0.0 || uvw.z > 1.0) {
-    //     return 0.0;
-    // }
     vec3 faces = vec3(
         (dir.x > 0) ? 1 : 0,  
         (dir.y > 0) ? 3 : 2,  
@@ -53,17 +48,17 @@ vec4 sampleRadianceAt(vec3 position, vec3 dir, uint cascade) {
     return
         weights[0] * texture(u_radiance_cache_cascades, vec3(
             0.125 * (uvw.x + float(cascade)),
-            (1.0 / 6.0) * uvw.y + faces[0] / 6.0,
+            (1.0 / 6.0) * (uvw.y + faces[0]),
             uvw.z
         )) +
         weights[1] * texture(u_radiance_cache_cascades, vec3(
             0.125 * (uvw.x + float(cascade)),
-            (1.0 / 6.0) * uvw.y + faces[1] / 6.0,
+            (1.0 / 6.0) * (uvw.y + faces[1]),
             uvw.z
         )) +
         weights[2] * texture(u_radiance_cache_cascades, vec3(
             0.125 * (uvw.x + float(cascade)),
-            (1.0 / 6.0) * uvw.y + faces[2] / 6.0,
+            (1.0 / 6.0) * (uvw.y + faces[2]),
             uvw.z
         ));
 }
@@ -104,9 +99,9 @@ vec3 gatherRadiance(vec3 origin, vec3 normal, vec3 dir, bool skip) {
             skip = false;
         } else {
             acc.rgb += (1 - acc.a) * rad.a * rad.rgb / (diameter);
+            acc.a += (1 - acc.a) * rad.a;
         }
-        // acc.rgb += (1 - acc.a) * rad.rgb;
-        acc.a += (1 - acc.a) * rad.a;
+        // acc.a += (1 - acc.a) * rad.a;
         d += diameter;
         origin += dir * diameter;
         diameter = 2 * diameter;
@@ -187,7 +182,7 @@ void main() {
     for (int i = 1; i < 6; ++i) {
         bounced += gatherRadiance(v_position, v_normal, amat * diffuse_cones[i], true);
     }
-    // rad += u_material_data.diffuse.rgb * bounced;
+    rad += u_material_data.diffuse.rgb * bounced;
     rad = u_material_data.diffuse.rgb * bounced;
     
     o_color = vec4(rad, 1.0);

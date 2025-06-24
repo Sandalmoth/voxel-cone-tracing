@@ -81,6 +81,8 @@ pub fn main() !void {
     try input.map.put(.{ .keyboard = sdl.c.SDL_SCANCODE_Q }, .prev_debug_view);
     try input.map.put(.{ .keyboard = sdl.c.SDL_SCANCODE_E }, .next_debug_view);
     try input.map.put(.{ .keyboard = sdl.c.SDL_SCANCODE_F1 }, .trigger_capture);
+    try input.map.put(.{ .keyboard = sdl.c.SDL_SCANCODE_2 }, .increment_debug_min_cascade);
+    try input.map.put(.{ .keyboard = sdl.c.SDL_SCANCODE_1 }, .decrement_debug_min_cascade);
     defer input.deinit();
 
     var draw_pass = try DrawPass.init(gpa, device);
@@ -158,6 +160,8 @@ pub fn main() !void {
             if (input.peek(.trigger_capture).pressed) try trigger();
             if (input.peek(.prev_debug_view).pressed) debug_pass.mode = (debug_pass.mode -% 1) % 2;
             if (input.peek(.next_debug_view).pressed) debug_pass.mode = (debug_pass.mode +% 1) % 2;
+            if (input.peek(.increment_debug_min_cascade).pressed) debug_pass.min_cascade = @min(debug_pass.min_cascade + 1, 7);
+            if (input.peek(.decrement_debug_min_cascade).pressed) debug_pass.min_cascade -|= 1;
 
             input.decay();
             lag -= tick_ns;
@@ -1264,6 +1268,7 @@ const DebugPass = struct {
     color_target: *sdl.GPUTexture,
 
     mode: u32 = 0,
+    min_cascade: u32 = 0,
 
     fn init(
         gpa: std.mem.Allocator,
@@ -1458,8 +1463,8 @@ const DebugPass = struct {
         sdl.c.SDL_PushGPUFragmentUniformData(
             command_buffer,
             0,
-            &pass.mode,
-            @sizeOf(u32),
+            &[2]u32{ pass.mode, pass.min_cascade },
+            2 * @sizeOf(u32),
         );
         sdl.drawGPUPrimitives(render_pass, 6, 1, 0, 0);
         sdl.endGPURenderPass(render_pass);

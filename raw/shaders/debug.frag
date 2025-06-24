@@ -12,12 +12,13 @@ layout(set = 2, binding = 1) uniform sampler3D u_radiance_cascades;
 
 layout(set = 3, binding = 0) uniform UBO {
     uint draw_mode;
+    uint min_cascade;
 };
 
 uint cascadeAt(vec3 pos) {
     vec3 a = abs(pos);
     float maximum = max(max(a.x, a.y), a.z);
-    return uint(clamp(ceil(log2(maximum / (MIN_VOXEL_SIZE * 32))), 0, 8));
+    return uint(clamp(ceil(log2(maximum / (MIN_VOXEL_SIZE * 32))), min_cascade, 8));
 }
 
 float voxelSize(uint cascade) {
