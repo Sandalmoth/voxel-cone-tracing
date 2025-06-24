@@ -78,7 +78,7 @@ vec4 sampleRadianceAtDiameter(vec3 position, vec3 dir, float diameter) {
     return (1 - frac) * low + frac * high;
 }
 
-vec3 gatherRadiance(vec3 origin, vec3 normal, vec3 dir) {
+vec3 gatherRadiance(vec3 origin, vec3 normal, vec3 dir, bool skip) {
     float diameter = clamp(
         0.5 * MIN_VOXEL_SIZE * absmax(origin),
         MIN_VOXEL_SIZE,
@@ -89,23 +89,27 @@ vec3 gatherRadiance(vec3 origin, vec3 normal, vec3 dir) {
     // 2.6 > 1.5 * sqrt(3)
     // so even if we are at the corner of a voxel moving diagonally through
     // we'll never sample the voxel we're starting in
-    const float initial_step = 2.6;
+    const float initial_step = 2.0 * absmax(normal);
     origin += normal * diameter * initial_step;
 
     vec4 acc = vec4(0.0, 0.0, 0.0, 0.0);
     float d = diameter * initial_step;
-    while (acc.a < 0.95 && inBounds(origin) && d < MIN_VOXEL_SIZE * 256) {
+    while (acc.a < 0.95 && inBounds(origin) && diameter < 512.0) {
         vec4 rad = sampleRadianceAtDiameter(origin, dir, diameter);
         // acc.rgb += (1 - acc.a) * rad.rgb *
                // exp(-0.002 * d * d);
                // exp(-1 * diameter * diameter);
         // acc.rgb += (1 - acc.a) * rad.a * rad.rgb / (d * d);
-        acc.rgb += (1 - acc.a) * rad.a * rad.rgb / (diameter);
+        if (skip) {
+            skip = false;
+        } else {
+            acc.rgb += (1 - acc.a) * rad.a * rad.rgb / (diameter);
+        }
         // acc.rgb += (1 - acc.a) * rad.rgb;
         acc.a += (1 - acc.a) * rad.a;
         d += diameter;
         origin += dir * diameter;
-        diameter = clamp(1.3 * diameter, MIN_VOXEL_SIZE, MIN_VOXEL_SIZE * 128);
+        diameter = 2 * diameter;
     }
 
     return acc.rgb;
@@ -132,14 +136,14 @@ uint pcg_hash(uint seed) {
     return (word >> 22u) ^ word;
 }
 
-vec3 diffuse_cones[6] = vec3[](
+vec3 diffuse_cones[6] = {
     vec3(0.0, 1.0, 0.0),        
-    vec3(0.894427, 0.447214, 0.0),
-    vec3(0.276393, 0.447214, 0.850651),
-    vec3(-0.723607, 0.447214, 0.525731),
-    vec3(-0.723607, 0.447214, -0.525731),
-    vec3(0.276393, 0.447214, -0.850651)
-);
+    vec3(0.8660254037844387, 0.49999999999999994, 0.0),
+    vec3(0.2676165673298175, 0.49999999999999994, 0.823639103546332),
+    vec3(-0.7006292692220367, 0.49999999999999994, 0.5090369604551274),
+    vec3(-0.7006292692220369, 0.49999999999999994, -0.5090369604551271),
+    vec3(0.2676165673298173, 0.49999999999999994, -0.8236391035463321),
+};
 
 vec3 randomHelper(vec3 normal, uint seed) {
     float u = float(pcg_hash(seed)) / 4294967296.0;
@@ -179,8 +183,9 @@ void main() {
     uint seed = uint(gl_FragCoord.x) + uint(gl_FragCoord.y) * 65536u;
     mat3 amat = getAlignmentMatrix(v_normal, seed);
     vec3 bounced = vec3(0.0, 0.0, 0.0);
-    for (int i = 0; i < 6; ++i) {
-        bounced += gatherRadiance(v_position, v_normal, amat * diffuse_cones[i]);
+    bounced += gatherRadiance(v_position, v_normal, amat * diffuse_cones[0], false);
+    for (int i = 1; i < 6; ++i) {
+        bounced += gatherRadiance(v_position, v_normal, amat * diffuse_cones[i], true);
     }
     // rad += u_material_data.diffuse.rgb * bounced;
     rad = u_material_data.diffuse.rgb * bounced;
