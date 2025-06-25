@@ -182,9 +182,9 @@ pub fn main() !void {
             try voxelize_pass.end(command_buffer);
         }
 
+        const vp_matrix = camera.vp(alpha);
         {
             try draw_pass.beginPrepass(command_buffer);
-            const vp_matrix = camera.vp(alpha);
             for (scene.objects.items) |object| draw_pass.drawObjectPrepass(
                 command_buffer,
                 object,
@@ -193,14 +193,16 @@ pub fn main() !void {
             );
             draw_pass.endPrepass(command_buffer);
         }
-        try draw_pass.computeIndirect(command_buffer, camera.vp(alpha));
+        try draw_pass.computeIndirect(
+            command_buffer,
+            vp_matrix,
+            voxelize_pass.opacity_cascades,
+            voxelize_pass.radiance_cache_cascades,
+        );
         {
             try draw_pass.begin(
                 command_buffer,
-                voxelize_pass.opacity_cascades,
-                voxelize_pass.radiance_cache_cascades,
             );
-            const vp_matrix = camera.vp(alpha);
             for (scene.objects.items) |object| draw_pass.drawObject(
                 command_buffer,
                 object,
@@ -734,6 +736,9 @@ const DrawPass = struct {
         emissive: [4]f32 align(16),
         roughness: f32,
     };
+    const IndirectUBO = extern struct {
+        inverse_vp_matrix: [16]f32 align(16),
+    };
 
     device: *sdl.GPUDevice,
     pipeline: *sdl.GPUGraphicsPipeline,
@@ -794,7 +799,7 @@ const DrawPass = struct {
                 .entrypoint = "main",
                 .format = sdl.c.SDL_GPU_SHADERFORMAT_SPIRV,
                 .stage = sdl.c.SDL_GPU_SHADERSTAGE_FRAGMENT,
-                .num_samplers = 2,
+                .num_samplers = 1,
                 .num_storage_textures = 0,
                 .num_storage_buffers = 0,
                 .num_uniform_buffers = 1,
@@ -958,7 +963,7 @@ const DrawPass = struct {
                 .code = bytes.ptr,
                 .entrypoint = "main",
                 .format = sdl.c.SDL_GPU_SHADERFORMAT_SPIRV,
-                .num_samplers = 2,
+                .num_samplers = 4,
                 .num_readonly_storage_textures = 0,
                 .num_readonly_storage_buffers = 0,
                 .num_readwrite_storage_textures = 1,
@@ -1134,8 +1139,6 @@ const DrawPass = struct {
     fn begin(
         pass: *DrawPass,
         command_buffer: *sdl.GPUCommandBuffer,
-        opacity_cascades: *sdl.GPUTexture,
-        radiance_cache_cascades: *sdl.GPUTexture,
     ) !void {
         sdl.pushGPUDebugGroup(command_buffer, "draw");
 
@@ -1158,8 +1161,7 @@ const DrawPass = struct {
         );
         sdl.bindGPUGraphicsPipeline(pass.draw_pass.?, pass.pipeline);
         sdl.bindGPUFragmentSamplers(pass.draw_pass.?, 0, &.{
-            .{ .texture = opacity_cascades, .sampler = pass.sampler },
-            .{ .texture = radiance_cache_cascades, .sampler = pass.sampler },
+            .{ .texture = pass.indirect_light, .sampler = pass.sampler },
         });
     }
 
@@ -1275,6 +1277,8 @@ const DrawPass = struct {
         pass: *DrawPass,
         command_buffer: *sdl.GPUCommandBuffer,
         camera_vp: zm.Mat,
+        opacity_cascades: *sdl.GPUTexture,
+        radiance_cache_cascades: *sdl.GPUTexture,
     ) !void {
         sdl.pushGPUDebugGroup(command_buffer, "indirect");
         defer sdl.popGPUDebugGroup(command_buffer);
@@ -1303,8 +1307,12 @@ const DrawPass = struct {
         sdl.bindGPUComputeSamplers(indirect_pass, 0, &.{
             .{ .texture = pass.lowres_depth, .sampler = pass.sampler },
             .{ .texture = pass.lowres_normal, .sampler = pass.sampler },
+            .{ .texture = opacity_cascades, .sampler = pass.sampler },
+            .{ .texture = radiance_cache_cascades, .sampler = pass.sampler },
         });
-        sdl.pushGPUVertexUniformData(command_buffer, 0, &zm.inverse(camera_vp), @sizeOf(zm.Mat));
+        sdl.pushGPUComputeUniformData(command_buffer, 0, &IndirectUBO{
+            .inverse_vp_matrix = zm.matToArr(zm.inverse(camera_vp)),
+        }, @sizeOf(IndirectUBO));
         sdl.dispatchGPUCompute(
             indirect_pass,
             (window_width / 2 + 7) / 8,

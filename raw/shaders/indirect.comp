@@ -1,15 +1,152 @@
 #version 460
 
+#define MIN_VOXEL_SIZE 0.244140625
+
 layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
 
 layout(set = 0, binding = 0) uniform sampler2D u_lowres_depth;
 layout(set = 0, binding = 1) uniform sampler2D u_lowres_normal;
+layout(set = 0, binding = 2) uniform sampler3D u_opacity_cascades;
+layout(set = 0, binding = 3) uniform sampler3D u_radiance_cache_cascades;
 
 layout(rgba16f, set = 1, binding = 0) uniform image2D u_lowres_indirect_light;
 
 layout(std140, set = 2, binding = 0) uniform UBO {
     mat4 inverse_vp_matrix;
 };
+
+float absmax(vec3 v) {
+    vec3 a = abs(v);
+    return max(max(a.x, a.y), a.z);
+}
+
+uint cascadeAt(vec3 pos) {
+    float maximum = absmax(pos);
+    return uint(clamp(ceil(log2(maximum / (MIN_VOXEL_SIZE * 32))), 0, 8));
+}
+
+float voxelSize(uint cascade) {
+    return MIN_VOXEL_SIZE * float(1 << cascade);
+}
+
+bool inBounds(vec3 position) {
+    return absmax(position) <= 1000.0;
+}
+
+vec4 sampleRadianceAt(vec3 position, vec3 dir, uint cascade) {
+    float cascade_world_size = 66.0 * MIN_VOXEL_SIZE * float(1 << cascade);
+    vec3 uvw = position / cascade_world_size + 0.5;
+    vec3 faces = vec3(
+        (dir.x > 0) ? 1 : 0,  
+        (dir.y > 0) ? 3 : 2,  
+        (dir.z > 0) ? 5 : 4  
+    );
+    vec3 weights = abs(dir) / (abs(dir.x) + abs(dir.y) + abs(dir.z));
+    // vec3 weights = dir * dir;
+    return
+        weights[0] * texture(u_radiance_cache_cascades, vec3(
+            0.125 * (uvw.x + float(cascade)),
+            (1.0 / 6.0) * (uvw.y + faces[0]),
+            uvw.z
+        )) +
+        weights[1] * texture(u_radiance_cache_cascades, vec3(
+            0.125 * (uvw.x + float(cascade)),
+            (1.0 / 6.0) * (uvw.y + faces[1]),
+            uvw.z
+        )) +
+        weights[2] * texture(u_radiance_cache_cascades, vec3(
+            0.125 * (uvw.x + float(cascade)),
+            (1.0 / 6.0) * (uvw.y + faces[2]),
+            uvw.z
+        ));
+}
+
+vec4 sampleRadianceAtDiameter(vec3 position, vec3 dir, float diameter) {
+    float fcascade = clamp(log2(diameter / MIN_VOXEL_SIZE), 0, 7);
+    uint low_cascade = uint(fcascade);
+    uint high_cascade = min(low_cascade + 1, 7);
+    float frac = fract(fcascade);
+    vec4 low = sampleRadianceAt(position, dir, low_cascade);
+    vec4 high = sampleRadianceAt(position, dir, high_cascade);
+    return (1 - frac) * low + frac * high;
+}
+
+vec4 gatherRadiance(vec3 origin, vec3 normal, vec3 dir, bool skip) {
+    float diameter = clamp(
+        0.5 * MIN_VOXEL_SIZE * absmax(origin),
+        MIN_VOXEL_SIZE,
+        MIN_VOXEL_SIZE * 128
+    );
+
+    // TODO see if we could improve on this
+    // 2.6 > 1.5 * sqrt(3)
+    // so even if we are at the corner of a voxel moving diagonally through
+    // we'll never sample the voxel we're starting in
+    const float initial_step = 2.0 * absmax(normal);
+    origin += normal * diameter * initial_step;
+
+    vec4 acc = vec4(0.0, 0.0, 0.0, 0.0);
+    float occlusion = 0.0;
+    float d = diameter * initial_step;
+    while (acc.a < 0.95 && inBounds(origin) && diameter < 32.0) {
+        vec4 rad = sampleRadianceAtDiameter(origin, dir, diameter);
+        // acc.rgb += (1 - acc.a) * rad.rgb *
+               // exp(-0.002 * d * d);
+               // exp(-1 * diameter * diameter);
+        // acc.rgb += (1 - acc.a) * rad.a * rad.rgb / (d * d);
+        if (skip) {
+            skip = false;
+        } else {
+            acc.rgb += (1 - acc.a) * rad.a * rad.rgb / (diameter * MIN_VOXEL_SIZE);
+            acc.a += (1 - acc.a) * rad.a;
+            if (occlusion < 1.0) {
+                occlusion += ((1.0 - occlusion) * rad.a) / (1.0 + diameter * diameter);
+            }
+        }
+        // acc.a += (1 - acc.a) * rad.a;
+        d += diameter;
+        origin += 1.25 * dir * diameter;
+        diameter = 1.618 * diameter;
+    }
+
+    return vec4(acc.rgb, clamp(occlusion, 0.0, 1.0));
+}
+
+// https://www.reedbeta.com/blog/hash-functions-for-gpu-rendering/
+uint pcg_hash(uint seed) {
+    uint state = seed * 747796405u + 2891336453u;
+    uint word = ((state >> ((state >> 28u) + 4u)) ^ state) * 277803737u;
+    return (word >> 22u) ^ word;
+}
+
+vec3 diffuse_cones[6] = {
+    // basically, one cone up surrounded by five cones
+    // but it's all slightly off angle, so that all gaps get filled when randomly rotated
+    // at the cost of less coverage for very low angles
+    vec3(0.0, 0.9659258262890683, 0.25881904510252074),
+    vec3(0.7660444431189781, 0.6208851530148457, 0.16636567534280192),
+    vec3(0.236720751370257, 0.4323221341029862, 0.8700924423504325),
+    vec3(-0.619742972929746, 0.5043467983060274, 0.6012927361465958),
+    vec3(-0.6197429729297461, 0.7374235077236639, -0.2685613854609918),
+    vec3(0.23672075137025683, 0.8094481719267052, -0.5373610916648287),
+};
+
+vec3 randomHelper(vec3 normal, uint seed) {
+    float u = float(pcg_hash(seed)) / 4294967296.0;
+    float angle = u * 6.28318530718;
+    vec3 notN = abs(normal.y) < 0.999 ? vec3(0, 1, 0) : vec3(1, 0, 0);
+    vec3 tangent = normalize(cross(normal, notN));
+    vec3 bitangent = cross(normal, tangent);
+    return cos(angle) * tangent + sin(angle) * bitangent;
+}
+
+mat3 getAlignmentMatrix(vec3 normal, uint seed) {
+    vec3 new_y = normalize(normal);
+    vec3 helper = randomHelper(normal, seed);
+    vec3 new_x = normalize(cross(helper, new_y));
+    vec3 new_z = cross(new_y, new_x);
+    return mat3(new_x, new_y, new_z);
+}
 
 // https://jcgt.org/published/0003/02/01/
 vec2 signNotZero(vec2 v) {
@@ -30,17 +167,25 @@ void main() {
     ivec2 texcoords = ivec3(gl_GlobalInvocationID).xy;
     if (texcoords.x >= lowres_size.x || texcoords.y >= lowres_size.y) return;
 
-    float depth = texture(u_lowres_depth, texcoords).r;
-    vec3 normal = decodeOctahedral(texture(u_lowres_normal, texcoords).rg);
-
-    vec4 ndc = vec4(
-        2.0 * texcoords.x - 1.0,
-        1.0 - 2.0 * texcoords.y,
-        depth,
-        1.0
-    );
+    float depth = texelFetch(u_lowres_depth, texcoords, 0).r;
+    vec3 normal = decodeOctahedral(texelFetch(u_lowres_normal, texcoords, 0).rg);
+    float x_ndc = (float(texcoords.x) + 0.5) / float(lowres_size.x) * 2.0 - 1.0;
+    float y_ndc = 1.0 - (float(texcoords.y) + 0.5) / float(lowres_size.y) * 2.0;
+    vec4 ndc = vec4(x_ndc, y_ndc, depth, 1.0);
     vec4 world_pos = inverse_vp_matrix * ndc;
     world_pos /= world_pos.w;
 
-    imageStore(u_lowres_indirect_light, texcoords, vec4(depth, texcoords, 1.0));
+    uint seed = uint(texcoords.x) + uint(texcoords.y) * 65536u;
+    mat3 amat = getAlignmentMatrix(normal, seed);
+    vec4 bounced = vec4(0.0, 0.0, 0.0, 0.0);
+    bounced += gatherRadiance(world_pos.xyz, normal, amat * diffuse_cones[0], false);
+    for (int i = 1; i < 6; ++i) {
+        bounced += gatherRadiance(world_pos.xyz, normal, amat * diffuse_cones[i], true);
+    }
+
+    imageStore(u_lowres_indirect_light, texcoords, bounced);
+    // imageStore(u_lowres_indirect_light, texcoords, clamp(vec4(depth, depth, depth, 1.0), 0, 1));
+    // imageStore(u_lowres_indirect_light, texcoords, clamp(vec4(0.5 * normal + 0.5, 1.0), 0, 1));
+    // imageStore(u_lowres_indirect_light, texcoords, vec4(world_pos.xyz, 1.0));
+    // imageStore(u_lowres_indirect_light, texcoords, vec4(ndc.x * 0.5 + 0.5, ndc.y * 0.5 + 0.5, ndc.zw));
 }
