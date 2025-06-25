@@ -98,9 +98,8 @@ const vec3 face_normals[6] = {
     normalize(vec3( 0,  0, -1)),
 };
 
-float shadowRayInf(vec3 src, vec3 dir, ivec3 face_normal) {
-    uint cascade = cascadeAt(src);
-    uint root_cascade = cascade;
+float shadowRayInf(vec3 src, vec3 dir, ivec3 face_normal, uint root_cascade) {
+    uint cascade = max(cascadeAt(src), root_cascade);
     if (cascade >= 8) return 1.0;
         
     float opacity = 0.0;   
@@ -187,7 +186,7 @@ void main() {
         vec3 rad = diffuse.rgb * 
             light_intensity *
             max(dot(face_normals[i], light_dir), 0.0) *
-            shadowRayInf(voxel_world_pos, light_dir, ivec3(face_normals[i]));
+            shadowRayInf(voxel_world_pos, light_dir, ivec3(face_normals[i]), cascade);
         rad += emissive_energy * max(dot(face_normals[i], emissive_normal), 0.0);
 
         imageStore(
