@@ -73,7 +73,7 @@ vec4 sampleRadianceAtDiameter(vec3 position, vec3 dir, float diameter) {
     return (1 - frac) * low + frac * high;
 }
 
-vec3 gatherRadiance(vec3 origin, vec3 normal, vec3 dir, bool skip) {
+vec4 gatherRadiance(vec3 origin, vec3 normal, vec3 dir, bool skip) {
     float diameter = clamp(
         0.5 * MIN_VOXEL_SIZE * absmax(origin),
         MIN_VOXEL_SIZE,
@@ -88,8 +88,9 @@ vec3 gatherRadiance(vec3 origin, vec3 normal, vec3 dir, bool skip) {
     origin += normal * diameter * initial_step;
 
     vec4 acc = vec4(0.0, 0.0, 0.0, 0.0);
+    float occlusion = 0.0;
     float d = diameter * initial_step;
-    while (acc.a < 0.95 && inBounds(origin) && diameter < 512.0) {
+    while (acc.a < 0.95 && inBounds(origin) && diameter < 32.0) {
         vec4 rad = sampleRadianceAtDiameter(origin, dir, diameter);
         // acc.rgb += (1 - acc.a) * rad.rgb *
                // exp(-0.002 * d * d);
@@ -100,6 +101,9 @@ vec3 gatherRadiance(vec3 origin, vec3 normal, vec3 dir, bool skip) {
         } else {
             acc.rgb += (1 - acc.a) * rad.a * rad.rgb / (diameter * MIN_VOXEL_SIZE);
             acc.a += (1 - acc.a) * rad.a;
+            if (occlusion < 1.0) {
+                occlusion += ((1.0 - occlusion) * rad.a) / (1.0 + diameter * diameter);
+            }
         }
         // acc.a += (1 - acc.a) * rad.a;
         d += diameter;
@@ -107,7 +111,7 @@ vec3 gatherRadiance(vec3 origin, vec3 normal, vec3 dir, bool skip) {
         diameter = 1.618 * diameter;
     }
 
-    return acc.rgb;
+    return vec4(acc.rgb, clamp(occlusion, 0.0, 1.0));
 }
 
 // https://jcgt.org/published/0003/02/01/
@@ -198,13 +202,14 @@ void main() {
 
     uint seed = uint(gl_FragCoord.x) + uint(gl_FragCoord.y) * 65536u;
     mat3 amat = getAlignmentMatrix(v_normal, seed);
-    vec3 bounced = vec3(0.0, 0.0, 0.0);
+    vec4 bounced = vec4(0.0, 0.0, 0.0, 0.0);
     bounced += gatherRadiance(v_position, v_normal, amat * diffuse_cones[0], false);
     for (int i = 1; i < 6; ++i) {
         bounced += gatherRadiance(v_position, v_normal, amat * diffuse_cones[i], true);
     }
     // rad += u_material_data.diffuse.rgb * bounced;
-    rad = u_material_data.diffuse.rgb * bounced;
+    rad = u_material_data.diffuse.rgb * (1.0 - bounced.a / 6.0) * (bounced.rgb + vec3(1e-2, 1e-2, 1e-2));
+    // rad = vec3(1.0 - bounced.a / 6.0);
     
     o_color = vec4(rad, 1.0);
     o_normal = encodeOctahedral(v_normal);

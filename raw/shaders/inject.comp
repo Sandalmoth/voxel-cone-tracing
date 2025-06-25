@@ -189,6 +189,8 @@ void main() {
             shadowRayInf(voxel_world_pos, light_dir, ivec3(face_normals[i]), cascade);
         rad += emissive_energy * max(dot(face_normals[i], emissive_normal), 0.0);
 
+        // rad += vec3(2e-4, 2e-4, 2e-4);
+
         imageStore(
             u_radiance_cache_cascades,
             texcoords + ivec3(0, 66 * i, 0),

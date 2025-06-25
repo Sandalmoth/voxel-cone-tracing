@@ -781,6 +781,9 @@ const DrawPass = struct {
     normal_target: *sdl.GPUTexture,
     sampler: *sdl.GPUSampler,
 
+    // lowres_depth: *sdl.GPUTexture,
+    // lowres_normals: *sdl.GPUTexture,
+
     fn init(gpa: std.mem.Allocator, device: *sdl.GPUDevice) !DrawPass {
         const vertex_shader = blk: {
             const file = try std.fs.cwd().openFile(
