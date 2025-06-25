@@ -6,7 +6,6 @@ layout(location = 0) in vec3 v_position;
 layout(location = 1) in vec3 v_normal;
 
 layout(location = 0) out vec4 o_color;
-layout(location = 1) out vec2 o_normal;
 
 layout(set = 2, binding = 0) uniform sampler3D u_opacity_cascades;
 layout(set = 2, binding = 1) uniform sampler3D u_radiance_cache_cascades;
@@ -136,27 +135,9 @@ uint pcg_hash(uint seed) {
 }
 
 vec3 diffuse_cones[6] = {
-    // vec3(0.0, 1.0, 0.0),        
-    // 30 degree elevation
-    // vec3(0.8660254037844387, 0.49999999999999994, 0.0),
-    // vec3(0.2676165673298175, 0.49999999999999994, 0.823639103546332),
-    // vec3(-0.7006292692220367, 0.49999999999999994, 0.5090369604551274),
-    // vec3(-0.7006292692220369, 0.49999999999999994, -0.5090369604551271),
-    // vec3(0.2676165673298173, 0.49999999999999994, -0.8236391035463321),
-    // 40 degree elevation
-    // vec3(0.766044443118978, 0.6427876096865393, 0.0),
-    // vec3(0.23672075137025697, 0.6427876096865393, 0.7285515593999962),
-    // vec3(-0.6197429729297459, 0.6427876096865393, 0.45026962626593564),
-    // vec3(-0.6197429729297461, 0.6427876096865393, -0.4502696262659355),
-    // vec3(0.2367207513702568, 0.6427876096865393, -0.7285515593999962),
-    // 50 degree elevation
-    // vec3(0.6427876096865394, 0.766044443118978, 0.0),
-    // vec3(0.19863229516679126, 0.766044443118978, 0.611327344786169),
-    // vec3(-0.5200261000100609, 0.766044443118978, 0.37782107733007836),
-    // vec3(-0.520026100010061, 0.766044443118978, -0.3778210773300782),
-    // vec3(0.19863229516679112, 0.766044443118978, -0.6113273447861691),
-    
-    // off angle
+    // basically, one cone up surrounded by five cones
+    // but it's all slightly off angle, so that all gaps get filled when randomly rotated
+    // at the cost of less coverage for very low angles
     vec3(0.0, 0.9659258262890683, 0.25881904510252074),
     vec3(0.7660444431189781, 0.6208851530148457, 0.16636567534280192),
     vec3(0.236720751370257, 0.4323221341029862, 0.8700924423504325),
@@ -212,7 +193,6 @@ void main() {
     // rad = vec3(1.0 - bounced.a / 6.0);
     
     o_color = vec4(rad, 1.0);
-    o_normal = encodeOctahedral(v_normal);
 
     // o_color = vec4(u_material_data.diffuse.rgb, 1.0);
 }

@@ -183,6 +183,18 @@ pub fn main() !void {
         }
 
         {
+            try draw_pass.beginPrepass(command_buffer);
+            const vp_matrix = camera.vp(alpha);
+            for (scene.objects.items) |object| draw_pass.drawObjectPrepass(
+                command_buffer,
+                object,
+                vp_matrix,
+                alpha,
+            );
+            draw_pass.endPrepass(command_buffer);
+        }
+
+        {
             try draw_pass.begin(
                 command_buffer,
                 voxelize_pass.opacity_cascades,
@@ -774,15 +786,19 @@ const DrawPass = struct {
 
     device: *sdl.GPUDevice,
     pipeline: *sdl.GPUGraphicsPipeline,
+    prepass_pipeline: *sdl.GPUGraphicsPipeline,
 
     draw_pass: ?*sdl.GPURenderPass = null,
+    prepass_draw_pass: ?*sdl.GPURenderPass = null,
     color_target: *sdl.GPUTexture,
     depth_target: *sdl.GPUTexture,
     normal_target: *sdl.GPUTexture,
     sampler: *sdl.GPUSampler,
 
-    // lowres_depth: *sdl.GPUTexture,
-    // lowres_normals: *sdl.GPUTexture,
+    lowres_depth: *sdl.GPUTexture,
+    lowres_normal: *sdl.GPUTexture,
+    lowres_indirect_light: *sdl.GPUTexture,
+    indirect_light: *sdl.GPUTexture,
 
     fn init(gpa: std.mem.Allocator, device: *sdl.GPUDevice) !DrawPass {
         const vertex_shader = blk: {
@@ -831,6 +847,29 @@ const DrawPass = struct {
         };
         defer sdl.releaseGPUShader(device, fragment_shader);
 
+        const fragment_shader_prepass = blk: {
+            const file = try std.fs.cwd().openFile(
+                "data/shaders/prepass.frag.spv",
+                .{ .mode = .read_only },
+            );
+            defer file.close();
+            const bytes = try file.reader().readAllAlloc(gpa, 1_000_000);
+            defer gpa.free(bytes);
+
+            break :blk try sdl.createGPUShader(device, &.{
+                .code_size = bytes.len,
+                .code = bytes.ptr,
+                .entrypoint = "main",
+                .format = sdl.c.SDL_GPU_SHADERFORMAT_SPIRV,
+                .stage = sdl.c.SDL_GPU_SHADERSTAGE_FRAGMENT,
+                .num_samplers = 0,
+                .num_storage_textures = 0,
+                .num_storage_buffers = 0,
+                .num_uniform_buffers = 0,
+            });
+        };
+        defer sdl.releaseGPUShader(device, fragment_shader_prepass);
+
         const vertex_buffer_descriptions = [_]sdl.GPUVertexBufferDescription{.{
             .slot = 0,
             .pitch = @sizeOf(Scene.Vertex),
@@ -850,6 +889,8 @@ const DrawPass = struct {
         } };
         const color_target_descriptions = [_]sdl.GPUColorTargetDescription{
             .{ .format = sdl.c.SDL_GPU_TEXTUREFORMAT_R16G16B16A16_FLOAT }, // hdr color
+        };
+        const color_target_descriptions_prepass = [_]sdl.GPUColorTargetDescription{
             .{ .format = sdl.c.SDL_GPU_TEXTUREFORMAT_R16G16_FLOAT }, // normals
         };
         // i don't like how there's no obvious name for this function in my renaming scheme...
@@ -875,9 +916,9 @@ const DrawPass = struct {
             },
             .multisample_state = .{},
             .depth_stencil_state = .{
-                .compare_op = sdl.c.SDL_GPU_COMPAREOP_GREATER,
+                .compare_op = sdl.c.SDL_GPU_COMPAREOP_GREATER_OR_EQUAL,
                 .enable_depth_test = true,
-                .enable_depth_write = true,
+                .enable_depth_write = true, // i assume it doesn't matter?
             },
             .target_info = .{
                 .color_target_descriptions = &color_target_descriptions[0],
@@ -888,6 +929,38 @@ const DrawPass = struct {
         };
         const pipeline = try sdl.createGPUGraphicsPipeline(device, &pipeline_create_info);
         errdefer sdl.releaseGPUGraphicsPipeline(device, pipeline);
+        const prepass_pipeline_create_info = sdl.GPUGraphicsPipelineCreateInfo{
+            .vertex_shader = vertex_shader,
+            .fragment_shader = fragment_shader_prepass,
+            .vertex_input_state = .{
+                .vertex_buffer_descriptions = &vertex_buffer_descriptions[0],
+                .num_vertex_buffers = vertex_buffer_descriptions.len,
+                .vertex_attributes = &vertex_attributes[0],
+                .num_vertex_attributes = vertex_attributes.len,
+            },
+            .primitive_type = sdl.c.SDL_GPU_PRIMITIVETYPE_TRIANGLELIST,
+            .rasterizer_state = .{
+                .front_face = sdl.c.SDL_GPU_FRONTFACE_COUNTER_CLOCKWISE,
+                .cull_mode = sdl.c.SDL_GPU_CULLMODE_BACK,
+            },
+            .multisample_state = .{},
+            .depth_stencil_state = .{
+                .compare_op = sdl.c.SDL_GPU_COMPAREOP_GREATER,
+                .enable_depth_test = true,
+                .enable_depth_write = true,
+            },
+            .target_info = .{
+                .color_target_descriptions = &color_target_descriptions_prepass[0],
+                .num_color_targets = color_target_descriptions_prepass.len,
+                .depth_stencil_format = @intCast(depth_stencil_format),
+                .has_depth_stencil_target = true,
+            },
+        };
+        const prepass_pipeline = try sdl.createGPUGraphicsPipeline(
+            device,
+            &prepass_pipeline_create_info,
+        );
+        errdefer sdl.releaseGPUGraphicsPipeline(device, prepass_pipeline);
 
         const color_target = try sdl.createGPUTexture(device, &.{
             .type = sdl.c.SDL_GPU_TEXTURETYPE_2D,
@@ -926,6 +999,58 @@ const DrawPass = struct {
         });
         errdefer sdl.releaseGPUTexture(device, normal_target);
 
+        const depth_lowres = try sdl.createGPUTexture(device, &.{
+            .type = sdl.c.SDL_GPU_TEXTURETYPE_2D,
+            .format = sdl.c.SDL_GPU_TEXTUREFORMAT_R32_FLOAT,
+            .usage = sdl.c.SDL_GPU_TEXTUREUSAGE_SAMPLER |
+                sdl.c.SDL_GPU_TEXTUREUSAGE_COMPUTE_STORAGE_WRITE,
+            .width = window_width / 2,
+            .height = window_height / 2,
+            .layer_count_or_depth = 1,
+            .num_levels = 1,
+            .sample_count = sdl.c.SDL_GPU_SAMPLECOUNT_1,
+        });
+        errdefer sdl.releaseGPUTexture(device, depth_lowres);
+
+        const normal_lowres = try sdl.createGPUTexture(device, &.{
+            .type = sdl.c.SDL_GPU_TEXTURETYPE_2D,
+            .format = sdl.c.SDL_GPU_TEXTUREFORMAT_R16G16_FLOAT,
+            .usage = sdl.c.SDL_GPU_TEXTUREUSAGE_SAMPLER |
+                sdl.c.SDL_GPU_TEXTUREUSAGE_COMPUTE_STORAGE_WRITE,
+            .width = window_width / 2,
+            .height = window_height / 2,
+            .layer_count_or_depth = 1,
+            .num_levels = 1,
+            .sample_count = sdl.c.SDL_GPU_SAMPLECOUNT_1,
+        });
+        errdefer sdl.releaseGPUTexture(device, normal_lowres);
+
+        const indirect_light_lowres = try sdl.createGPUTexture(device, &.{
+            .type = sdl.c.SDL_GPU_TEXTURETYPE_2D,
+            .format = sdl.c.SDL_GPU_TEXTUREFORMAT_R16G16B16A16_FLOAT,
+            .usage = sdl.c.SDL_GPU_TEXTUREUSAGE_SAMPLER |
+                sdl.c.SDL_GPU_TEXTUREUSAGE_COMPUTE_STORAGE_WRITE,
+            .width = window_width / 2,
+            .height = window_height / 2,
+            .layer_count_or_depth = 1,
+            .num_levels = 1,
+            .sample_count = sdl.c.SDL_GPU_SAMPLECOUNT_1,
+        });
+        errdefer sdl.releaseGPUTexture(device, indirect_light_lowres);
+
+        const indirect_light = try sdl.createGPUTexture(device, &.{
+            .type = sdl.c.SDL_GPU_TEXTURETYPE_2D,
+            .format = sdl.c.SDL_GPU_TEXTUREFORMAT_R16G16B16A16_FLOAT,
+            .usage = sdl.c.SDL_GPU_TEXTUREUSAGE_SAMPLER |
+                sdl.c.SDL_GPU_TEXTUREUSAGE_COMPUTE_STORAGE_WRITE,
+            .width = window_width,
+            .height = window_height,
+            .layer_count_or_depth = 1,
+            .num_levels = 1,
+            .sample_count = sdl.c.SDL_GPU_SAMPLECOUNT_1,
+        });
+        errdefer sdl.releaseGPUTexture(device, indirect_light);
+
         const sampler = try sdl.createGPUSampler(device, &.{
             .min_filter = sdl.c.SDL_GPU_FILTER_LINEAR,
             .mag_filter = sdl.c.SDL_GPU_FILTER_LINEAR,
@@ -938,18 +1063,28 @@ const DrawPass = struct {
         return .{
             .device = device,
             .pipeline = pipeline,
+            .prepass_pipeline = prepass_pipeline,
             .color_target = color_target,
             .depth_target = depth_target,
             .normal_target = normal_target,
+            .lowres_depth = depth_lowres,
+            .lowres_normal = normal_lowres,
+            .lowres_indirect_light = indirect_light_lowres,
+            .indirect_light = indirect_light,
             .sampler = sampler,
         };
     }
 
     fn deinit(pass: *DrawPass) void {
         sdl.releaseGPUSampler(pass.device, pass.sampler);
+        sdl.releaseGPUTexture(pass.device, pass.indirect_light);
+        sdl.releaseGPUTexture(pass.device, pass.lowres_indirect_light);
+        sdl.releaseGPUTexture(pass.device, pass.lowres_normal);
+        sdl.releaseGPUTexture(pass.device, pass.lowres_depth);
         sdl.releaseGPUTexture(pass.device, pass.normal_target);
         sdl.releaseGPUTexture(pass.device, pass.depth_target);
         sdl.releaseGPUTexture(pass.device, pass.color_target);
+        sdl.releaseGPUGraphicsPipeline(pass.device, pass.prepass_pipeline);
         sdl.releaseGPUGraphicsPipeline(pass.device, pass.pipeline);
         pass.* = undefined;
     }
@@ -969,21 +1104,14 @@ const DrawPass = struct {
                 .load_op = sdl.c.SDL_GPU_LOADOP_CLEAR,
                 .store_op = sdl.c.SDL_GPU_STOREOP_STORE,
             },
-            .{
-                .texture = pass.normal_target,
-                .clear_color = sdl.FColor{ .r = 0.0, .g = 0.0, .b = 0.0, .a = 0.0 },
-                .load_op = sdl.c.SDL_GPU_LOADOP_CLEAR,
-                .store_op = sdl.c.SDL_GPU_STOREOP_STORE,
-            },
         };
         pass.draw_pass = try sdl.beginGPURenderPass(
             command_buffer,
             &color_target_infos,
             &.{
                 .texture = pass.depth_target,
-                .clear_depth = 0,
-                .load_op = sdl.c.SDL_GPU_LOADOP_CLEAR,
-                .store_op = sdl.c.SDL_GPU_STOREOP_STORE,
+                .load_op = sdl.c.SDL_GPU_LOADOP_LOAD,
+                .store_op = sdl.c.SDL_GPU_STOREOP_STORE, // doesn't matter?
             },
         );
         sdl.bindGPUGraphicsPipeline(pass.draw_pass.?, pass.pipeline);
@@ -1033,6 +1161,71 @@ const DrawPass = struct {
         defer sdl.popGPUDebugGroup(command_buffer);
 
         sdl.endGPURenderPass(pass.draw_pass.?);
+        pass.draw_pass = null;
+    }
+
+    fn beginPrepass(
+        pass: *DrawPass,
+        command_buffer: *sdl.GPUCommandBuffer,
+    ) !void {
+        sdl.pushGPUDebugGroup(command_buffer, "prepass");
+
+        const color_target_infos = [_]sdl.GPUColorTargetInfo{
+            .{
+                .texture = pass.normal_target,
+                .clear_color = sdl.FColor{ .r = 0.0, .g = 0.0, .b = 0.0, .a = 0.0 },
+                .load_op = sdl.c.SDL_GPU_LOADOP_CLEAR,
+                .store_op = sdl.c.SDL_GPU_STOREOP_STORE,
+            },
+        };
+        pass.prepass_draw_pass = try sdl.beginGPURenderPass(
+            command_buffer,
+            &color_target_infos,
+            &.{
+                .texture = pass.depth_target,
+                .clear_depth = 0,
+                .load_op = sdl.c.SDL_GPU_LOADOP_CLEAR,
+                .store_op = sdl.c.SDL_GPU_STOREOP_STORE,
+            },
+        );
+        sdl.bindGPUGraphicsPipeline(pass.prepass_draw_pass.?, pass.prepass_pipeline);
+    }
+
+    fn drawObjectPrepass(
+        pass: *DrawPass,
+        command_buffer: *sdl.GPUCommandBuffer,
+        object: Scene.Object,
+        camera_vp: zm.Mat,
+        alpha: f32,
+    ) void {
+        const vertex_buffers = [_]sdl.c.SDL_GPUBufferBinding{
+            .{ .buffer = object.model.vertex_buffer, .offset = 0 },
+        };
+        sdl.bindGPUVertexBuffers(
+            pass.prepass_draw_pass.?,
+            0,
+            &vertex_buffers,
+        );
+        sdl.bindGPUIndexBuffer(
+            pass.prepass_draw_pass.?,
+            &.{ .buffer = object.model.index_buffer, .offset = 0 },
+            sdl.c.SDL_GPU_INDEXELEMENTSIZE_32BIT,
+        );
+        const model = object.transform(alpha);
+        const mvp = zm.mul(model, camera_vp);
+        const normal = zm.transpose(zm.inverse(model));
+        sdl.pushGPUVertexUniformData(command_buffer, 0, &VertexUBO{
+            .mvp_matrix = zm.matToArr(mvp),
+            .normal_matrix = zm.matToArr(normal),
+            .model_matrix = zm.matToArr(model),
+        }, @sizeOf(VertexUBO));
+        sdl.drawGPUIndexedPrimitives(pass.prepass_draw_pass.?, object.model.n_indices, 1, 0, 0, 0);
+    }
+
+    fn endPrepass(pass: *DrawPass, command_buffer: *sdl.GPUCommandBuffer) void {
+        defer sdl.popGPUDebugGroup(command_buffer);
+
+        sdl.endGPURenderPass(pass.prepass_draw_pass.?);
         pass.draw_pass = null;
     }
 };
