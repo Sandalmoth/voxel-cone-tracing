@@ -1,0 +1,45 @@
+#version 460
+
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+
+layout(set = 0, binding = 0) uniform sampler2D u_depth_target;
+layout(set = 0, binding = 1) uniform sampler2D u_normal_target;
+
+layout(r16f, set = 1, binding = 0) uniform image2D u_lowres_depth;
+layout(rg16f, set = 1, binding = 1) uniform image2D u_lowres_normal;
+
+// https://jcgt.org/published/0003/02/01/
+vec2 signNotZero(vec2 v) {
+    return vec2((v.x >= 0.0) ? +1.0 : -1.0, (v.y >= 0.0) ? +1.0 : -1.0);
+}
+vec2 encodeOctahedral(vec3 v) {
+    vec2 p = v.xy * (1.0 / (abs(v.x) + abs(v.y) + abs(v.z)));
+    return (v.z <= 0.0) ? ((1.0 - abs(p.yx)) * signNotZero(p)) : p;
+}
+vec3 decodeOctahedral(vec2 e) {
+    vec3 v = vec3(e.xy, 1.0 - abs(e.x) - abs(e.y));
+    if (v.z < 0) v.xy = (1.0 - abs(v.yx)) * signNotZero(v.xy);
+    return normalize(v);
+}
+
+void main() {
+    ivec2 lowres_size = imageSize(u_lowres_depth);
+    ivec2 texcoords = ivec3(gl_GlobalInvocationID).xy;
+    if (texcoords.x >= lowres_size.x || texcoords.y >= lowres_size.y) return;
+
+    float depth = 0.25 * (
+        texelFetch(u_depth_target, 2 * texcoords + ivec2(0, 0), 0).r +
+        texelFetch(u_depth_target, 2 * texcoords + ivec2(0, 1), 0).r +
+        texelFetch(u_depth_target, 2 * texcoords + ivec2(1, 0), 0).r +
+        texelFetch(u_depth_target, 2 * texcoords + ivec2(1, 1), 0).r
+    );
+    imageStore(u_lowres_depth, texcoords, vec4(depth, 0.0, 0.0, 0.0));
+
+    vec2 normal =
+        texelFetch(u_normal_target, 2 * texcoords + ivec2(0, 0), 0).rg +
+        texelFetch(u_normal_target, 2 * texcoords + ivec2(0, 1), 0).rg +
+        texelFetch(u_normal_target, 2 * texcoords + ivec2(1, 0), 0).rg +
+        texelFetch(u_normal_target, 2 * texcoords + ivec2(1, 1), 0).rg;
+    normal = (dot(normal, normal) == 0) ? vec2(0.0, 0.0) : normalize(normal);
+    imageStore(u_lowres_normal, texcoords, vec4(normal, 0.0, 0.0));
+}

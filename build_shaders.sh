@@ -1,12 +1,14 @@
 glslc --target-env=vulkan1.0 raw/shaders/draw.vert -o data/shaders/draw.vert.spv
 glslc --target-env=vulkan1.0 raw/shaders/draw.frag -o data/shaders/draw.frag.spv
 glslc --target-env=vulkan1.0 raw/shaders/prepass.frag -o data/shaders/prepass.frag.spv
+glslc --target-env=vulkan1.0 raw/shaders/downsample.comp -o data/shaders/downsample.comp.spv
+glslc --target-env=vulkan1.0 raw/shaders/upsample.comp -o data/shaders/upsample.comp.spv
+glslc --target-env=vulkan1.0 raw/shaders/indirect.comp -o data/shaders/indirect.comp.spv
 glslc --target-env=vulkan1.0 raw/shaders/present.vert -o data/shaders/present.vert.spv
 glslc --target-env=vulkan1.0 raw/shaders/present.frag -o data/shaders/present.frag.spv
 glslc --target-env=vulkan1.0 raw/shaders/clear.comp -o data/shaders/clear.comp.spv
 glslc --target-env=vulkan1.0 raw/shaders/voxelization.comp -o data/shaders/voxelization.comp.spv
 glslc --target-env=vulkan1.0 raw/shaders/averaging.comp -o data/shaders/averaging.comp.spv
 glslc --target-env=vulkan1.0 raw/shaders/inject.comp -o data/shaders/inject.comp.spv
-glslc --target-env=vulkan1.0 raw/shaders/mipmap.comp -o data/shaders/mipmap.comp.spv
 glslc --target-env=vulkan1.0 raw/shaders/debug.vert -o data/shaders/debug.vert.spv
 glslc --target-env=vulkan1.0 raw/shaders/debug.frag -o data/shaders/debug.frag.spv

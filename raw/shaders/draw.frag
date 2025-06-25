@@ -113,20 +113,6 @@ vec4 gatherRadiance(vec3 origin, vec3 normal, vec3 dir, bool skip) {
     return vec4(acc.rgb, clamp(occlusion, 0.0, 1.0));
 }
 
-// https://jcgt.org/published/0003/02/01/
-vec2 signNotZero(vec2 v) {
-    return vec2((v.x >= 0.0) ? +1.0 : -1.0, (v.y >= 0.0) ? +1.0 : -1.0);
-}
-vec2 encodeOctahedral(vec3 v) {
-    vec2 p = v.xy * (1.0 / (abs(v.x) + abs(v.y) + abs(v.z)));
-    return (v.z <= 0.0) ? ((1.0 - abs(p.yx)) * signNotZero(p)) : p;
-}
-vec3 decodeOctahedral(vec2 e) {
-    vec3 v = vec3(e.xy, 1.0 - abs(e.x) - abs(e.y));
-    if (v.z < 0) v.xy = (1.0 - abs(v.yx)) * signNotZero(v.xy);
-    return normalize(v);
-}
-
 // https://www.reedbeta.com/blog/hash-functions-for-gpu-rendering/
 uint pcg_hash(uint seed) {
     uint state = seed * 747796405u + 2891336453u;
@@ -189,7 +175,8 @@ void main() {
         bounced += gatherRadiance(v_position, v_normal, amat * diffuse_cones[i], true);
     }
     // rad += u_material_data.diffuse.rgb * bounced;
-    rad = u_material_data.diffuse.rgb * (1.0 - bounced.a / 6.0) * (bounced.rgb + vec3(1e-2, 1e-2, 1e-2));
+    rad = u_material_data.diffuse.rgb * (1.0 - bounced.a / 6.0) *
+          (bounced.rgb + vec3(1e-2, 1e-2, 1e-2));
     // rad = vec3(1.0 - bounced.a / 6.0);
     
     o_color = vec4(rad, 1.0);
