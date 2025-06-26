@@ -36,6 +36,8 @@ const GameInput = enum {
     decrement_cone_step_factor,
     increment_cone_scale_factor,
     decrement_cone_scale_factor,
+    increment_initial_step_factor,
+    decrement_initial_step_factor,
 };
 
 map: std.AutoArrayHashMap(SdlInput, GameInput),

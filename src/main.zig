@@ -87,6 +87,8 @@ pub fn main() !void {
     try input.map.put(.{ .keyboard = sdl.c.SDL_SCANCODE_3 }, .decrement_cone_scale_factor);
     try input.map.put(.{ .keyboard = sdl.c.SDL_SCANCODE_6 }, .increment_cone_step_factor);
     try input.map.put(.{ .keyboard = sdl.c.SDL_SCANCODE_5 }, .decrement_cone_step_factor);
+    try input.map.put(.{ .keyboard = sdl.c.SDL_SCANCODE_8 }, .increment_initial_step_factor);
+    try input.map.put(.{ .keyboard = sdl.c.SDL_SCANCODE_7 }, .decrement_initial_step_factor);
     defer input.deinit();
 
     var draw_pass = try DrawPass.init(gpa, device);
@@ -183,7 +185,14 @@ pub fn main() !void {
                 draw_pass.cone_step_factor -= 0.05;
                 draw_pass.cone_step_factor = @max(0.25, draw_pass.cone_step_factor);
                 std.debug.print("cone_step_factor: {}\n", .{draw_pass.cone_step_factor});
-                //
+            }
+            if (input.peek(.increment_initial_step_factor).pressed) {
+                draw_pass.initial_step_factor += 0.05;
+                std.debug.print("initial_step_factor: {}\n", .{draw_pass.initial_step_factor});
+            }
+            if (input.peek(.decrement_initial_step_factor).pressed) {
+                draw_pass.initial_step_factor -= 0.05;
+                std.debug.print("initial_step_factor: {}\n", .{draw_pass.initial_step_factor});
             }
 
             input.decay();
@@ -763,6 +772,7 @@ const DrawPass = struct {
         inverse_vp_matrix: [16]f32 align(16),
         cone_step_factor: f32,
         cone_scale_factor: f32,
+        initial_step_factor: f32,
     };
 
     device: *sdl.GPUDevice,
@@ -789,6 +799,7 @@ const DrawPass = struct {
 
     cone_step_factor: f32 = 0.9,
     cone_scale_factor: f32 = 1.8,
+    initial_step_factor: f32 = 2.0,
 
     fn init(gpa: std.mem.Allocator, device: *sdl.GPUDevice) !DrawPass {
         const vertex_shader = blk: {
@@ -1388,6 +1399,7 @@ const DrawPass = struct {
             .inverse_vp_matrix = zm.matToArr(zm.inverse(camera_vp)),
             .cone_step_factor = pass.cone_step_factor,
             .cone_scale_factor = pass.cone_scale_factor,
+            .initial_step_factor = pass.initial_step_factor,
         }, @sizeOf(IndirectUBO));
         sdl.dispatchGPUCompute(
             indirect_pass,

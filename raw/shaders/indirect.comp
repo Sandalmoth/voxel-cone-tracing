@@ -15,6 +15,7 @@ layout(std140, set = 2, binding = 0) uniform UBO {
     mat4 inverse_vp_matrix;
     float cone_step_factor;
     float cone_scale_factor;
+    float initial_step_factor;
 };
 
 float absmax(vec3 v) {
@@ -97,7 +98,7 @@ vec4 gatherRadiance(vec3 origin, vec3 normal, vec3 dir, bool skip) {
     // 2.6 > 1.5 * sqrt(3)
     // so even if we are at the corner of a voxel moving diagonally through
     // we'll never sample the voxel we're starting in
-    const float initial_step = 2.0 / absmax(normal);
+    const float initial_step = initial_step_factor / absmax(normal);
     origin += normal * diameter * initial_step;
     float d = diameter * initial_step;
 

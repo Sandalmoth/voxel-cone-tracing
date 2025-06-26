@@ -21,33 +21,25 @@ layout(set = 3, binding = 0) uniform MaterialData {
 
 void main() {
 
+    vec4 indirect_light = texelFetch(u_indirect_light, ivec2(gl_FragCoord.xy), 0);
+
     // TODO dynamic
-    // vec3 light_dir = normalize(vec3(-1.0, 2.0, 0.5));
-    // float light_intensity = 0.5;
+    vec3 light_dir = normalize(vec3(-1.0, 2.0, 0.5));
+    float light_intensity = 0.5;
 
-    // vec3 rad = u_material_data.diffuse.rgb * max(0.01,
-    //     light_intensity *
-    //     max(dot(v_normal, light_dir), 0.0)
-    // );
-    // rad += u_material_data.emissive.rgb;
+    vec3 rad = u_material_data.diffuse.rgb * max(0.01,
+        light_intensity *
+        max(dot(v_normal, light_dir), 0.0)
+    );
+    rad += u_material_data.emissive.rgb;
 
-    // uint seed = uint(gl_FragCoord.x) + uint(gl_FragCoord.y) * 65536u;
-    // mat3 amat = getAlignmentMatrix(v_normal, seed);
-    // vec4 bounced = vec4(0.0, 0.0, 0.0, 0.0);
-    // bounced += gatherRadiance(v_position, v_normal, amat * diffuse_cones[0], false);
-    // for (int i = 1; i < 6; ++i) {
-    //     bounced += gatherRadiance(v_position, v_normal, amat * diffuse_cones[i], true);
-    // }
-    // // rad += u_material_data.diffuse.rgb * bounced;
-    // rad = u_material_data.diffuse.rgb * (1.0 - bounced.a / 6.0) *
-    //       (bounced.rgb + vec3(1e-2, 1e-2, 1e-2));
-    // // rad = vec3(1.0 - bounced.a / 6.0);
+    rad = u_material_data.diffuse.rgb * indirect_light.a *
+          (indirect_light.rgb + vec3(1e-2, 1e-2, 1e-2));
     
-    // o_color = vec4(rad, 1.0);
+    o_color = vec4(rad, 1.0);
 
     // o_color = vec4(u_material_data.diffuse.rgb, 1.0);
-    vec4 indirect_light = texelFetch(u_indirect_light, ivec2(gl_FragCoord.xy), 0);
     // o_color = vec4(indirect_light.w);
-    o_color = vec4((indirect_light.rgb + vec3(1e-2)) * indirect_light.w, 1.0);
+    // o_color = vec4((indirect_light.rgb + vec3(1e-2)) * indirect_light.w, 1.0);
 }
 
