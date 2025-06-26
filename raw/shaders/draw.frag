@@ -47,6 +47,7 @@ void main() {
 
     // o_color = vec4(u_material_data.diffuse.rgb, 1.0);
     vec4 indirect_light = texelFetch(u_indirect_light, ivec2(gl_FragCoord.xy), 0);
-    o_color = indirect_light;
+    // o_color = vec4(indirect_light.w);
+    o_color = vec4((indirect_light.rgb + vec3(1e-2)) * indirect_light.w, 1.0);
 }
 

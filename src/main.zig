@@ -14,8 +14,8 @@ pub const tick: f32 = 1.0 / @as(f32, @floatFromInt(ticks_per_second));
 pub const tick_ns: u64 = 1_000_000_000 / ticks_per_second;
 pub const max_tick_ns: u64 = 250_000_000;
 
-const window_width = 1280;
-const window_height = 720;
+const window_width = 1920;
+const window_height = 1080;
 
 pub fn main() !void {
     sdl.setMainReady();
@@ -83,6 +83,10 @@ pub fn main() !void {
     try input.map.put(.{ .keyboard = sdl.c.SDL_SCANCODE_F1 }, .trigger_capture);
     try input.map.put(.{ .keyboard = sdl.c.SDL_SCANCODE_2 }, .increment_debug_min_cascade);
     try input.map.put(.{ .keyboard = sdl.c.SDL_SCANCODE_1 }, .decrement_debug_min_cascade);
+    try input.map.put(.{ .keyboard = sdl.c.SDL_SCANCODE_4 }, .increment_cone_scale_factor);
+    try input.map.put(.{ .keyboard = sdl.c.SDL_SCANCODE_3 }, .decrement_cone_scale_factor);
+    try input.map.put(.{ .keyboard = sdl.c.SDL_SCANCODE_6 }, .increment_cone_step_factor);
+    try input.map.put(.{ .keyboard = sdl.c.SDL_SCANCODE_5 }, .decrement_cone_step_factor);
     defer input.deinit();
 
     var draw_pass = try DrawPass.init(gpa, device);
@@ -162,6 +166,25 @@ pub fn main() !void {
             if (input.peek(.next_debug_view).pressed) debug_pass.mode = (debug_pass.mode +% 1) % 2;
             if (input.peek(.increment_debug_min_cascade).pressed) debug_pass.min_cascade = @min(debug_pass.min_cascade + 1, 7);
             if (input.peek(.decrement_debug_min_cascade).pressed) debug_pass.min_cascade -|= 1;
+            if (input.peek(.increment_cone_scale_factor).pressed) {
+                draw_pass.cone_scale_factor += 0.05;
+                std.debug.print("cone_scale_factor: {}\n", .{draw_pass.cone_scale_factor});
+            }
+            if (input.peek(.decrement_cone_scale_factor).pressed) {
+                draw_pass.cone_scale_factor -= 0.05;
+                draw_pass.cone_scale_factor = @max(1.0, draw_pass.cone_scale_factor);
+                std.debug.print("cone_scale_factor: {}\n", .{draw_pass.cone_scale_factor});
+            }
+            if (input.peek(.increment_cone_step_factor).pressed) {
+                draw_pass.cone_step_factor += 0.05;
+                std.debug.print("cone_step_factor: {}\n", .{draw_pass.cone_step_factor});
+            }
+            if (input.peek(.decrement_cone_step_factor).pressed) {
+                draw_pass.cone_step_factor -= 0.05;
+                draw_pass.cone_step_factor = @max(0.25, draw_pass.cone_step_factor);
+                std.debug.print("cone_step_factor: {}\n", .{draw_pass.cone_step_factor});
+                //
+            }
 
             input.decay();
             lag -= tick_ns;
@@ -738,6 +761,8 @@ const DrawPass = struct {
     };
     const IndirectUBO = extern struct {
         inverse_vp_matrix: [16]f32 align(16),
+        cone_step_factor: f32,
+        cone_scale_factor: f32,
     };
 
     device: *sdl.GPUDevice,
@@ -746,6 +771,7 @@ const DrawPass = struct {
 
     downsample_pipeline: *sdl.GPUComputePipeline,
     indirect_pipeline: *sdl.GPUComputePipeline,
+    blur_pipeline: *sdl.GPUComputePipeline,
     upsample_pipeline: *sdl.GPUComputePipeline,
 
     draw_pass: ?*sdl.GPURenderPass = null,
@@ -758,7 +784,11 @@ const DrawPass = struct {
     lowres_depth: *sdl.GPUTexture,
     lowres_normal: *sdl.GPUTexture,
     lowres_indirect_light: *sdl.GPUTexture,
+    lowres_indirect_blur_intermediate: *sdl.GPUTexture,
     indirect_light: *sdl.GPUTexture,
+
+    cone_step_factor: f32 = 0.9,
+    cone_scale_factor: f32 = 1.8,
 
     fn init(gpa: std.mem.Allocator, device: *sdl.GPUDevice) !DrawPass {
         const vertex_shader = blk: {
@@ -976,6 +1006,33 @@ const DrawPass = struct {
         };
         errdefer sdl.releaseGPUComputePipeline(device, indirect_pipeline);
 
+        const blur_pipeline = blk: {
+            const file = try std.fs.cwd().openFile(
+                "data/shaders/blur.comp.spv",
+                .{ .mode = .read_only },
+            );
+            defer file.close();
+            const bytes = try file.reader().readAllAlloc(gpa, 1_000_000);
+            defer gpa.free(bytes);
+
+            break :blk try sdl.createGPUComputePipeline(device, &.{
+                .code_size = bytes.len,
+                .code = bytes.ptr,
+                .entrypoint = "main",
+                .format = sdl.c.SDL_GPU_SHADERFORMAT_SPIRV,
+                .num_samplers = 3,
+                .num_readonly_storage_textures = 0,
+                .num_readonly_storage_buffers = 0,
+                .num_readwrite_storage_textures = 1,
+                .num_readwrite_storage_buffers = 0,
+                .num_uniform_buffers = 1,
+                .threadcount_x = 8,
+                .threadcount_y = 8,
+                .threadcount_z = 1,
+            });
+        };
+        errdefer sdl.releaseGPUComputePipeline(device, blur_pipeline);
+
         const upsample_pipeline = blk: {
             const file = try std.fs.cwd().openFile(
                 "data/shaders/upsample.comp.spv",
@@ -1079,6 +1136,19 @@ const DrawPass = struct {
         });
         errdefer sdl.releaseGPUTexture(device, indirect_light_lowres);
 
+        const indirect_blur_intermediate_lowres = try sdl.createGPUTexture(device, &.{
+            .type = sdl.c.SDL_GPU_TEXTURETYPE_2D,
+            .format = sdl.c.SDL_GPU_TEXTUREFORMAT_R16G16B16A16_FLOAT,
+            .usage = sdl.c.SDL_GPU_TEXTUREUSAGE_SAMPLER |
+                sdl.c.SDL_GPU_TEXTUREUSAGE_COMPUTE_STORAGE_WRITE,
+            .width = window_width / 2,
+            .height = window_height / 2,
+            .layer_count_or_depth = 1,
+            .num_levels = 1,
+            .sample_count = sdl.c.SDL_GPU_SAMPLECOUNT_1,
+        });
+        errdefer sdl.releaseGPUTexture(device, indirect_blur_intermediate_lowres);
+
         const indirect_light = try sdl.createGPUTexture(device, &.{
             .type = sdl.c.SDL_GPU_TEXTURETYPE_2D,
             .format = sdl.c.SDL_GPU_TEXTUREFORMAT_R16G16B16A16_FLOAT,
@@ -1107,6 +1177,7 @@ const DrawPass = struct {
             .prepass_pipeline = prepass_pipeline,
             .downsample_pipeline = downsample_pipeline,
             .indirect_pipeline = indirect_pipeline,
+            .blur_pipeline = blur_pipeline,
             .upsample_pipeline = upsample_pipeline,
             .color_target = color_target,
             .depth_target = depth_target,
@@ -1114,6 +1185,7 @@ const DrawPass = struct {
             .lowres_depth = depth_lowres,
             .lowres_normal = normal_lowres,
             .lowres_indirect_light = indirect_light_lowres,
+            .lowres_indirect_blur_intermediate = indirect_blur_intermediate_lowres,
             .indirect_light = indirect_light,
             .sampler = sampler,
         };
@@ -1122,6 +1194,7 @@ const DrawPass = struct {
     fn deinit(pass: *DrawPass) void {
         sdl.releaseGPUSampler(pass.device, pass.sampler);
         sdl.releaseGPUTexture(pass.device, pass.indirect_light);
+        sdl.releaseGPUTexture(pass.device, pass.lowres_indirect_blur_intermediate);
         sdl.releaseGPUTexture(pass.device, pass.lowres_indirect_light);
         sdl.releaseGPUTexture(pass.device, pass.lowres_normal);
         sdl.releaseGPUTexture(pass.device, pass.lowres_depth);
@@ -1129,6 +1202,7 @@ const DrawPass = struct {
         sdl.releaseGPUTexture(pass.device, pass.depth_target);
         sdl.releaseGPUTexture(pass.device, pass.color_target);
         sdl.releaseGPUComputePipeline(pass.device, pass.upsample_pipeline);
+        sdl.releaseGPUComputePipeline(pass.device, pass.blur_pipeline);
         sdl.releaseGPUComputePipeline(pass.device, pass.indirect_pipeline);
         sdl.releaseGPUComputePipeline(pass.device, pass.downsample_pipeline);
         sdl.releaseGPUGraphicsPipeline(pass.device, pass.prepass_pipeline);
@@ -1312,6 +1386,8 @@ const DrawPass = struct {
         });
         sdl.pushGPUComputeUniformData(command_buffer, 0, &IndirectUBO{
             .inverse_vp_matrix = zm.matToArr(zm.inverse(camera_vp)),
+            .cone_step_factor = pass.cone_step_factor,
+            .cone_scale_factor = pass.cone_scale_factor,
         }, @sizeOf(IndirectUBO));
         sdl.dispatchGPUCompute(
             indirect_pass,
@@ -1320,6 +1396,33 @@ const DrawPass = struct {
             1,
         );
         sdl.endGPUComputePass(indirect_pass);
+
+        // the results are so smooth we don't really need the blur
+        for (0..2) |i| {
+            const blur_pass = try sdl.beginGPUComputePass(command_buffer, &.{
+                if (i == 0)
+                    .{ .texture = pass.lowres_indirect_blur_intermediate, .cycle = true }
+                else
+                    .{ .texture = pass.lowres_indirect_light },
+            }, &.{});
+            sdl.bindGPUComputePipeline(blur_pass, pass.blur_pipeline);
+            sdl.bindGPUComputeSamplers(blur_pass, 0, &.{
+                .{ .texture = pass.lowres_depth, .sampler = pass.sampler },
+                .{ .texture = pass.lowres_normal, .sampler = pass.sampler },
+                if (i == 0)
+                    .{ .texture = pass.lowres_indirect_light, .sampler = pass.sampler }
+                else
+                    .{ .texture = pass.lowres_indirect_blur_intermediate, .sampler = pass.sampler },
+            });
+            sdl.pushGPUComputeUniformData(command_buffer, 0, &@as(u32, @intCast(i)), @sizeOf(u32));
+            sdl.dispatchGPUCompute(
+                blur_pass,
+                (window_width / 2 + 7) / 8,
+                (window_height / 2 + 7) / 8,
+                1,
+            );
+            sdl.endGPUComputePass(blur_pass);
+        }
 
         const upsample_pass = try sdl.beginGPUComputePass(command_buffer, &.{
             .{ .texture = pass.indirect_light, .cycle = true },

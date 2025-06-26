@@ -1,0 +1,64 @@
+#version 460
+
+#define MIN_VOXEL_SIZE 0.244140625
+
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+
+layout(set = 0, binding = 0) uniform sampler2D u_lowres_depth;
+layout(set = 0, binding = 1) uniform sampler2D u_lowres_normal;
+layout(set = 0, binding = 2) uniform sampler2D u_src;
+
+layout(rgba16f, set = 1, binding = 0) uniform image2D u_dst;
+
+layout(std140, set = 2, binding = 0) uniform UBO {
+    uint blur_direction;
+};
+
+// https://jcgt.org/published/0003/02/01/
+vec2 signNotZero(vec2 v) {
+    return vec2((v.x >= 0.0) ? +1.0 : -1.0, (v.y >= 0.0) ? +1.0 : -1.0);
+}
+vec2 encodeOctahedral(vec3 v) {
+    vec2 p = v.xy * (1.0 / (abs(v.x) + abs(v.y) + abs(v.z)));
+    return (v.z <= 0.0) ? ((1.0 - abs(p.yx)) * signNotZero(p)) : p;
+}
+vec3 decodeOctahedral(vec2 e) {
+    vec3 v = vec3(e.xy, 1.0 - abs(e.x) - abs(e.y));
+    if (v.z < 0) v.xy = (1.0 - abs(v.yx)) * signNotZero(v.xy);
+    return normalize(v);
+}
+
+void main() {
+    ivec2 lowres_size = imageSize(u_dst);
+    ivec2 texcoords = ivec3(gl_GlobalInvocationID).xy;
+    if (texcoords.x >= lowres_size.x || texcoords.y >= lowres_size.y) return;
+
+    float center_depth = texelFetch(u_lowres_depth, texcoords, 0).r;
+    vec3 center_normal = decodeOctahedral(texelFetch(u_lowres_normal, texcoords, 0).rg);
+    vec4 center_rad = texelFetch(u_src, texcoords, 0);
+
+    vec4 acc = vec4(0.0, 0.0, 0.0, 0.0);
+    float total_weight = 0.0;
+
+    const ivec2 blur_step = (blur_direction == 0) ? ivec2(0, 1) : ivec2(1, 0);
+    const float var = 2.0 * pow(2.0, 2.0);
+    const float var_depth = 2.0 * pow(0.02, 2.0);
+    const float var_normal = 2.0 * pow(0.2, 2.0);
+
+    const int kernel_radius = 3;
+    for (int i = -kernel_radius; i <= kernel_radius; ++i) {
+        ivec2 samp = clamp(texcoords + i * blur_step, ivec2(0, 0), lowres_size - 1);
+        float samp_depth = texelFetch(u_lowres_depth, samp, 0).r;
+        vec3 samp_normal = decodeOctahedral(texelFetch(u_lowres_normal, samp, 0).rg);
+        vec4 samp_rad = texelFetch(u_src, samp, 0);
+        
+        float weight = exp(-float(i * i) / var);
+        float ddepth = samp_depth - center_depth;
+        weight *= exp(-ddepth * ddepth / var_depth);
+        weight *= exp(-max(0.0, 1.0 - dot(samp_normal, center_normal)) / var_normal);
+
+        acc += samp_rad * weight;
+        total_weight += weight;
+    }
+    imageStore(u_dst, texcoords, acc / total_weight);
+}

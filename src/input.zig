@@ -32,6 +32,10 @@ const GameInput = enum {
     trigger_capture,
     increment_debug_min_cascade,
     decrement_debug_min_cascade,
+    increment_cone_step_factor,
+    decrement_cone_step_factor,
+    increment_cone_scale_factor,
+    decrement_cone_scale_factor,
 };
 
 map: std.AutoArrayHashMap(SdlInput, GameInput),

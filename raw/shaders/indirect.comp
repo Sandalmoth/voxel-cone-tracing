@@ -13,6 +13,8 @@ layout(rgba16f, set = 1, binding = 0) uniform image2D u_lowres_indirect_light;
 
 layout(std140, set = 2, binding = 0) uniform UBO {
     mat4 inverse_vp_matrix;
+    float cone_step_factor;
+    float cone_scale_factor;
 };
 
 float absmax(vec3 v) {
@@ -82,18 +84,14 @@ vec4 gatherRadiance(vec3 origin, vec3 normal, vec3 dir, bool skip) {
     // 2.6 > 1.5 * sqrt(3)
     // so even if we are at the corner of a voxel moving diagonally through
     // we'll never sample the voxel we're starting in
-    const float initial_step = 2.0 * absmax(normal);
+    const float initial_step = 2.0 / absmax(normal);
     origin += normal * diameter * initial_step;
+    float d = diameter * initial_step;
 
     vec4 acc = vec4(0.0, 0.0, 0.0, 0.0);
     float occlusion = 0.0;
-    float d = diameter * initial_step;
     while (acc.a < 0.95 && inBounds(origin) && diameter < 32.0) {
         vec4 rad = sampleRadianceAtDiameter(origin, dir, diameter);
-        // acc.rgb += (1 - acc.a) * rad.rgb *
-               // exp(-0.002 * d * d);
-               // exp(-1 * diameter * diameter);
-        // acc.rgb += (1 - acc.a) * rad.a * rad.rgb / (d * d);
         if (skip) {
             skip = false;
         } else {
@@ -105,8 +103,8 @@ vec4 gatherRadiance(vec3 origin, vec3 normal, vec3 dir, bool skip) {
         }
         // acc.a += (1 - acc.a) * rad.a;
         d += diameter;
-        origin += 1.25 * dir * diameter;
-        diameter = 1.618 * diameter;
+        origin += cone_step_factor * dir * diameter;
+        diameter = cone_scale_factor * diameter;
     }
 
     return vec4(acc.rgb, clamp(occlusion, 0.0, 1.0));
@@ -119,33 +117,72 @@ uint pcg_hash(uint seed) {
     return (word >> 22u) ^ word;
 }
 
-vec3 diffuse_cones[6] = {
-    // basically, one cone up surrounded by five cones
-    // but it's all slightly off angle, so that all gaps get filled when randomly rotated
-    // at the cost of less coverage for very low angles
-    vec3(0.0, 0.9659258262890683, 0.25881904510252074),
-    vec3(0.7660444431189781, 0.6208851530148457, 0.16636567534280192),
-    vec3(0.236720751370257, 0.4323221341029862, 0.8700924423504325),
-    vec3(-0.619742972929746, 0.5043467983060274, 0.6012927361465958),
-    vec3(-0.6197429729297461, 0.7374235077236639, -0.2685613854609918),
-    vec3(0.23672075137025683, 0.8094481719267052, -0.5373610916648287),
+// vec3 diffuse_cones[6] = {
+//     // basically, one cone up surrounded by five cones
+//     // but it's all slightly off angle, so that all gaps get filled when randomly rotated
+//     // at the cost of less coverage for very low angles
+//     vec3(0.0, 0.9659258262890683, 0.25881904510252074),
+//     vec3(0.7660444431189781, 0.6208851530148457, 0.16636567534280192),
+//     vec3(0.236720751370257, 0.4323221341029862, 0.8700924423504325),
+//     vec3(-0.619742972929746, 0.5043467983060274, 0.6012927361465958),
+//     vec3(-0.6197429729297461, 0.7374235077236639, -0.2685613854609918),
+//     vec3(0.23672075137025683, 0.8094481719267052, -0.5373610916648287),
+// };
+
+// vec3 diffuse_cones[9] = {
+//     // nine cones spread fairly evenly, no tilt
+//     vec3(0.39874906892524625, 0.8858120101071654, 0.23735261275400443),
+//     vec3(-0.19937453446262304, 0.7964348514201093, 0.5709127100102439),
+//     vec3(-0.1993745344626233, 0.9751891687942215, -0.09620748450223489),
+//     vec3(0.3715724127386972, 0.4797591781445753, 0.7948365071368985),
+//     vec3(-0.7431448254773942, 0.6463305338424854, 0.17318374458667046),
+//     vec3(-0.37157241273869746, 0.8129018895403954, -0.44846901796355765),
+//     vec3(0.898794046299167, 0.42343401218352605, 0.11345880161244597),
+//     vec3(-0.44939702314958335, 0.22197483807289833, 0.8653146750441735),
+//     vec3(-0.4493970231495839, 0.6248931862941538, -0.6383970718192813),
+// };
+
+vec3 diffuse_cones[20] = {
+    vec3(0.6087614290087207, 0.7933533402912352, 0.0),
+    vec3(0.1881176270836728, 0.7933533402912352, 0.5789665239278933),
+    vec3(-0.4924983415880331, 0.7933533402912352, 0.3578209901358174),
+    vec3(-0.4924983415880332, 0.7933533402912352, -0.35782099013581725),
+    vec3(0.18811762708367266, 0.7933533402912352, -0.5789665239278934),
+    vec3(0.9832549075639546, 0.18223552549214747, 0.0),
+    vec3(0.30384247623983, 0.18223552549214747, 0.9351309870178879),
+    vec3(-0.7954699300218072, 0.18223552549214747, 0.5779427339102915),
+    vec3(-0.7954699300218074, 0.18223552549214747, -0.5779427339102913),
+    vec3(0.3038424762398298, 0.18223552549214747, -0.935130987017888),
+    vec3(0.6087614290087207, -0.7933533402912352, 0.0),
+    vec3(0.1881176270836728, -0.7933533402912352, 0.5789665239278933),
+    vec3(-0.4924983415880331, -0.7933533402912352, 0.3578209901358174),
+    vec3(-0.4924983415880332, -0.7933533402912352, -0.35782099013581725),
+    vec3(0.18811762708367266, -0.7933533402912352, -0.5789665239278934),
+    vec3(0.9832549075639546, -0.18223552549214747, 0.0),
+    vec3(0.30384247623983, -0.18223552549214747, 0.9351309870178879),
+    vec3(-0.7954699300218072, -0.18223552549214747, 0.5779427339102915),
+    vec3(-0.7954699300218074, -0.18223552549214747, -0.5779427339102913),
+    vec3(0.3038424762398298, -0.18223552549214747, -0.935130987017888),
 };
 
-vec3 randomHelper(vec3 normal, uint seed) {
-    float u = float(pcg_hash(seed)) / 4294967296.0;
-    float angle = u * 6.28318530718;
-    vec3 notN = abs(normal.y) < 0.999 ? vec3(0, 1, 0) : vec3(1, 0, 0);
-    vec3 tangent = normalize(cross(normal, notN));
-    vec3 bitangent = cross(normal, tangent);
-    return cos(angle) * tangent + sin(angle) * bitangent;
+vec3 randomVec(uint seed) {
+    // not really uniform, but it's not that important
+    uint r = pcg_hash(seed);
+    return normalize(vec3(
+        float((r >> 0) & 0x3FFu) / 1023.0 - 0.5,
+        float((r >> 10) & 0x3FFu) / 1023.0 - 0.5,
+        float((r >> 20) & 0x3FFu) / 1023.0 - 0.5
+    ));
 }
 
 mat3 getAlignmentMatrix(vec3 normal, uint seed) {
-    vec3 new_y = normalize(normal);
-    vec3 helper = randomHelper(normal, seed);
-    vec3 new_x = normalize(cross(helper, new_y));
-    vec3 new_z = cross(new_y, new_x);
-    return mat3(new_x, new_y, new_z);
+    // use the one from learnopengl instead
+    vec3 random_vector = randomVec(seed);
+    vec3 tangent   = normalize(random_vector - normal * dot(random_vector, normal));
+    vec3 bitangent = cross(normal, tangent);
+    // return mat3(tangent, bitangent, normal); // original
+    return mat3(bitangent, normal, tangent); // seems better?
+    // return mat3(tangent, normal, bitangent); // also seems better?
 }
 
 // https://jcgt.org/published/0003/02/01/
@@ -176,16 +213,38 @@ void main() {
     world_pos /= world_pos.w;
 
     uint seed = uint(texcoords.x) + uint(texcoords.y) * 65536u;
-    mat3 amat = getAlignmentMatrix(normal, seed);
+    // vec3 world_pos_norm = clamp((world_pos.xyz + 1111.0) / 2222.0, 0.0, 1.0);
+    // uint seed = 505319 * uint(world_pos_norm.x * 1e7) +
+    //             671159 * uint(world_pos_norm.y * 1e7) +
+    //             377339 * uint(world_pos_norm.z * 1e7);
     vec4 bounced = vec4(0.0, 0.0, 0.0, 0.0);
-    bounced += gatherRadiance(world_pos.xyz, normal, amat * diffuse_cones[0], false);
-    for (int i = 1; i < 6; ++i) {
-        bounced += gatherRadiance(world_pos.xyz, normal, amat * diffuse_cones[i], true);
+
+    // mat3 amat = getAlignmentMatrix(normal, seed);
+    // bounced += gatherRadiance(world_pos.xyz, normal, normalize(amat * diffuse_cones[0]), false);
+    // for (int i = 1; i < diffuse_cones.length(); ++i) {
+    //     bounced += gatherRadiance(world_pos.xyz, normal, amat * diffuse_cones[i], true);
+    // }
+    // bounced.a = 1.0 - (bounced.a / float(diffuse_cones.length()));
+
+    uint n_samples = 0;
+    for (int i = 1; i < diffuse_cones.length(); ++i) {
+        if (dot(normal, diffuse_cones[i]) < 0) continue;
+        bounced += gatherRadiance(world_pos.xyz, normal, diffuse_cones[i], n_samples != 0);
+        n_samples += 1;
     }
+    bounced.a = 1.0 - (bounced.a / float(diffuse_cones.length()));
+
+    // vec3 helper = (pcg_hash(seed) % 2 == 0) ? vec3(0.0f, 1.0f, 0.0f) : vec3(0.0f, 0.0f, 1.0f);
+    // if (abs(dot(normal, helper)) > 0.9) helper = vec3(0.0f, 0.0f, 1.0f);
+    // vec3 right = normalize(helper - dot(normal, helper) * normal);
+    // vec3 up = cross(right, normal);
+    // for (int i = 1; i < diffuse_cones.length(); ++i) {
+    //     vec3 dir = normal;
+    //     dir += diffuse_cones[i].x * right + diffuse_cones[i].z * up;
+    //     dir = normalize(dir);
+    //     bounced += gatherRadiance(world_pos.xyz, normal, dir, i != 0);
+    // }
+    // bounced.a = 1.0 - (bounced.a / float(diffuse_cones.length()));
 
     imageStore(u_lowres_indirect_light, texcoords, bounced);
-    // imageStore(u_lowres_indirect_light, texcoords, clamp(vec4(depth, depth, depth, 1.0), 0, 1));
-    // imageStore(u_lowres_indirect_light, texcoords, clamp(vec4(0.5 * normal + 0.5, 1.0), 0, 1));
-    // imageStore(u_lowres_indirect_light, texcoords, vec4(world_pos.xyz, 1.0));
-    // imageStore(u_lowres_indirect_light, texcoords, vec4(ndc.x * 0.5 + 0.5, ndc.y * 0.5 + 0.5, ndc.zw));
 }
