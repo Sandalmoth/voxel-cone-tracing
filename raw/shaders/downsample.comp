@@ -35,11 +35,11 @@ void main() {
     );
     imageStore(u_lowres_depth, texcoords, vec4(depth, 0.0, 0.0, 0.0));
 
-    vec2 normal =
-        texelFetch(u_normal_target, 2 * texcoords + ivec2(0, 0), 0).rg +
-        texelFetch(u_normal_target, 2 * texcoords + ivec2(0, 1), 0).rg +
-        texelFetch(u_normal_target, 2 * texcoords + ivec2(1, 0), 0).rg +
-        texelFetch(u_normal_target, 2 * texcoords + ivec2(1, 1), 0).rg;
-    normal = (dot(normal, normal) == 0) ? vec2(0.0, 0.0) : normalize(normal);
-    imageStore(u_lowres_normal, texcoords, vec4(normal, 0.0, 0.0));
+    vec3 normal =
+        decodeOctahedral(texelFetch(u_normal_target, 2 * texcoords + ivec2(0, 0), 0).rg) +
+        decodeOctahedral(texelFetch(u_normal_target, 2 * texcoords + ivec2(0, 1), 0).rg) +
+        decodeOctahedral(texelFetch(u_normal_target, 2 * texcoords + ivec2(1, 0), 0).rg) +
+        decodeOctahedral(texelFetch(u_normal_target, 2 * texcoords + ivec2(1, 1), 0).rg);
+    normal = (dot(normal, normal) == 0) ? vec3(0.0, 0.0, 0.0) : normalize(normal);
+    imageStore(u_lowres_normal, texcoords, vec4(encodeOctahedral(normal), 0.0, 0.0));
 }

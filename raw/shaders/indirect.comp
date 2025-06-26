@@ -97,10 +97,10 @@ vec4 gatherRadiance(vec3 origin, vec3 normal, vec3 dir, bool skip) {
         if (skip) {
             skip = false;
         } else {
-            acc.rgb += (1 - acc.a) * rad.a * rad.rgb / (diameter * MIN_VOXEL_SIZE);
+            acc.rgb += (1 - acc.a) * rad.a * rad.rgb / (1.0 + 0.25 * diameter);
             acc.a += (1 - acc.a) * rad.a;
             if (occlusion < 1.0) {
-                occlusion += ((1.0 - occlusion) * rad.a) / (1.0 + diameter * diameter);
+                occlusion += ((1.0 - occlusion) * rad.a) / (1.0 + 2 * diameter * diameter);
             }
         }
         // acc.a += (1 - acc.a) * rad.a;
