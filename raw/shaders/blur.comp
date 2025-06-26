@@ -45,7 +45,7 @@ void main() {
     const float var_depth = 2.0 * pow(0.02, 2.0);
     const float var_normal = 2.0 * pow(0.2, 2.0);
 
-    const int kernel_radius = 0;
+    const int kernel_radius = 3;
     for (int i = -kernel_radius; i <= kernel_radius; ++i) {
         ivec2 samp = clamp(texcoords + i * blur_step, ivec2(0, 0), lowres_size - 1);
         float samp_depth = texelFetch(u_lowres_depth, samp, 0).r;

@@ -27,6 +27,18 @@ uint cascadeAt(vec3 pos) {
     return uint(clamp(ceil(log2(maximum / (MIN_VOXEL_SIZE * 32))), 0, 8));
 }
 
+// for debug
+const vec3 cascade_colors[8] = {
+    vec3(1.0, 1.0, 1.0),
+    vec3(1.0, 1.0, 0.0),
+    vec3(1.0, 0.0, 1.0),
+    vec3(0.0, 1.0, 1.0),
+    vec3(1.0, 0.0, 0.0),
+    vec3(0.0, 1.0, 0.0),
+    vec3(0.0, 0.0, 1.0),
+    vec3(0.0, 0.0, 0.0),
+};
+
 float voxelSize(uint cascade) {
     return MIN_VOXEL_SIZE * float(1 << cascade);
 }
@@ -45,6 +57,7 @@ vec4 sampleRadianceAt(vec3 position, vec3 dir, uint cascade) {
     );
     vec3 weights = abs(dir) / (abs(dir.x) + abs(dir.y) + abs(dir.z));
     // vec3 weights = dir * dir;
+    // vec3 weights = abs(dir);
     return
         weights[0] * texture(u_radiance_cache_cascades, vec3(
             0.125 * (uvw.x + float(cascade)),
@@ -98,7 +111,7 @@ vec4 gatherRadiance(vec3 origin, vec3 normal, vec3 dir, bool skip) {
             acc.rgb += (1 - acc.a) * rad.a * rad.rgb / (1.0 + 0.25 * diameter);
             acc.a += (1 - acc.a) * rad.a;
             if (occlusion < 1.0) {
-                occlusion += ((1.0 - occlusion) * rad.a) / (1.0 + 2 * diameter * diameter);
+                occlusion += ((1.0 - occlusion) * rad.a) / (1.0 + diameter * diameter);
             }
         }
         // acc.a += (1 - acc.a) * rad.a;
@@ -236,7 +249,7 @@ void main() {
 
     for (int i = 1; i < diffuse_cones.length(); ++i) {
         vec3 cone = (dot(normal, diffuse_cones[i]) < 0) ? -diffuse_cones[i] : diffuse_cones[i];
-        bounced += gatherRadiance(world_pos.xyz, normal, cone, i != 0);
+        bounced += dot(normal, cone) * gatherRadiance(world_pos.xyz, normal, cone, i != 0);
     }
     bounced.a = 1.0 - (bounced.a / float(diffuse_cones.length()));
 
@@ -253,4 +266,8 @@ void main() {
     // bounced.a = 1.0 - (bounced.a / float(diffuse_cones.length()));
 
     imageStore(u_lowres_indirect_light, texcoords, bounced);
+    
+    // vec3 color = world_pos.xyz;
+    // vec3 color = cascade_colors[cascadeAt(world_pos.xyz)];
+    // imageStore(u_lowres_indirect_light, texcoords, vec4(color, 1.0));
 }
