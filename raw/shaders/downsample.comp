@@ -40,6 +40,6 @@ void main() {
         decodeOctahedral(texelFetch(u_normal_target, 4 * texcoords + ivec2(0, 2), 0).rg) +
         decodeOctahedral(texelFetch(u_normal_target, 4 * texcoords + ivec2(2, 0), 0).rg) +
         decodeOctahedral(texelFetch(u_normal_target, 4 * texcoords + ivec2(2, 2), 0).rg);
-    normal = (dot(normal, normal) == 0) ? vec3(0.0, 0.0, 0.0) : normalize(normal);
+    normal = (dot(normal, normal) == 0) ? vec3(0.0, 1.0, 0.0) : normalize(normal);
     imageStore(u_lowres_normal, texcoords, vec4(encodeOctahedral(normal), 0.0, 0.0));
 }

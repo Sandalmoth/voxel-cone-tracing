@@ -37,7 +37,7 @@ void main() {
     vec3 normal = decodeOctahedral(texelFetch(u_normal_target, texcoords, 0).rg);
 
     const float var = 2.0 * pow(2.0, 2.0);
-    const float var_depth = 2.0 * pow(0.1, 2.0);
+    const float var_depth = 2.0 * pow(1.0, 2.0);
     const float var_normal = 2.0 * pow(0.2, 2.0);
     
     // this feels like so many texture reads?
