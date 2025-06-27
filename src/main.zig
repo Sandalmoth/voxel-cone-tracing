@@ -1059,7 +1059,7 @@ const DrawPass = struct {
                 .code = bytes.ptr,
                 .entrypoint = "main",
                 .format = sdl.c.SDL_GPU_SHADERFORMAT_SPIRV,
-                .num_samplers = 3,
+                .num_samplers = 5,
                 .num_readonly_storage_textures = 0,
                 .num_readonly_storage_buffers = 0,
                 .num_readwrite_storage_textures = 1,
@@ -1445,6 +1445,8 @@ const DrawPass = struct {
             .{ .texture = pass.lowres_depth, .sampler = pass.sampler },
             .{ .texture = pass.lowres_normal, .sampler = pass.sampler },
             .{ .texture = pass.lowres_indirect_light, .sampler = pass.sampler },
+            .{ .texture = pass.depth_target, .sampler = pass.sampler },
+            .{ .texture = pass.normal_target, .sampler = pass.sampler },
         });
         sdl.dispatchGPUCompute(
             upsample_pass,
