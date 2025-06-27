@@ -69,6 +69,4 @@ void main() {
     // then we could just redo the voxel cone tracing just for this pixel
     
     imageStore(u_indirect_light, texcoords, acc / total_weight);
-
-    imageStore(u_indirect_light, texcoords, vec4(1.0 - total_weight)); // NOTE cool edge filter
 }
