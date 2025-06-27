@@ -28,6 +28,6 @@ void main() {
     if (texcoords.x >= size.x || texcoords.y >= size.y) return;
     
     // TODO upsample properly
-    vec4 rad = texelFetch(u_lowres_indirect_light, texcoords / 2, 0);
+    vec4 rad = texelFetch(u_lowres_indirect_light, texcoords / 4, 0);
     imageStore(u_indirect_light, texcoords, rad);
 }

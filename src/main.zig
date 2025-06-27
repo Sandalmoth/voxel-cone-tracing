@@ -16,6 +16,7 @@ pub const max_tick_ns: u64 = 250_000_000;
 
 const window_width = 1920;
 const window_height = 1080;
+const lowres_scale = 4;
 
 pub fn main() !void {
     sdl.setMainReady();
@@ -1113,8 +1114,8 @@ const DrawPass = struct {
             .format = sdl.c.SDL_GPU_TEXTUREFORMAT_R32_FLOAT,
             .usage = sdl.c.SDL_GPU_TEXTUREUSAGE_SAMPLER |
                 sdl.c.SDL_GPU_TEXTUREUSAGE_COMPUTE_STORAGE_WRITE,
-            .width = window_width / 2,
-            .height = window_height / 2,
+            .width = window_width / lowres_scale,
+            .height = window_height / lowres_scale,
             .layer_count_or_depth = 1,
             .num_levels = 1,
             .sample_count = sdl.c.SDL_GPU_SAMPLECOUNT_1,
@@ -1126,8 +1127,8 @@ const DrawPass = struct {
             .format = sdl.c.SDL_GPU_TEXTUREFORMAT_R16G16_FLOAT,
             .usage = sdl.c.SDL_GPU_TEXTUREUSAGE_SAMPLER |
                 sdl.c.SDL_GPU_TEXTUREUSAGE_COMPUTE_STORAGE_WRITE,
-            .width = window_width / 2,
-            .height = window_height / 2,
+            .width = window_width / lowres_scale,
+            .height = window_height / lowres_scale,
             .layer_count_or_depth = 1,
             .num_levels = 1,
             .sample_count = sdl.c.SDL_GPU_SAMPLECOUNT_1,
@@ -1139,8 +1140,8 @@ const DrawPass = struct {
             .format = sdl.c.SDL_GPU_TEXTUREFORMAT_R16G16B16A16_FLOAT,
             .usage = sdl.c.SDL_GPU_TEXTUREUSAGE_SAMPLER |
                 sdl.c.SDL_GPU_TEXTUREUSAGE_COMPUTE_STORAGE_WRITE,
-            .width = window_width / 2,
-            .height = window_height / 2,
+            .width = window_width / lowres_scale,
+            .height = window_height / lowres_scale,
             .layer_count_or_depth = 1,
             .num_levels = 1,
             .sample_count = sdl.c.SDL_GPU_SAMPLECOUNT_1,
@@ -1152,8 +1153,8 @@ const DrawPass = struct {
             .format = sdl.c.SDL_GPU_TEXTUREFORMAT_R16G16B16A16_FLOAT,
             .usage = sdl.c.SDL_GPU_TEXTUREUSAGE_SAMPLER |
                 sdl.c.SDL_GPU_TEXTUREUSAGE_COMPUTE_STORAGE_WRITE,
-            .width = window_width / 2,
-            .height = window_height / 2,
+            .width = window_width / lowres_scale,
+            .height = window_height / lowres_scale,
             .layer_count_or_depth = 1,
             .num_levels = 1,
             .sample_count = sdl.c.SDL_GPU_SAMPLECOUNT_1,
@@ -1379,8 +1380,8 @@ const DrawPass = struct {
         });
         sdl.dispatchGPUCompute(
             downsample_pass,
-            (window_width / 2 + 7) / 8,
-            (window_height / 2 + 7) / 8,
+            (window_width / lowres_scale + 7) / 8,
+            (window_height / lowres_scale + 7) / 8,
             1,
         );
         sdl.endGPUComputePass(downsample_pass);
@@ -1403,38 +1404,38 @@ const DrawPass = struct {
         }, @sizeOf(IndirectUBO));
         sdl.dispatchGPUCompute(
             indirect_pass,
-            (window_width / 2 + 7) / 8,
-            (window_height / 2 + 7) / 8,
+            (window_width / lowres_scale + 7) / 8,
+            (window_height / lowres_scale + 7) / 8,
             1,
         );
         sdl.endGPUComputePass(indirect_pass);
 
-        // the results are so smooth we don't really need the blur
-        for (0..2) |i| {
-            const blur_pass = try sdl.beginGPUComputePass(command_buffer, &.{
-                if (i == 0)
-                    .{ .texture = pass.lowres_indirect_blur_intermediate, .cycle = true }
-                else
-                    .{ .texture = pass.lowres_indirect_light },
-            }, &.{});
-            sdl.bindGPUComputePipeline(blur_pass, pass.blur_pipeline);
-            sdl.bindGPUComputeSamplers(blur_pass, 0, &.{
-                .{ .texture = pass.lowres_depth, .sampler = pass.sampler },
-                .{ .texture = pass.lowres_normal, .sampler = pass.sampler },
-                if (i == 0)
-                    .{ .texture = pass.lowres_indirect_light, .sampler = pass.sampler }
-                else
-                    .{ .texture = pass.lowres_indirect_blur_intermediate, .sampler = pass.sampler },
-            });
-            sdl.pushGPUComputeUniformData(command_buffer, 0, &@as(u32, @intCast(i)), @sizeOf(u32));
-            sdl.dispatchGPUCompute(
-                blur_pass,
-                (window_width / 2 + 7) / 8,
-                (window_height / 2 + 7) / 8,
-                1,
-            );
-            sdl.endGPUComputePass(blur_pass);
-        }
+        // disable the blur for now, i think better upscaling will be enough
+        // for (0..2) |i| {
+        //     const blur_pass = try sdl.beginGPUComputePass(command_buffer, &.{
+        //         if (i == 0)
+        //             .{ .texture = pass.lowres_indirect_blur_intermediate, .cycle = true }
+        //         else
+        //             .{ .texture = pass.lowres_indirect_light },
+        //     }, &.{});
+        //     sdl.bindGPUComputePipeline(blur_pass, pass.blur_pipeline);
+        //     sdl.bindGPUComputeSamplers(blur_pass, 0, &.{
+        //         .{ .texture = pass.lowres_depth, .sampler = pass.sampler },
+        //         .{ .texture = pass.lowres_normal, .sampler = pass.sampler },
+        //         if (i == 0)
+        //             .{ .texture = pass.lowres_indirect_light, .sampler = pass.sampler }
+        //         else
+        //             .{ .texture = pass.lowres_indirect_blur_intermediate, .sampler = pass.sampler },
+        //     });
+        //     sdl.pushGPUComputeUniformData(command_buffer, 0, &@as(u32, @intCast(i)), @sizeOf(u32));
+        //     sdl.dispatchGPUCompute(
+        //         blur_pass,
+        //         (window_width / lowres_scale + 7) / 8,
+        //         (window_height / lowres_scale + 7) / 8,
+        //         1,
+        //     );
+        //     sdl.endGPUComputePass(blur_pass);
+        // }
 
         const upsample_pass = try sdl.beginGPUComputePass(command_buffer, &.{
             .{ .texture = pass.indirect_light, .cycle = true },

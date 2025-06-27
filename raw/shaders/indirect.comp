@@ -248,8 +248,11 @@ void main() {
     // }
     // bounced.a = 1.0 - bounced.a / float(n_samples);
 
+    // mat3 amat = getAlignmentMatrix(normal, seed);
     for (int i = 1; i < diffuse_cones.length(); ++i) {
-        vec3 cone = (dot(normal, diffuse_cones[i]) < 0) ? -diffuse_cones[i] : diffuse_cones[i];
+        // vec3 cone = amat * diffuse_cones[i];
+        vec3 cone = diffuse_cones[i];
+        cone = (dot(normal, cone) < 0) ? -cone : cone;
         bounced += dot(normal, cone) * gatherRadiance(world_pos.xyz, normal, cone, i != 0);
     }
     bounced.a = 1.0 - (bounced.a / float(diffuse_cones.length()));
