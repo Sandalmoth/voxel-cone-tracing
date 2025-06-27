@@ -43,8 +43,8 @@ void main() {
     // this feels like so many texture reads?
     vec4 acc = vec4(0.0, 0.0, 0.0, 0.0);
     float total_weight = 0.0;
-    for (int x = -2; x <= 2; ++x) {
-        for (int y = -2; y <= 2; ++y) {
+    for (int x = -1; x <= 1; ++x) {
+        for (int y = -1; y <= 1; ++y) {
             ivec2 uv = clamp(texcoords / 4 + ivec2(x, y), ivec2(0, 0), size);
             vec4 lr_rad = texelFetch(u_lowres_indirect_light, uv, 0);
             float lr_depth = texelFetch(u_lowres_depth, uv, 0).r;
