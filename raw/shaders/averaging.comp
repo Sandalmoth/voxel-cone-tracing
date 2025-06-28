@@ -124,6 +124,7 @@ void main() {
             current_voxel_opacity,
             0.3
         );
+        if (mixed_voxel_opacity < 0.05) mixed_voxel_opacity = 0;
         imageStore(
             u_opacity_cascades,
             ivec3(texcoords.x, texcoords.y + 132, texcoords.z),

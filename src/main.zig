@@ -90,6 +90,8 @@ pub fn main() !void {
     try input.map.put(.{ .keyboard = sdl.c.SDL_SCANCODE_5 }, .decrement_cone_step_factor);
     try input.map.put(.{ .keyboard = sdl.c.SDL_SCANCODE_8 }, .increment_initial_step_factor);
     try input.map.put(.{ .keyboard = sdl.c.SDL_SCANCODE_7 }, .decrement_initial_step_factor);
+    try input.map.put(.{ .keyboard = sdl.c.SDL_SCANCODE_0 }, .next_scene);
+    try input.map.put(.{ .keyboard = sdl.c.SDL_SCANCODE_9 }, .prev_scene);
     defer input.deinit();
 
     var draw_pass = try DrawPass.init(gpa, device);
@@ -111,6 +113,14 @@ pub fn main() !void {
     };
     var scene = try Scene.init(gpa, device);
     defer scene.deinit(gpa, device);
+    var scene2 = try Scene.init2(gpa, device);
+    defer scene2.deinit(gpa, device);
+
+    const scenes = [_]*Scene{
+        &scene,
+        &scene2,
+    };
+    var current_scene: usize = 0;
 
     var debug_mode: bool = false;
 
@@ -195,7 +205,12 @@ pub fn main() !void {
                 draw_pass.initial_step_factor -= 0.05;
                 std.debug.print("initial_step_factor: {}\n", .{draw_pass.initial_step_factor});
             }
-
+            if (input.peek(.next_scene).pressed) {
+                current_scene = (current_scene + 1) % scenes.len;
+            }
+            if (input.peek(.prev_scene).pressed) {
+                current_scene = (current_scene + (scenes.len - 1)) % scenes.len;
+            }
             input.decay();
             lag -= tick_ns;
             time += 1.0 / @as(f64, @floatFromInt(ticks_per_second));
@@ -204,10 +219,11 @@ pub fn main() !void {
         const alpha = @as(f32, @floatFromInt(lag)) / @as(f32, @floatFromInt(tick_ns));
 
         const command_buffer = try sdl.acquireGPUCommandBuffer(device);
+        const active_scene = scenes[current_scene];
 
         {
             try voxelize_pass.begin(command_buffer);
-            for (scene.objects.items) |object| voxelize_pass.voxelizeObject(
+            for (active_scene.objects.items) |object| voxelize_pass.voxelizeObject(
                 command_buffer,
                 object,
                 alpha,
@@ -226,7 +242,7 @@ pub fn main() !void {
         );
         {
             try draw_pass.beginPrepass(command_buffer);
-            for (scene.objects.items) |object| draw_pass.drawObjectPrepass(
+            for (active_scene.objects.items) |object| draw_pass.drawObjectPrepass(
                 command_buffer,
                 object,
                 vp_matrix,
@@ -242,7 +258,7 @@ pub fn main() !void {
         );
         {
             try draw_pass.beginShadowmap(command_buffer);
-            for (scene.objects.items) |object| draw_pass.drawObjectShadowmap(
+            for (active_scene.objects.items) |object| draw_pass.drawObjectShadowmap(
                 command_buffer,
                 light_space_matrix,
                 object,
@@ -254,7 +270,7 @@ pub fn main() !void {
             try draw_pass.begin(
                 command_buffer,
             );
-            for (scene.objects.items) |object| draw_pass.drawObject(
+            for (active_scene.objects.items) |object| draw_pass.drawObject(
                 command_buffer,
                 object,
                 vp_matrix,

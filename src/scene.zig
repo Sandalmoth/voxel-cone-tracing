@@ -171,21 +171,6 @@ pub fn init(gpa: std.mem.Allocator, device: *sdl.c.SDL_GPUDevice) !Scene {
         .roughness = 0.5,
     });
 
-    // big floor
-    try scene.objects.append(gpa, .{
-        .model = scene.cube,
-        .position = zm.f32x4(0, -12, 0, 1),
-        .rotation = zm.qidentity(),
-        .scale = zm.f32x4(40, 1, 40, 0),
-        .prev_position = zm.f32x4(0, -12, 0, 1),
-        .prev_rotation = zm.qidentity(),
-        .prev_scale = zm.f32x4(40, 1, 40, 0),
-        .angular_velocity = zm.qidentity(),
-        .diffuse = zm.f32x4(0.7, 0.7, 0.7, 1.0),
-        .emissive = zm.f32x4s(0.0),
-        .roughness = 0.5,
-    });
-
     // floor
     try scene.objects.append(gpa, .{
         .model = scene.cube,
@@ -202,19 +187,19 @@ pub fn init(gpa: std.mem.Allocator, device: *sdl.c.SDL_GPUDevice) !Scene {
     });
 
     // ceiling
-    try scene.objects.append(gpa, .{
-        .model = scene.cube,
-        .position = zm.f32x4(0, 2, 0, 1),
-        .rotation = zm.qidentity(),
-        .scale = zm.f32x4(4, 1, 4, 0),
-        .prev_position = zm.f32x4(0, 2, 0, 1),
-        .prev_rotation = zm.qidentity(),
-        .prev_scale = zm.f32x4(4, 1, 4, 0),
-        .angular_velocity = zm.qidentity(),
-        .diffuse = zm.f32x4(0.7, 0.7, 0.7, 1.0),
-        .emissive = zm.f32x4s(0.0),
-        .roughness = 0.5,
-    });
+    // try scene.objects.append(gpa, .{
+    //     .model = scene.cube,
+    //     .position = zm.f32x4(0, 2, 0, 1),
+    //     .rotation = zm.qidentity(),
+    //     .scale = zm.f32x4(4, 1, 4, 0),
+    //     .prev_position = zm.f32x4(0, 2, 0, 1),
+    //     .prev_rotation = zm.qidentity(),
+    //     .prev_scale = zm.f32x4(4, 1, 4, 0),
+    //     .angular_velocity = zm.qidentity(),
+    //     .diffuse = zm.f32x4(0.7, 0.7, 0.7, 1.0),
+    //     .emissive = zm.f32x4s(0.0),
+    //     .roughness = 0.5,
+    // });
 
     // rear_wall
     try scene.objects.append(gpa, .{
@@ -234,10 +219,10 @@ pub fn init(gpa: std.mem.Allocator, device: *sdl.c.SDL_GPUDevice) !Scene {
     // left wall
     try scene.objects.append(gpa, .{
         .model = scene.cube,
-        .position = zm.f32x4(0.01, 0, -2, 1),
+        .position = zm.f32x4(0.01, 0.01, -2, 1),
         .rotation = zm.qidentity(),
         .scale = zm.f32x4(4, 4, 1, 0),
-        .prev_position = zm.f32x4(0.01, 0, -2, 1),
+        .prev_position = zm.f32x4(0.01, 0.01, -2, 1),
         .prev_rotation = zm.qidentity(),
         .prev_scale = zm.f32x4(4, 4, 1, 0),
         .angular_velocity = zm.qidentity(),
@@ -249,10 +234,10 @@ pub fn init(gpa: std.mem.Allocator, device: *sdl.c.SDL_GPUDevice) !Scene {
     // right wall
     try scene.objects.append(gpa, .{
         .model = scene.cube,
-        .position = zm.f32x4(0.01, 0, 2, 1),
+        .position = zm.f32x4(0.01, 0.01, 2, 1),
         .rotation = zm.qidentity(),
         .scale = zm.f32x4(4, 4, 1, 0),
-        .prev_position = zm.f32x4(0.01, 0, 2, 1),
+        .prev_position = zm.f32x4(0.01, 0.01, 2, 1),
         .prev_rotation = zm.qidentity(),
         .prev_scale = zm.f32x4(4, 4, 1, 0),
         .angular_velocity = zm.qidentity(),
@@ -310,6 +295,71 @@ pub fn init(gpa: std.mem.Allocator, device: *sdl.c.SDL_GPUDevice) !Scene {
             .roughness = roughness,
         });
     }
+
+    return scene;
+}
+
+pub fn init2(gpa: std.mem.Allocator, device: *sdl.c.SDL_GPUDevice) !Scene {
+    var scene = Scene{
+        .cube = try Model.init(device, &cube_vertices, &cube_indices),
+        .bunny = try Model.init(device, &bunny_vertices, &bunny_indices),
+        .objects = .empty,
+    };
+
+    var position: zm.Vec = zm.f32x4(0.0, 0.0, 0.0, 1.0);
+    var rotation: zm.Quat = zm.qidentity();
+
+    try scene.objects.append(gpa, .{
+        .model = scene.cube,
+        .position = zm.f32x4(19, -3, 0, 1),
+        .rotation = zm.qidentity(),
+        .scale = zm.f32x4(40, 1, 40, 0),
+        .prev_position = zm.f32x4(19, -3, 0, 1),
+        .prev_rotation = zm.qidentity(),
+        .prev_scale = zm.f32x4(40, 1, 40, 0),
+        .angular_velocity = zm.qidentity(),
+        .diffuse = zm.f32x4(0.7, 0.7, 0.7, 1.0),
+        .emissive = zm.f32x4s(0.0),
+        .roughness = 0.5,
+    });
+
+    position = zm.f32x4(8, 4, -11, 1);
+    rotation = zm.qmul(
+        zm.quatFromRollPitchYaw(-0.2, 0.0, 0.0),
+        zm.quatFromRollPitchYaw(0.0, 0.0, 0.3),
+    );
+    try scene.objects.append(gpa, .{
+        .model = scene.cube,
+        .position = position,
+        .rotation = rotation,
+        .scale = zm.f32x4(20, 0.1, 20, 0),
+        .prev_position = position,
+        .prev_rotation = rotation,
+        .prev_scale = zm.f32x4(20, 0.1, 20, 0),
+        .angular_velocity = zm.qidentity(),
+        .diffuse = zm.f32x4(0.7, 0.7, 0.7, 1.0),
+        .emissive = zm.f32x4s(0.0),
+        .roughness = 0.5,
+    });
+
+    position = zm.f32x4(8, 4, 11, 1);
+    rotation = zm.qmul(
+        zm.quatFromRollPitchYaw(0.2, 0.0, 0.0),
+        zm.quatFromRollPitchYaw(0.0, 0.0, 0.3),
+    );
+    try scene.objects.append(gpa, .{
+        .model = scene.cube,
+        .position = position,
+        .rotation = rotation,
+        .scale = zm.f32x4(20, 0.1, 20, 0),
+        .prev_position = position,
+        .prev_rotation = rotation,
+        .prev_scale = zm.f32x4(20, 0.1, 20, 0),
+        .angular_velocity = zm.qidentity(),
+        .diffuse = zm.f32x4(0.7, 0.7, 0.7, 1.0),
+        .emissive = zm.f32x4s(0.0),
+        .roughness = 0.5,
+    });
 
     return scene;
 }
