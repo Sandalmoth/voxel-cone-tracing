@@ -171,6 +171,21 @@ pub fn init(gpa: std.mem.Allocator, device: *sdl.c.SDL_GPUDevice) !Scene {
         .roughness = 0.5,
     });
 
+    // big floor
+    try scene.objects.append(gpa, .{
+        .model = scene.cube,
+        .position = zm.f32x4(0, -12, 0, 1),
+        .rotation = zm.qidentity(),
+        .scale = zm.f32x4(40, 1, 40, 0),
+        .prev_position = zm.f32x4(0, -12, 0, 1),
+        .prev_rotation = zm.qidentity(),
+        .prev_scale = zm.f32x4(40, 1, 40, 0),
+        .angular_velocity = zm.qidentity(),
+        .diffuse = zm.f32x4(0.7, 0.7, 0.7, 1.0),
+        .emissive = zm.f32x4s(0.0),
+        .roughness = 0.5,
+    });
+
     // floor
     try scene.objects.append(gpa, .{
         .model = scene.cube,

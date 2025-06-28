@@ -1,6 +1,7 @@
 glslc --target-env=vulkan1.0 raw/shaders/draw.vert -o data/shaders/draw.vert.spv
 glslc --target-env=vulkan1.0 raw/shaders/draw.frag -o data/shaders/draw.frag.spv
 glslc --target-env=vulkan1.0 raw/shaders/prepass.frag -o data/shaders/prepass.frag.spv
+glslc --target-env=vulkan1.0 raw/shaders/shadowmap.frag -o data/shaders/shadowmap.frag.spv
 glslc --target-env=vulkan1.0 raw/shaders/downsample.comp -o data/shaders/downsample.comp.spv
 glslc --target-env=vulkan1.0 raw/shaders/upsample.comp -o data/shaders/upsample.comp.spv
 glslc --target-env=vulkan1.0 raw/shaders/indirect.comp -o data/shaders/indirect.comp.spv

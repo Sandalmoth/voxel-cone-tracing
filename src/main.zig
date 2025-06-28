@@ -216,6 +216,14 @@ pub fn main() !void {
         }
 
         const vp_matrix = camera.vp(alpha);
+        const light_space_matrix = zm.mul(
+            zm.lookAtRh(
+                zm.f32x4(-1.0, 2.0, 0.5, 1.0),
+                zm.f32x4s(0.0),
+                zm.f32x4(0.0, 1.0, 0.0, 0.0),
+            ),
+            zm.orthographicRh(32.0, 32.0, 64.0, -64.0),
+        );
         {
             try draw_pass.beginPrepass(command_buffer);
             for (scene.objects.items) |object| draw_pass.drawObjectPrepass(
@@ -233,6 +241,16 @@ pub fn main() !void {
             voxelize_pass.radiance_cache_cascades,
         );
         {
+            try draw_pass.beginShadowmap(command_buffer);
+            for (scene.objects.items) |object| draw_pass.drawObjectShadowmap(
+                command_buffer,
+                light_space_matrix,
+                object,
+                alpha,
+            );
+            draw_pass.endShadowmap(command_buffer);
+        }
+        {
             try draw_pass.begin(
                 command_buffer,
             );
@@ -240,6 +258,7 @@ pub fn main() !void {
                 command_buffer,
                 object,
                 vp_matrix,
+                light_space_matrix,
                 alpha,
             );
             draw_pass.end(command_buffer);
@@ -763,6 +782,7 @@ const DrawPass = struct {
         mvp_matrix: [16]f32 align(16),
         normal_matrix: [16]f32 align(16),
         model_matrix: [16]f32 align(16),
+        light_space_matrix: [16]f32 align(16),
     };
     const FragmentUBO = extern struct {
         diffuse: [4]f32 align(16),
@@ -779,6 +799,7 @@ const DrawPass = struct {
     device: *sdl.GPUDevice,
     pipeline: *sdl.GPUGraphicsPipeline,
     prepass_pipeline: *sdl.GPUGraphicsPipeline,
+    shadowmap_pipeline: *sdl.GPUGraphicsPipeline,
 
     downsample_pipeline: *sdl.GPUComputePipeline,
     indirect_pipeline: *sdl.GPUComputePipeline,
@@ -786,10 +807,10 @@ const DrawPass = struct {
     upsample_pipeline: *sdl.GPUComputePipeline,
 
     draw_pass: ?*sdl.GPURenderPass = null,
-    prepass_draw_pass: ?*sdl.GPURenderPass = null,
     color_target: *sdl.GPUTexture,
     depth_target: *sdl.GPUTexture,
     normal_target: *sdl.GPUTexture,
+    shadowmap_target: *sdl.GPUTexture,
     sampler: *sdl.GPUSampler,
 
     lowres_depth: *sdl.GPUTexture,
@@ -841,7 +862,7 @@ const DrawPass = struct {
                 .entrypoint = "main",
                 .format = sdl.c.SDL_GPU_SHADERFORMAT_SPIRV,
                 .stage = sdl.c.SDL_GPU_SHADERSTAGE_FRAGMENT,
-                .num_samplers = 1,
+                .num_samplers = 2,
                 .num_storage_textures = 0,
                 .num_storage_buffers = 0,
                 .num_uniform_buffers = 1,
@@ -871,6 +892,29 @@ const DrawPass = struct {
             });
         };
         defer sdl.releaseGPUShader(device, fragment_shader_prepass);
+
+        const fragment_shader_shadowmap = blk: {
+            const file = try std.fs.cwd().openFile(
+                "data/shaders/shadowmap.frag.spv",
+                .{ .mode = .read_only },
+            );
+            defer file.close();
+            const bytes = try file.reader().readAllAlloc(gpa, 1_000_000);
+            defer gpa.free(bytes);
+
+            break :blk try sdl.createGPUShader(device, &.{
+                .code_size = bytes.len,
+                .code = bytes.ptr,
+                .entrypoint = "main",
+                .format = sdl.c.SDL_GPU_SHADERFORMAT_SPIRV,
+                .stage = sdl.c.SDL_GPU_SHADERSTAGE_FRAGMENT,
+                .num_samplers = 0,
+                .num_storage_textures = 0,
+                .num_storage_buffers = 0,
+                .num_uniform_buffers = 0,
+            });
+        };
+        defer sdl.releaseGPUShader(device, fragment_shader_shadowmap);
 
         const vertex_buffer_descriptions = [_]sdl.GPUVertexBufferDescription{.{
             .slot = 0,
@@ -963,6 +1007,38 @@ const DrawPass = struct {
             &prepass_pipeline_create_info,
         );
         errdefer sdl.releaseGPUGraphicsPipeline(device, prepass_pipeline);
+        const shadowmap_pipeline_create_info = sdl.GPUGraphicsPipelineCreateInfo{
+            .vertex_shader = vertex_shader,
+            .fragment_shader = fragment_shader_shadowmap,
+            .vertex_input_state = .{
+                .vertex_buffer_descriptions = &vertex_buffer_descriptions[0],
+                .num_vertex_buffers = vertex_buffer_descriptions.len,
+                .vertex_attributes = &vertex_attributes[0],
+                .num_vertex_attributes = vertex_attributes.len,
+            },
+            .primitive_type = sdl.c.SDL_GPU_PRIMITIVETYPE_TRIANGLELIST,
+            .rasterizer_state = .{
+                .front_face = sdl.c.SDL_GPU_FRONTFACE_COUNTER_CLOCKWISE,
+                .cull_mode = sdl.c.SDL_GPU_CULLMODE_NONE,
+            },
+            .multisample_state = .{},
+            .depth_stencil_state = .{
+                .compare_op = sdl.c.SDL_GPU_COMPAREOP_GREATER,
+                .enable_depth_test = true,
+                .enable_depth_write = true,
+            },
+            .target_info = .{
+                .color_target_descriptions = null,
+                .num_color_targets = 0,
+                .depth_stencil_format = @intCast(depth_stencil_format),
+                .has_depth_stencil_target = true,
+            },
+        };
+        const shadowmap_pipeline = try sdl.createGPUGraphicsPipeline(
+            device,
+            &shadowmap_pipeline_create_info,
+        );
+        errdefer sdl.releaseGPUGraphicsPipeline(device, shadowmap_pipeline);
 
         const downsample_pipeline = blk: {
             const file = try std.fs.cwd().openFile(
@@ -1109,6 +1185,19 @@ const DrawPass = struct {
         });
         errdefer sdl.releaseGPUTexture(device, normal_target);
 
+        const shadowmap_target = try sdl.createGPUTexture(device, &.{
+            .type = sdl.c.SDL_GPU_TEXTURETYPE_2D,
+            .format = @intCast(depth_stencil_format),
+            .usage = sdl.c.SDL_GPU_TEXTUREUSAGE_DEPTH_STENCIL_TARGET |
+                sdl.c.SDL_GPU_TEXTUREUSAGE_SAMPLER,
+            .width = 1024,
+            .height = 1024,
+            .layer_count_or_depth = 1,
+            .num_levels = 1,
+            .sample_count = sdl.c.SDL_GPU_SAMPLECOUNT_1,
+        });
+        errdefer sdl.releaseGPUTexture(device, shadowmap_target);
+
         const depth_lowres = try sdl.createGPUTexture(device, &.{
             .type = sdl.c.SDL_GPU_TEXTURETYPE_2D,
             .format = sdl.c.SDL_GPU_TEXTUREFORMAT_R32_FLOAT,
@@ -1187,6 +1276,7 @@ const DrawPass = struct {
             .device = device,
             .pipeline = pipeline,
             .prepass_pipeline = prepass_pipeline,
+            .shadowmap_pipeline = shadowmap_pipeline,
             .downsample_pipeline = downsample_pipeline,
             .indirect_pipeline = indirect_pipeline,
             .blur_pipeline = blur_pipeline,
@@ -1194,6 +1284,7 @@ const DrawPass = struct {
             .color_target = color_target,
             .depth_target = depth_target,
             .normal_target = normal_target,
+            .shadowmap_target = shadowmap_target,
             .lowres_depth = depth_lowres,
             .lowres_normal = normal_lowres,
             .lowres_indirect_light = indirect_light_lowres,
@@ -1210,6 +1301,7 @@ const DrawPass = struct {
         sdl.releaseGPUTexture(pass.device, pass.lowres_indirect_light);
         sdl.releaseGPUTexture(pass.device, pass.lowres_normal);
         sdl.releaseGPUTexture(pass.device, pass.lowres_depth);
+        sdl.releaseGPUTexture(pass.device, pass.shadowmap_target);
         sdl.releaseGPUTexture(pass.device, pass.normal_target);
         sdl.releaseGPUTexture(pass.device, pass.depth_target);
         sdl.releaseGPUTexture(pass.device, pass.color_target);
@@ -1217,6 +1309,7 @@ const DrawPass = struct {
         sdl.releaseGPUComputePipeline(pass.device, pass.blur_pipeline);
         sdl.releaseGPUComputePipeline(pass.device, pass.indirect_pipeline);
         sdl.releaseGPUComputePipeline(pass.device, pass.downsample_pipeline);
+        sdl.releaseGPUGraphicsPipeline(pass.device, pass.shadowmap_pipeline);
         sdl.releaseGPUGraphicsPipeline(pass.device, pass.prepass_pipeline);
         sdl.releaseGPUGraphicsPipeline(pass.device, pass.pipeline);
         pass.* = undefined;
@@ -1248,6 +1341,7 @@ const DrawPass = struct {
         sdl.bindGPUGraphicsPipeline(pass.draw_pass.?, pass.pipeline);
         sdl.bindGPUFragmentSamplers(pass.draw_pass.?, 0, &.{
             .{ .texture = pass.indirect_light, .sampler = pass.sampler },
+            .{ .texture = pass.shadowmap_target, .sampler = pass.sampler },
         });
     }
 
@@ -1256,6 +1350,7 @@ const DrawPass = struct {
         command_buffer: *sdl.GPUCommandBuffer,
         object: Scene.Object,
         camera_vp: zm.Mat,
+        light_space_matrix: zm.Mat,
         alpha: f32,
     ) void {
         const vertex_buffers = [_]sdl.c.SDL_GPUBufferBinding{
@@ -1278,6 +1373,7 @@ const DrawPass = struct {
             .mvp_matrix = zm.matToArr(mvp),
             .normal_matrix = zm.matToArr(normal),
             .model_matrix = zm.matToArr(model),
+            .light_space_matrix = zm.matToArr(light_space_matrix),
         }, @sizeOf(VertexUBO));
         sdl.pushGPUFragmentUniformData(command_buffer, 0, &FragmentUBO{
             .diffuse = object.diffuse,
@@ -1308,7 +1404,7 @@ const DrawPass = struct {
                 .store_op = sdl.c.SDL_GPU_STOREOP_STORE,
             },
         };
-        pass.prepass_draw_pass = try sdl.beginGPURenderPass(
+        pass.draw_pass = try sdl.beginGPURenderPass(
             command_buffer,
             &color_target_infos,
             &.{
@@ -1318,7 +1414,7 @@ const DrawPass = struct {
                 .store_op = sdl.c.SDL_GPU_STOREOP_STORE,
             },
         );
-        sdl.bindGPUGraphicsPipeline(pass.prepass_draw_pass.?, pass.prepass_pipeline);
+        sdl.bindGPUGraphicsPipeline(pass.draw_pass.?, pass.prepass_pipeline);
     }
 
     fn drawObjectPrepass(
@@ -1332,12 +1428,12 @@ const DrawPass = struct {
             .{ .buffer = object.model.vertex_buffer, .offset = 0 },
         };
         sdl.bindGPUVertexBuffers(
-            pass.prepass_draw_pass.?,
+            pass.draw_pass.?,
             0,
             &vertex_buffers,
         );
         sdl.bindGPUIndexBuffer(
-            pass.prepass_draw_pass.?,
+            pass.draw_pass.?,
             &.{ .buffer = object.model.index_buffer, .offset = 0 },
             sdl.c.SDL_GPU_INDEXELEMENTSIZE_32BIT,
         );
@@ -1348,14 +1444,15 @@ const DrawPass = struct {
             .mvp_matrix = zm.matToArr(mvp),
             .normal_matrix = zm.matToArr(normal),
             .model_matrix = zm.matToArr(model),
+            .light_space_matrix = zm.matToArr(zm.identity()),
         }, @sizeOf(VertexUBO));
-        sdl.drawGPUIndexedPrimitives(pass.prepass_draw_pass.?, object.model.n_indices, 1, 0, 0, 0);
+        sdl.drawGPUIndexedPrimitives(pass.draw_pass.?, object.model.n_indices, 1, 0, 0, 0);
     }
 
     fn endPrepass(pass: *DrawPass, command_buffer: *sdl.GPUCommandBuffer) void {
         defer sdl.popGPUDebugGroup(command_buffer);
 
-        sdl.endGPURenderPass(pass.prepass_draw_pass.?);
+        sdl.endGPURenderPass(pass.draw_pass.?);
         pass.draw_pass = null;
     }
 
@@ -1455,6 +1552,68 @@ const DrawPass = struct {
             1,
         );
         sdl.endGPUComputePass(upsample_pass);
+    }
+
+    fn beginShadowmap(
+        pass: *DrawPass,
+        command_buffer: *sdl.GPUCommandBuffer,
+    ) !void {
+        sdl.pushGPUDebugGroup(command_buffer, "shadowmap");
+
+        pass.draw_pass = try sdl.beginGPURenderPass(
+            command_buffer,
+            &.{},
+            &.{
+                .texture = pass.shadowmap_target,
+                .clear_depth = 0,
+                .load_op = sdl.c.SDL_GPU_LOADOP_CLEAR,
+                .store_op = sdl.c.SDL_GPU_STOREOP_STORE,
+            },
+        );
+        sdl.bindGPUGraphicsPipeline(pass.draw_pass.?, pass.shadowmap_pipeline);
+        sdl.bindGPUFragmentSamplers(pass.draw_pass.?, 0, &.{
+            .{ .texture = pass.indirect_light, .sampler = pass.sampler },
+        });
+    }
+
+    fn drawObjectShadowmap(
+        pass: *DrawPass,
+        command_buffer: *sdl.GPUCommandBuffer,
+        light_space_matrix: zm.Mat,
+        object: Scene.Object,
+        alpha: f32,
+    ) void {
+        const vertex_buffers = [_]sdl.c.SDL_GPUBufferBinding{
+            .{ .buffer = object.model.vertex_buffer, .offset = 0 },
+        };
+        sdl.bindGPUVertexBuffers(
+            pass.draw_pass.?,
+            0,
+            &vertex_buffers,
+        );
+        sdl.bindGPUIndexBuffer(
+            pass.draw_pass.?,
+            &.{ .buffer = object.model.index_buffer, .offset = 0 },
+            sdl.c.SDL_GPU_INDEXELEMENTSIZE_32BIT,
+        );
+        const model = object.transform(alpha);
+        const mvp = zm.mul(model, light_space_matrix);
+        // const mvp = zm.mul(light_space_matrix, model);
+        const normal = zm.transpose(zm.inverse(model));
+        sdl.pushGPUVertexUniformData(command_buffer, 0, &VertexUBO{
+            .mvp_matrix = zm.matToArr(mvp),
+            .normal_matrix = zm.matToArr(normal),
+            .model_matrix = zm.matToArr(model),
+            .light_space_matrix = zm.matToArr(zm.identity()),
+        }, @sizeOf(VertexUBO));
+        sdl.drawGPUIndexedPrimitives(pass.draw_pass.?, object.model.n_indices, 1, 0, 0, 0);
+    }
+
+    fn endShadowmap(pass: *DrawPass, command_buffer: *sdl.GPUCommandBuffer) void {
+        defer sdl.popGPUDebugGroup(command_buffer);
+
+        sdl.endGPURenderPass(pass.draw_pass.?);
+        pass.draw_pass = null;
     }
 };
 
