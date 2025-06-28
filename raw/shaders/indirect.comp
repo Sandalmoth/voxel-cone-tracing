@@ -110,10 +110,11 @@ vec4 gatherRadiance(vec3 origin, vec3 normal, vec3 dir, bool skip) {
             skip = false;
         } else {
             float gi_weight = 0.25 * diameter * diameter / (1.0 + diameter);
+            float ao_weight = 0.25 * diameter * diameter;
             acc.rgb += (1 - acc.a) * rad.a * rad.rgb / (1.0 + gi_weight);
             acc.a += (1 - acc.a) * rad.a;
             if (occlusion < 1.0) {
-                occlusion += ((1.0 - occlusion) * rad.a) / (1.0 + diameter * diameter);
+                occlusion += ((1.0 - occlusion) * rad.a) / (1.0 + ao_weight);
             }
         }
         // acc.a += (1 - acc.a) * rad.a;

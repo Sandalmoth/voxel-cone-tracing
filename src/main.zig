@@ -835,9 +835,9 @@ const DrawPass = struct {
     lowres_indirect_blur_intermediate: *sdl.GPUTexture,
     indirect_light: *sdl.GPUTexture,
 
-    cone_step_factor: f32 = 0.9,
-    cone_scale_factor: f32 = 1.8,
-    initial_step_factor: f32 = 2.0,
+    cone_step_factor: f32 = 1.1,
+    cone_scale_factor: f32 = 1.5,
+    initial_step_factor: f32 = 1.5,
 
     fn init(gpa: std.mem.Allocator, device: *sdl.GPUDevice) !DrawPass {
         const vertex_shader = blk: {
