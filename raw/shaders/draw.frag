@@ -63,8 +63,10 @@ void main() {
 
     rad += u_material_data.emissive.rgb;
 
-    rad += u_material_data.diffuse.rgb * indirect_light.a *
-          (indirect_light.rgb + vec3(1e-2, 1e-2, 1e-2));
+    const float gi_factor = 2.0;
+    const float ao_power = 2.0;
+    rad += u_material_data.diffuse.rgb * pow(indirect_light.a, ao_power) *
+          (gi_factor * indirect_light.rgb + vec3(1e-2, 1e-2, 1e-2));
     
     o_color = vec4(rad, 1.0);
 

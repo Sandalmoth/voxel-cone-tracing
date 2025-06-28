@@ -115,10 +115,13 @@ pub fn main() !void {
     defer scene.deinit(gpa, device);
     var scene2 = try Scene.init2(gpa, device);
     defer scene2.deinit(gpa, device);
+    var scene3 = try Scene.init3(gpa, device);
+    defer scene3.deinit3(gpa, device);
 
     const scenes = [_]*Scene{
         &scene,
         &scene2,
+        &scene3,
     };
     var current_scene: usize = 0;
 
