@@ -20,16 +20,30 @@ layout(set = 3, binding = 0) uniform MaterialData {
     float roughness;
 } u_material_data;
 
+// https://learnopengl.com/Advanced-Lighting/Shadows/Shadow-Mapping
 float computeShadow() {
     vec3 projected = v_position_light_space.xyz / v_position_light_space.w;
     projected.xy = 0.5 * projected.xy + 0.5;
     projected.y = 1.0 - projected.y;
     if (projected.x < 0.0 || projected.x > 1.0 ||
         projected.y < 0.0 || projected.y > 1.0) return 1.0;
-    float closest = texture(u_shadowmap, projected.xy).r;
+
     float current = projected.z;
     float bias = 0.0005;
-    return (current + bias > closest) ? 1.0 : 0.0;
+
+    float shadow = 0.0;
+    vec2 texel_size = 1.0 / textureSize(u_shadowmap, 0);
+    for(int x = -1; x <= 1; ++x)
+    {
+        for(int y = -1; y <= 1; ++y)
+        {
+            float closest = texture(u_shadowmap, projected.xy + vec2(x, y) * texel_size).r; 
+            shadow += current + bias > closest ? 1.0 : 0.0;        
+        }    
+    }
+    shadow /= 9.0;
+
+    return shadow;
 }
 
 
