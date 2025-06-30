@@ -1,6 +1,6 @@
 .{
     .name = .voxel_cone_tracing,
-    .version = "0.1.0",
+    .version = "0.0.0",
     .fingerprint = 0x35e879fedca59b3c, // Changing this has security and trust implications.
     .minimum_zig_version = "0.15.0-dev.386+2e35fdd03",
     .dependencies = .{
@@ -17,6 +17,7 @@
         "build.zig",
         "build.zig.zon",
         "src",
+        "raw",
         "LICENSE",
     },
 }
