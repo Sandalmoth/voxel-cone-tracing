@@ -50,7 +50,9 @@ void main() {
 
     float shadow = computeShadow();
 
-    vec3 rad = u_material_data.diffuse.rgb *
+    vec3 rad = u_material_data.diffuse.rgb * vec3(0.01, 0.01, 0.01);
+
+    rad += u_material_data.diffuse.rgb *
         shadow * light_intensity *
         max(dot(v_normal, light_dir), 0.0);
 

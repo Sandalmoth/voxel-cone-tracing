@@ -165,7 +165,14 @@ pub fn main() !void {
         const command_buffer = try sdl.acquireGPUCommandBuffer(device);
 
         const camera_matrix = camera.vp(alpha);
-        const light_matrix = zm.identity();
+        const light_matrix = zm.mul(
+            zm.lookAtRh(
+                zm.f32x4(-1.0, 2.0, 0.5, 1.0),
+                zm.f32x4s(0.0),
+                zm.f32x4(0.0, 1.0, 0.0, 0.0),
+            ),
+            zm.orthographicRh(32.0, 32.0, 64.0, -64.0),
+        );
 
         {
             try draw_pass.beginPrepass(command_buffer);
@@ -179,6 +186,12 @@ pub fn main() !void {
         }
         {
             try draw_pass.beginShadowmap(command_buffer);
+            for (scene.objects.items) |object| draw_pass.drawObjectShadowmap(
+                command_buffer,
+                object,
+                light_matrix,
+                alpha,
+            );
             draw_pass.endShadowmap(command_buffer);
         }
         {
@@ -633,8 +646,8 @@ const DrawPass = struct {
     fn drawObjectShadowmap(
         pass: *DrawPass,
         command_buffer: *sdl.GPUCommandBuffer,
-        light_space_matrix: zm.Mat,
         object: Scene.Object,
+        light_space_matrix: zm.Mat,
         alpha: f32,
     ) void {
         const vertex_buffers = [_]sdl.c.SDL_GPUBufferBinding{
