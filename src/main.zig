@@ -85,6 +85,18 @@ pub fn main() !void {
     try input.map.put(.{ .keyboard = sdl.c.SDL_SCANCODE_9 }, .prev_scene);
     defer input.deinit();
 
+    var camera = Camera{
+        .pos = zm.f32x4(-4.0, 0.0, 0.0, 1.0),
+        .yaw = 0.0,
+        .pitch = 0.0,
+        .prev_pos = zm.f32x4(-4.0, 0.0, 0.0, 1.0),
+        .prev_yaw = 0.0,
+        .prev_pitch = 0.0,
+    };
+
+    var scene = try Scene.init(gpa, device);
+    defer scene.deinit(gpa, device);
+
     var draw_pass = try DrawPass.init(gpa, device);
     defer draw_pass.deinit();
     var present_pass = try PresentPass.init(gpa, device, window);
@@ -139,6 +151,7 @@ pub fn main() !void {
         }
 
         while (lag >= tick_ns) {
+            camera.update(&input);
             if (input.peek(.toggle_debug_view).pressed) debug_mode = !debug_mode;
             if (input.peek(.trigger_capture).pressed) try trigger();
 
@@ -148,12 +161,20 @@ pub fn main() !void {
         }
 
         const alpha = @as(f32, @floatFromInt(lag)) / @as(f32, @floatFromInt(tick_ns));
-        _ = alpha;
 
         const command_buffer = try sdl.acquireGPUCommandBuffer(device);
 
+        const camera_matrix = camera.vp(alpha);
+        const light_matrix = zm.identity();
+
         {
             try draw_pass.beginPrepass(command_buffer);
+            for (scene.objects.items) |object| draw_pass.drawObjectPrepass(
+                command_buffer,
+                object,
+                camera_matrix,
+                alpha,
+            );
             draw_pass.endPrepass(command_buffer);
         }
         {
@@ -162,6 +183,13 @@ pub fn main() !void {
         }
         {
             try draw_pass.begin(command_buffer);
+            for (scene.objects.items) |object| draw_pass.drawObject(
+                command_buffer,
+                object,
+                camera_matrix,
+                light_matrix,
+                alpha,
+            );
             draw_pass.end(command_buffer);
         }
         {
@@ -565,7 +593,14 @@ const DrawPass = struct {
             .model_matrix = zm.matToArr(model),
             .light_space_matrix = zm.matToArr(zm.identity()),
         }, @sizeOf(VertexUBO));
-        sdl.drawGPUIndexedPrimitives(pass.active_pass.?, object.model.n_indices, 1, 0, 0, 0);
+        sdl.drawGPUIndexedPrimitives(
+            pass.active_pass.?,
+            object.model.n_indices,
+            1,
+            object.model.first_index,
+            @intCast(object.model.first_vertex),
+            0,
+        );
     }
 
     fn endPrepass(pass: *DrawPass, command_buffer: *sdl.GPUCommandBuffer) void {
@@ -624,7 +659,14 @@ const DrawPass = struct {
             .model_matrix = zm.matToArr(model),
             .light_space_matrix = zm.matToArr(zm.identity()),
         }, @sizeOf(VertexUBO));
-        sdl.drawGPUIndexedPrimitives(pass.active_pass.?, object.model.n_indices, 1, 0, 0, 0);
+        sdl.drawGPUIndexedPrimitives(
+            pass.active_pass.?,
+            object.model.n_indices,
+            1,
+            object.model.first_index,
+            @intCast(object.model.first_vertex),
+            0,
+        );
     }
 
     fn endShadowmap(pass: *DrawPass, command_buffer: *sdl.GPUCommandBuffer) void {
@@ -699,7 +741,14 @@ const DrawPass = struct {
             .emissive = object.emissive,
             .roughness = object.roughness,
         }, @sizeOf(FragmentUBO));
-        sdl.drawGPUIndexedPrimitives(pass.active_pass.?, object.model.n_indices, 1, 0, 0, 0);
+        sdl.drawGPUIndexedPrimitives(
+            pass.active_pass.?,
+            object.model.n_indices,
+            1,
+            object.model.first_index,
+            @intCast(object.model.first_vertex),
+            0,
+        );
     }
 
     fn end(pass: *DrawPass, command_buffer: *sdl.GPUCommandBuffer) void {
@@ -918,6 +967,80 @@ const PresentPass = struct {
     }
 };
 
+const Camera = struct {
+    pos: zm.Vec,
+    yaw: f32,
+    pitch: f32,
+
+    prev_pos: zm.Vec,
+    prev_yaw: f32,
+    prev_pitch: f32,
+
+    const up = zm.f32x4(0.0, 1.0, 0.0, 0.0);
+    const mouse_sensitivity = 0.3;
+    const move_speed = 10;
+
+    fn update(camera: *Camera, input: *Input) void {
+        // mouse-look camera
+        camera.prev_pos = camera.pos;
+        camera.prev_yaw = camera.yaw;
+        camera.prev_pitch = camera.pitch;
+
+        camera.yaw += input.mouse_delta[0] * mouse_sensitivity * tick;
+        camera.pitch -= input.mouse_delta[1] * mouse_sensitivity * tick;
+        camera.pitch = std.math.clamp(camera.pitch, -0.49 * std.math.pi, 0.49 * std.math.pi);
+
+        const forward = zm.f32x4(
+            @cos(camera.yaw),
+            0.0,
+            @sin(camera.yaw),
+            0.0,
+        ) * zm.f32x4s(move_speed * tick);
+
+        const right = zm.f32x4(
+            @cos(camera.yaw + 0.5 * std.math.pi),
+            0.0,
+            @sin(camera.yaw + 0.5 * std.math.pi),
+            0.0,
+        ) * zm.f32x4s(move_speed * tick);
+
+        if (input.peek(.forward).held) camera.pos += forward;
+        if (input.peek(.backward).held) camera.pos -= forward;
+        if (input.peek(.right).held) camera.pos += right;
+        if (input.peek(.left).held) camera.pos -= right;
+        if (input.peek(.up).held) camera.pos += up * zm.f32x4s(move_speed * tick);
+        if (input.peek(.down).held) camera.pos -= up * zm.f32x4s(move_speed * tick);
+    }
+
+    fn v(camera: Camera, alpha: f32) zm.Mat {
+        const pos = zm.lerp(camera.prev_pos, camera.pos, alpha);
+        const yaw = (1 - alpha) * camera.prev_yaw + alpha * camera.yaw;
+        const pitch = (1 - alpha) * camera.prev_pitch + alpha * camera.pitch;
+
+        const facing = zm.normalize3(zm.f32x4(
+            @cos(pitch) * @cos(yaw),
+            @sin(pitch),
+            @cos(pitch) * @sin(yaw),
+            0.0,
+        ));
+
+        return zm.lookAtRh(pos, pos + facing, up);
+    }
+
+    fn p(camera: Camera, alpha: f32) zm.Mat {
+        _ = camera;
+        _ = alpha;
+        return perspectiveFovRhInv(std.math.degreesToRadians(54), 16.0 / 9.0, 0.1);
+    }
+
+    fn vp(camera: Camera, alpha: f32) zm.Mat {
+        return zm.mul(
+            camera.v(alpha),
+            camera.p(alpha),
+        );
+    }
+};
+
 pub fn perspectiveFovRhInv(fovy: f32, aspect: f32, near: f32) zm.Mat {
     const scfov = zm.sincos(0.5 * fovy);
 
@@ -931,7 +1054,7 @@ pub fn perspectiveFovRhInv(fovy: f32, aspect: f32, near: f32) zm.Mat {
         zm.f32x4(w, 0.0, 0.0, 0.0),
         zm.f32x4(0.0, h, 0.0, 0.0),
         zm.f32x4(0.0, 0.0, 0.0, -1.0),
-        zm.f32x4(0.0, 0.0, -near, 0.0),
+        zm.f32x4(0.0, 0.0, near, 0.0),
     };
 }
 
