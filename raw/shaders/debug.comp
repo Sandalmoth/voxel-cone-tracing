@@ -49,7 +49,7 @@ void main() {
     if (global_id.x >= 640 || global_id.y >= 360) return;
 
     vec2 uv = vec2(global_id) / vec2(640.0 - 1.0, 360.0 - 1.0);
-    uv = vec2(uv.x, 1.0 - uv.y);
+    uv = 2.0 * vec2(uv.x, 1.0 - uv.y) - 1.0;
 
     vec4 near = camera_projection_matrix_inv * vec4(uv, -1.0, 1.0);
     vec4 far = camera_projection_matrix_inv * vec4(uv, 1.0, 1.0);
