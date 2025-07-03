@@ -1,0 +1,42 @@
+#version 460
+
+layout(std430, set = 0, binding = 0) readonly buffer OpacityTargets {
+    uint opacity_targets[];
+};
+layout(std430, set = 0, binding = 1) readonly buffer DiffuseTargets {
+    uint diffuse_targets[];
+};
+layout(std430, set = 1, binding = 2) readonly buffer OldOpacityCascades {
+    uint old_opacity_cascades[];
+};
+layout(std430, set = 1, binding = 3) readonly buffer OldDiffuseCascades {
+    uint old_diffuse_cascades[];
+};
+
+layout(std430, set = 1, binding = 0) buffer NewOpacityCascades {
+    uint new_opacity_cascades[];
+};
+layout(std430, set = 1, binding = 1) buffer NewDiffuseCascades {
+    uint new_diffuse_cascades[];
+};
+
+layout(std140, set = 2, binding = 0) uniform CommonUBO {
+    uvec4 cascade_size; // xyz
+    uvec4 cascade_mask;
+    uint n_cascades;
+    float voxel_size;
+};
+
+layout(std140, set = 2, binding = 1) uniform AverageUBO {
+    vec4 old_anchor; // xyz
+    vec4 new_anchor; // xyz
+};
+
+void main() {
+    uint global_id = gl_GlobalInvocationID.x;
+    // uint cascade = global_id / (cascade_size[0] * cascade_size[1] * cascade_size[2]);
+
+    // TODO reproject and blend
+    new_opacity_cascades[global_id] = opacity_targets[global_id];
+    new_diffuse_cascades[global_id] = diffuse_targets[global_id];
+}

@@ -1,0 +1,73 @@
+#version 460
+
+layout(local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
+
+layout(std430, set = 0, binding = 0) readonly buffer OldOpacityTargets {
+    uint old_opacity_targets[];
+};
+layout(std430, set = 0, binding = 1) readonly buffer OldDiffuseTargets {
+    uint old_diffuse_targets[];
+};
+
+layout(std430, set = 1, binding = 0) buffer NewOpacityTargets {
+    uint new_opacity_targets[];
+};
+layout(std430, set = 1, binding = 1) buffer NewDiffuseTargets {
+    uint new_diffuse_targets[];
+};
+
+layout(std140, set = 2, binding = 0) uniform CommonUBO {
+    uvec4 cascade_size; // xyz
+    uvec4 cascade_mask;
+    uint n_cascades;
+    float voxel_size;
+};
+
+layout(std140, set = 2, binding = 1) uniform ClearUBO {
+    vec4 old_anchor; // xyz
+    vec4 new_anchor; // xyz
+    uint clear_mask;
+};
+
+int iabsmax(ivec3 a) {
+    ivec3 b = abs(a);
+    return max(b.x, max(b.y, b.z));
+}
+
+void main() {
+    uint global_id = gl_GlobalInvocationID.x;
+    uint cascade = global_id / (cascade_size[0] * cascade_size[1] * cascade_size[2]);
+
+    if (bool(clear_mask & (1u << cascade))) {
+        new_opacity_targets[global_id] = 0u;
+        new_diffuse_targets[global_id] = 0u;
+        return;
+    }
+    
+    uint voxel_id = global_id & cascade_mask[3];
+    ivec3 voxel_pos = ivec3(
+        voxel_id & cascade_mask[0],
+        (voxel_id / cascade_size[0]) & cascade_mask[1],
+        (voxel_id / (cascade_size[0] * cascade_size[1])) & cascade_mask[2]
+    ) - ivec3(cascade_size.xyz / 2);
+
+    vec3 anchor_move = (new_anchor.xyz - old_anchor.xyz) / float(1u << cascade);
+    ivec3 reprojected_pos = voxel_pos + ivec3(anchor_move + 0.5);
+    uint reprojected_cascade = cascade;
+    while (abs(reprojected_pos.x) > cascade_size.x ||
+           abs(reprojected_pos.y) > cascade_size.y ||
+           abs(reprojected_pos.z) > cascade_size.z) {
+        reprojected_pos /= 2;
+        reprojected_cascade += 1;
+    }
+
+    reprojected_pos += ivec3(cascade_size.xyz / 2);
+    uint reprojected_id =
+        cascade * cascade_size[0] * cascade_size[1] * cascade_size[2] +
+        reprojected_pos.x +
+        reprojected_pos.y * cascade_size[0] +
+        reprojected_pos.z * cascade_size[0] * cascade_size[1];
+
+    new_opacity_targets[global_id] = old_opacity_targets[reprojected_id];
+    new_diffuse_targets[global_id] = old_diffuse_targets[reprojected_id];
+}
