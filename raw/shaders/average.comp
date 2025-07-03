@@ -24,7 +24,7 @@ layout(std140, set = 2, binding = 0) uniform CommonUBO {
     uvec4 cascade_size; // xyz
     uvec4 cascade_mask;
     uint n_cascades;
-    float voxel_size;
+    float min_voxel_size;
 };
 
 layout(std140, set = 2, binding = 1) uniform AverageUBO {
@@ -32,11 +32,22 @@ layout(std140, set = 2, binding = 1) uniform AverageUBO {
     vec4 new_anchor; // xyz
 };
 
+#include "include/voxel_utils.glsl"
+
 void main() {
     uint global_id = gl_GlobalInvocationID.x;
-    // uint cascade = global_id / (cascade_size[0] * cascade_size[1] * cascade_size[2]);
+    uint cascade = indexToCascade(global_id);
 
     // TODO reproject and blend
     new_opacity_cascades[global_id] = opacity_targets[global_id];
     new_diffuse_cascades[global_id] = diffuse_targets[global_id];
+
+    // TEST
+    if (cascade == 0) {
+        new_opacity_cascades[global_id] = 0xFFFFFFFF;
+        new_diffuse_cascades[global_id] = 0xFFFFFFFF;
+    } else {
+        new_opacity_cascades[global_id] = 0;
+        new_diffuse_cascades[global_id] = 0;
+    }
 }
