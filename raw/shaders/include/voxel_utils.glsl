@@ -32,7 +32,7 @@ float voxelSize(uint cascade) {
 
 uint cascadeAt(vec3 pos) {
     uvec3 cascades = uvec3(clamp(
-        ceil(log2(abs(pos) / (min_voxel_size * vec3(cascade_size.xyz)))),
+        ceil(log2(abs(pos) / (0.5 * min_voxel_size * vec3(cascade_size.xyz)))),
         0,
         n_cascades + 1
     ));
