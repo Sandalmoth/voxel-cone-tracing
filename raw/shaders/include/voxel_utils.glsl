@@ -1,7 +1,7 @@
 // the function in this header rely on the existance of some shared values
 // layout(std140, set = 2, binding = 0) uniform CommonUBO {
-//     uvec4 cascade_size; // xyz
-//     uvec4 cascade_mask;
+//     uvec4 cascade_size; // x, y, z, _
+//     uvec4 cascade_mask; // x, y, z, x*y*z
 //     uint n_cascades;
 //     float min_voxel_size;
 // };

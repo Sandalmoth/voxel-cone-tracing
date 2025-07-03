@@ -1,5 +1,7 @@
 #version 460
 
+layout(local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
+
 layout(std430, set = 0, binding = 0) readonly buffer OpacityTargets {
     uint opacity_targets[];
 };
@@ -36,6 +38,8 @@ layout(std140, set = 2, binding = 1) uniform AverageUBO {
 
 void main() {
     uint global_id = gl_GlobalInvocationID.x;
+    if (global_id >= n_cascades * cascade_size[0] * cascade_size[1] * cascade_size[2]) return;
+    
     uint cascade = indexToCascade(global_id);
 
     // TODO reproject and blend
