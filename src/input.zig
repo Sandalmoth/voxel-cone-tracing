@@ -25,6 +25,7 @@ const GameInput = enum {
     backward,
     up,
     down,
+    sprint,
     toggle_debug_view,
     next_debug_view,
     prev_debug_view,

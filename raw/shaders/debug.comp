@@ -63,7 +63,7 @@ void main() {
     
     vec4 o_color = vec4(0.5 * ray_dir + 0.5, 1.0);
 
-    vec3 pos = ray_origin;
+    vec3 pos = ray_origin - anchor.xyz; // raymarch in voxel-space
     vec4 acc = vec4(0.0, 0.0, 0.0, 0.0);
     float d = 0.0;
 

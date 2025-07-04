@@ -76,6 +76,7 @@ pub fn main() !void {
     try input.map.put(.{ .keyboard = sdl.c.SDL_SCANCODE_A }, .left);
     try input.map.put(.{ .keyboard = sdl.c.SDL_SCANCODE_SPACE }, .up);
     try input.map.put(.{ .keyboard = sdl.c.SDL_SCANCODE_LCTRL }, .down);
+    try input.map.put(.{ .keyboard = sdl.c.SDL_SCANCODE_LSHIFT }, .sprint);
     try input.map.put(.{ .keyboard = sdl.c.SDL_SCANCODE_TAB }, .toggle_debug_view);
     try input.map.put(.{ .keyboard = sdl.c.SDL_SCANCODE_GRAVE }, .toggle_voxels_follow_camera);
     try input.map.put(.{ .keyboard = sdl.c.SDL_SCANCODE_Q }, .prev_debug_view);
@@ -352,7 +353,7 @@ const VoxelizePass = struct {
     const ClearUBO = extern struct {
         old_anchor: [3]f32 align(16),
         new_anchor: [3]f32 align(16),
-        clear_mask: u32,
+        clear_mask: u32 align(16),
     };
     const AverageUBO = extern struct {
         old_anchor: [3]f32 align(16),
@@ -363,7 +364,7 @@ const VoxelizePass = struct {
         diffuse: [4]f32 align(16),
         emissive: [4]f32 align(16),
 
-        target_cascade: u32,
+        target_cascade: u32 align(16),
         n_triangles: u32,
         first_index: u32,
         first_vertex: u32,
@@ -1583,7 +1584,7 @@ const Camera = struct {
 
     const up = zm.f32x4(0.0, 1.0, 0.0, 0.0);
     const mouse_sensitivity = 0.3;
-    const move_speed = 10;
+    const move_speed: f32 = 10.0;
 
     fn update(camera: *Camera, input: *Input) void {
         // mouse-look camera
@@ -1595,26 +1596,29 @@ const Camera = struct {
         camera.pitch -= input.mouse_delta[1] * mouse_sensitivity * tick;
         camera.pitch = std.math.clamp(camera.pitch, -0.49 * std.math.pi, 0.49 * std.math.pi);
 
+        var speed: f32 = move_speed * tick;
+        if (input.peek(.sprint).held) speed *= 10.0;
+
         const forward = zm.f32x4(
             @cos(camera.yaw),
             0.0,
             @sin(camera.yaw),
             0.0,
-        ) * zm.f32x4s(move_speed * tick);
+        ) * zm.f32x4s(speed);
 
         const right = zm.f32x4(
             @cos(camera.yaw + 0.5 * std.math.pi),
             0.0,
             @sin(camera.yaw + 0.5 * std.math.pi),
             0.0,
-        ) * zm.f32x4s(move_speed * tick);
+        ) * zm.f32x4s(speed);
 
         if (input.peek(.forward).held) camera.pos += forward;
         if (input.peek(.backward).held) camera.pos -= forward;
         if (input.peek(.right).held) camera.pos += right;
         if (input.peek(.left).held) camera.pos -= right;
-        if (input.peek(.up).held) camera.pos += up * zm.f32x4s(move_speed * tick);
-        if (input.peek(.down).held) camera.pos -= up * zm.f32x4s(move_speed * tick);
+        if (input.peek(.up).held) camera.pos += up * zm.f32x4s(speed);
+        if (input.peek(.down).held) camera.pos -= up * zm.f32x4s(speed);
     }
 
     fn anchor(camera: *Camera, alpha: f32) [3]f32 {

@@ -145,9 +145,9 @@ void main() {
     vec3 p1_model = vertices[i1].position;
     vec3 p2_model = vertices[i2].position;
 
-    vec3 p0 = (model_matrix * vec4(p0_model, 1.0)).xyz;
-    vec3 p1 = (model_matrix * vec4(p1_model, 1.0)).xyz;
-    vec3 p2 = (model_matrix * vec4(p2_model, 1.0)).xyz;
+    vec3 p0 = (model_matrix * vec4(p0_model, 1.0)).xyz - anchor.xyz;
+    vec3 p1 = (model_matrix * vec4(p1_model, 1.0)).xyz - anchor.xyz;
+    vec3 p2 = (model_matrix * vec4(p2_model, 1.0)).xyz - anchor.xyz;
 
     float voxel_size = voxelSize(target_cascade);
 
