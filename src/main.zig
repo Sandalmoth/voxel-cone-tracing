@@ -220,6 +220,7 @@ pub fn main() !void {
         }
         if (debug_mode) try debug_pass.run(
             command_buffer,
+            voxelize_pass.new_anchor,
             voxelize_pass.opacity_cascades[voxelize_pass.ix_new_slot],
             voxelize_pass.diffuse_cascades[voxelize_pass.ix_new_slot],
             camera.v(alpha),
@@ -306,6 +307,7 @@ const DebugPass = struct {
     fn run(
         pass: *DebugPass,
         command_buffer: *sdl.GPUCommandBuffer,
+        cascade_anchor: [3]f32,
         opacity_cascades: *sdl.GPUBuffer,
         diffuse_cascades: *sdl.GPUBuffer,
         camera_view: zm.Mat,
@@ -325,6 +327,7 @@ const DebugPass = struct {
         sdl.pushGPUComputeUniformData(command_buffer, 0, &VoxelizePass.CommonUBO{
             .cascade_size = VoxelizePass.cascade_size,
             .cascade_mask = VoxelizePass.cascade_mask,
+            .anchor = cascade_anchor,
             .n_cascades = VoxelizePass.n_cascades,
             .min_voxel_size = VoxelizePass.min_voxel_size,
         }, @sizeOf(VoxelizePass.CommonUBO));
@@ -342,7 +345,8 @@ const VoxelizePass = struct {
     const CommonUBO = extern struct {
         cascade_size: [3]u32 align(16),
         cascade_mask: [4]u32 align(16),
-        n_cascades: u32,
+        anchor: [3]f32 align(16),
+        n_cascades: u32 align(16),
         min_voxel_size: f32,
     };
     const ClearUBO = extern struct {
@@ -698,6 +702,7 @@ const VoxelizePass = struct {
         sdl.pushGPUComputeUniformData(command_buffer, 0, &CommonUBO{
             .cascade_size = cascade_size,
             .cascade_mask = cascade_mask,
+            .anchor = pass.new_anchor,
             .n_cascades = n_cascades,
             .min_voxel_size = min_voxel_size,
         }, @sizeOf(CommonUBO));
@@ -725,6 +730,7 @@ const VoxelizePass = struct {
         sdl.pushGPUComputeUniformData(command_buffer, 0, &CommonUBO{
             .cascade_size = cascade_size,
             .cascade_mask = cascade_mask,
+            .anchor = pass.new_anchor,
             .n_cascades = n_cascades,
             .min_voxel_size = min_voxel_size,
         }, @sizeOf(CommonUBO));
@@ -790,6 +796,7 @@ const VoxelizePass = struct {
         sdl.pushGPUComputeUniformData(command_buffer, 0, &CommonUBO{
             .cascade_size = cascade_size,
             .cascade_mask = cascade_mask,
+            .anchor = pass.new_anchor,
             .n_cascades = n_cascades,
             .min_voxel_size = min_voxel_size,
         }, @sizeOf(CommonUBO));

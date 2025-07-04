@@ -19,6 +19,7 @@ layout(std430, set = 1, binding = 1) buffer NewDiffuseTargets {
 layout(std140, set = 2, binding = 0) uniform CommonUBO {
     uvec4 cascade_size; // xyz
     uvec4 cascade_mask;
+    vec4 anchor;
     uint n_cascades;
     float min_voxel_size;
 };

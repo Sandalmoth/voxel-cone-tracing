@@ -2,6 +2,7 @@
 // layout(std140, set = 2, binding = 0) uniform CommonUBO {
 //     uvec4 cascade_size; // x, y, z, _
 //     uvec4 cascade_mask; // x, y, z, x*y*z
+//     vec4 anchor; // x, y, z, _
 //     uint n_cascades;
 //     float min_voxel_size;
 // };

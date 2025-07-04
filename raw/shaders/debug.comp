@@ -14,6 +14,7 @@ layout(rgba16f, set = 1, binding = 0) uniform image2D u_color_target;
 layout(std140, set = 2, binding = 0) uniform CommonUBO {
     uvec4 cascade_size; // xyz
     uvec4 cascade_mask;
+    vec4 anchor;
     uint n_cascades;
     float min_voxel_size;
 };
