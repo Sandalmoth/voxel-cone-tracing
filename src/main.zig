@@ -356,7 +356,6 @@ const VoxelizePass = struct {
     };
     const VoxelizeUBO = extern struct {
         model_matrix: [16]f32 align(16),
-        normal_matrix: [16]f32 align(16),
         diffuse: [4]f32 align(16),
         emissive: [4]f32 align(16),
 
@@ -748,7 +747,6 @@ const VoxelizePass = struct {
                 1,
                 &VoxelizeUBO{
                     .model_matrix = zm.matToArr(transform),
-                    .normal_matrix = zm.matToArr(zm.transpose(zm.inverse(transform))),
                     .diffuse = object.diffuse,
                     .emissive = object.emissive,
                     .target_cascade = target_cascade,

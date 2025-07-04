@@ -134,7 +134,7 @@ pub fn init(gpa: std.mem.Allocator, device: *sdl.GPUDevice) !Scene {
 
     var models = try std.ArrayListUnmanaged(Model).initCapacity(gpa, json_models.value.len);
     errdefer models.deinit(gpa);
-    var objects = try std.ArrayListUnmanaged(Object).initCapacity(gpa, json_models.value.len);
+    var objects = try std.ArrayListUnmanaged(Object).initCapacity(gpa, json_models.value.len * 3);
     errdefer objects.deinit(gpa);
     for (json_models.value) |model| {
         std.debug.assert(model.num_indices % 3 == 0);
@@ -151,6 +151,24 @@ pub fn init(gpa: std.mem.Allocator, device: *sdl.GPUDevice) !Scene {
             .position = zm.f32x4(0.0, 0.0, 0.0, 1.0),
             .rotation = zm.qidentity(),
             .scale = zm.f32x4(1.0, 1.0, 1.0, 0.0),
+            .diffuse = castColor(model.diffuse),
+            .emissive = .{ 0.0, 0.0, 0.0, 0.0 },
+            .roughness = 0.0,
+        });
+        objects.appendAssumeCapacity(.{
+            .model = &models.items[models.items.len - 1],
+            .position = zm.f32x4(0.0, -60.0, 1.0, 1.0),
+            .rotation = zm.qidentity(),
+            .scale = zm.f32x4(7.0, 7.0, 7.0, 0.0),
+            .diffuse = castColor(model.diffuse),
+            .emissive = .{ 0.0, 0.0, 0.0, 0.0 },
+            .roughness = 0.0,
+        });
+        objects.appendAssumeCapacity(.{
+            .model = &models.items[models.items.len - 1],
+            .position = zm.f32x4(0.0, -450.0, 7.0, 1.0),
+            .rotation = zm.qidentity(),
+            .scale = zm.f32x4(49.0, 49.0, 49.0, 0.0),
             .diffuse = castColor(model.diffuse),
             .emissive = .{ 0.0, 0.0, 0.0, 0.0 },
             .roughness = 0.0,

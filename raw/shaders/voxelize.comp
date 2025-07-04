@@ -30,19 +30,15 @@ layout(std140, set = 2, binding = 0) uniform CommonUBO {
     uint n_cascades;
     float min_voxel_size;
 };
-
-layout(std140, set = 2, binding = 0) uniform VoxelizeUBO {
+layout(std140, set = 2, binding = 1) uniform VoxelizeUBO {
     mat4 model_matrix;
-    mat4 normal_matrix;
     vec4 diffuse; // rgb 0-1
     vec4 emissive; // rgb 0-inf
     uint target_cascade;
     uint n_triangles;
 };
 
-float voxelSize(uint cascade) {
-    return min_voxel_size * float(1 << cascade);
-}
+#include "include/voxel_utils.glsl"
 
 bool intersectVoxelTriangle2(
     vec3 low, vec3 ext, vec3 p0, vec3 p1, vec3 p2,
@@ -151,7 +147,6 @@ void main() {
     vec3 p2 = (model_matrix * vec4(p2_model, 1.0)).xyz;
 
     float voxel_size = voxelSize(target_cascade);
-    float coverage = 0.25 * clamp(triangleArea(p0, p1, p2) / (voxel_size * voxel_size), 0, 4.0);
 
     vec3 triangle_center = (p0 + p1 + p2) / 3.0;
     float triangle_area = circumcircleArea(p0, p1, p2);
@@ -196,6 +191,12 @@ void main() {
         for (int y = voxel_lower_bound.y; y <= voxel_upper_bound.y; ++y) {
             for (int z = voxel_lower_bound.z; z <= voxel_upper_bound.z; ++z) {
 
+                // ivec3 voxel_pos = ivec3(x, y, z);
+                // atomicOr(
+                //     opacity_targets[indexFromCascadePos(target_cascade, voxel_pos)],
+                //     0xffffffffu
+                // );
+
                 vec3 low = voxel_size * vec3(x, y, z);
                 if (!intersectVoxelTriangle2(
                     low, ext, p0, p1, p2, n, c,
@@ -213,32 +214,28 @@ void main() {
                     distance
                 ) / voxel_area;
                 cov = max(cov, 1.0 / 32.0); // an intersecting triangle always occludes a minimum
-                // should probably also be a function of a per-model id
                 uint rand = pcg_hash(
                     ix_src_triangle * 2654435761u +
                          uint(x + cascade_size_half.x) +
                     31 * uint(y + cascade_size_half.y) +
                     89 * uint(z + cascade_size_half.z)
+                    // should probably also be a function of a per-model id
                 );
                 uint mask = texture(
                     u_bitmask_texture,
-                    vec2(float((rand >> 11) & 0xFFu) / 255.0, cov)
+                    vec2(float((rand >> 7) & 0x1FFu) / 512.0, cov)
                 ).r;
                 uint opacity = rotl(mask, (rand >> 23) & 0x1Fu);
 
-                ivec3 voxel_pos = ivec3(x, y, z) + cascade_size_half;
-                atomicOr(opacity_targets[
-                    target_cascade * cascade_size[0] * cascade_size[1] * cascade_size[2] +
-                    voxel_pos.x +
-                    voxel_pos.y * cascade_size[0] +
-                    voxel_pos.z * cascade_size[0] * cascade_size[1]
-                ], opacity);
-                atomicOr(diffuse_targets[
-                    target_cascade * cascade_size[0] * cascade_size[1] * cascade_size[2] +
-                    voxel_pos.x +
-                    voxel_pos.y * cascade_size[0] +
-                    voxel_pos.z * cascade_size[0] * cascade_size[1]
-                ], packDiffuse(diffuse.rgb));
+                ivec3 voxel_pos = ivec3(x, y, z);
+                atomicOr(
+                    opacity_targets[indexFromCascadePos(target_cascade, voxel_pos)],
+                    opacity
+                );
+                atomicOr(
+                    diffuse_targets[indexFromCascadePos(target_cascade, voxel_pos)],
+                    packDiffuse(diffuse.rgb)
+                );
             }
         }
     }

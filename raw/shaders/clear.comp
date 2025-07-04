@@ -20,7 +20,7 @@ layout(std140, set = 2, binding = 0) uniform CommonUBO {
     uvec4 cascade_size; // xyz
     uvec4 cascade_mask;
     uint n_cascades;
-    float voxel_size;
+    float min_voxel_size;
 };
 
 layout(std140, set = 2, binding = 1) uniform ClearUBO {

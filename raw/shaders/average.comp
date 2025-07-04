@@ -46,12 +46,12 @@ void main() {
     new_opacity_cascades[global_id] = opacity_targets[global_id];
     new_diffuse_cascades[global_id] = diffuse_targets[global_id];
 
-    // TEST
-    if (cascade == 0) {
-        new_opacity_cascades[global_id] = 0xFFFFFFFF;
-        new_diffuse_cascades[global_id] = 0xFFFFFFFF;
-    } else {
-        new_opacity_cascades[global_id] = 0;
-        new_diffuse_cascades[global_id] = 0;
-    }
+    // // TEST
+    // if (cascade == 0) {
+    //     new_opacity_cascades[global_id] = 0xFFFFFFFF;
+    //     new_diffuse_cascades[global_id] = 0xFFFFFFFF;
+    // } else {
+    //     new_opacity_cascades[global_id] = 0;
+    //     new_diffuse_cascades[global_id] = 0;
+    // }
 }
