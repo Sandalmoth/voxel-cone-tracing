@@ -361,6 +361,8 @@ const VoxelizePass = struct {
 
         target_cascade: u32,
         n_triangles: u32,
+        first_index: u32,
+        first_vertex: u32,
     };
 
     // these could be runtime values to allow for e.g. graphics settings
@@ -751,6 +753,8 @@ const VoxelizePass = struct {
                     .emissive = object.emissive,
                     .target_cascade = target_cascade,
                     .n_triangles = n_triangles,
+                    .first_index = object.model.first_index,
+                    .first_vertex = object.model.first_vertex,
                 },
                 @sizeOf(VoxelizeUBO),
             );

@@ -66,13 +66,18 @@ void main() {
     vec4 acc = vec4(0.0, 0.0, 0.0, 0.0);
     float d = 0.0;
 
+    uint current_cascade = cascadeAt(pos);
     for (int i = 0; i < 1024; ++i) {
+        if (current_cascade != cascadeAt(pos)) {
+            d = 0.0;
+            current_cascade = cascadeAt(pos);
+        }
         float step = 0.5 * voxelSize(cascadeAt(pos));
         d += step;
         pos += step * ray_dir;
         float occlusion = voxelAt(pos);
         vec4 voxel_color = vec4(cascade_colors[cascadeAt(pos) % 8], occlusion);
-        voxel_color = vec4(voxel_color.rgb * exp(-d*0.05), voxel_color.a);
+        voxel_color = vec4(voxel_color.rgb * exp(-d/step*0.05), voxel_color.a);
         acc.rgb += voxel_color.rgb * occlusion * (1.0 - acc.a);
         acc.a += voxel_color.a * (1.0 - acc.a);
 
