@@ -393,7 +393,7 @@ const VoxelizePass = struct {
         half_life: f32 align(16),
     };
     const InjectUBO = extern struct {
-        light_space_matrix: [16]f32 align(16),
+        inverse_light_space_matrix: [16]f32 align(16),
         light_intensity: f32,
     };
 
@@ -732,7 +732,7 @@ const VoxelizePass = struct {
         const bins = try sdl.createGPUBuffer(device, &.{
             .usage = sdl.c.SDL_GPU_BUFFERUSAGE_COMPUTE_STORAGE_READ |
                 sdl.c.SDL_GPU_BUFFERUSAGE_COMPUTE_STORAGE_WRITE,
-            .size = 2 * len_cascades * @sizeOf(u32),
+            .size = shadowmap_width * shadowmap_height * 2 * @sizeOf(u32),
         });
         errdefer sdl.releaseGPUBuffer(device, bins);
 
@@ -1042,7 +1042,7 @@ const VoxelizePass = struct {
             .anchors = pass.anchors,
         }, @sizeOf(CommonUBO));
         sdl.pushGPUComputeUniformData(command_buffer, 1, &InjectUBO{
-            .light_space_matrix = zm.matToArr(light_space_matrix),
+            .inverse_light_space_matrix = zm.matToArr(zm.inverse(light_space_matrix)),
             .light_intensity = light_intensity,
         }, @sizeOf(InjectUBO));
         sdl.dispatchGPUCompute(
@@ -1086,7 +1086,7 @@ const VoxelizePass = struct {
             .anchors = pass.anchors,
         }, @sizeOf(CommonUBO));
         sdl.pushGPUComputeUniformData(command_buffer, 1, &InjectUBO{
-            .light_space_matrix = zm.matToArr(light_space_matrix),
+            .inverse_light_space_matrix = zm.matToArr(zm.inverse(light_space_matrix)),
             .light_intensity = light_intensity,
         }, @sizeOf(InjectUBO));
         sdl.dispatchGPUCompute(

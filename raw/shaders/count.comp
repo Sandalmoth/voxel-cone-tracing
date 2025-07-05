@@ -1,25 +1,70 @@
 #version 460
 
+#include "include/defines.glsl"
+
 layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
 
-layout(set = 0, binding = 0) uniform usampler2D u_shadowmap;
+layout(set = 0, binding = 0) uniform sampler2D u_shadowmap;
 
 layout(std430, set = 1, binding = 0) buffer BinCounters {
     uint bin_counters[];
 };
 
-layout(std140, set = 2, binding = 0) uniform VoxelizeUBO {
-    mat4 model_matrix;
-    vec4 diffuse; // rgb 0-1
-    vec4 emissive; // rgb 0-inf
-    uint target_cascade;
-    uint n_triangles;
-    uint first_index;
-    uint first_vertex;
+layout(std140, set = 2, binding = 0) uniform CommonUBO {
+    uvec4 cascade_size; // xyz
+    uvec4 cascade_mask;
+    uint n_cascades;
+    float min_voxel_size;
+    vec4 anchors[MAX_CASCADES];
 };
 layout(std140, set = 2, binding = 1) uniform InjectUBO {
-    mat4 light_matrix;
+    mat4 inverse_light_matrix;
     float light_intensity;
 };
 
-void main() {}
+#include "include/voxel_utils.glsl"
+
+vec3 worldPos(vec2 uv, float depth) {
+    vec4 ndc = vec4(
+        2.0 * uv.x - 1.0,
+        1.0 - 2.0 * uv.y,
+        depth,
+        1.0
+    );
+    vec4 world_pos = inverse_light_matrix * ndc;
+    world_pos /= world_pos.w;
+    return world_pos.rgb;
+}
+
+void main() {
+    ivec2 shadowmap_size = textureSize(u_shadowmap, 0);    
+    ivec2 global_id = ivec2(gl_GlobalInvocationID.xy);
+    if (global_id.x >= shadowmap_size.x || global_id.y >= shadowmap_size.y) return;
+
+    float depth00 = texelFetch(u_shadowmap, global_id + ivec2(0, 0), 0).r;
+    float depth01 = texelFetch(u_shadowmap, global_id + ivec2(0, 1), 0).r;
+    float depth10 = texelFetch(u_shadowmap, global_id + ivec2(1, 0), 0).r;
+    float depth11 = texelFetch(u_shadowmap, global_id + ivec2(1, 1), 0).r;
+
+    vec2 uv = vec2(global_id) / vec2(shadowmap_size - 1);
+    vec3 world00 = worldPos(uv, depth00);
+    vec3 world01 = worldPos(uv, depth01);
+    vec3 world10 = worldPos(uv, depth10);
+    vec3 world11 = worldPos(uv, depth11);
+
+    // might be better to pick one than to average
+    vec3 world = 0.25 * (world00 + world01 + world10 + world11);
+    // vec3 dx = (world10 + world11 - world00 - world01) * 0.5;
+    // vec3 dy = (world01 + world11 - world00 - world10) * 0.5;
+    // vec3 normal = normalize(cross(dx, dy));
+
+    ivec3 cascade_size_half = ivec3(cascade_size.xyz / 2);
+    for (int i = 0; i < n_cascades; ++i) {
+        float voxel_size = voxelSize(i);
+        ivec3 voxel_pos = ivec3(floor((world - anchors[i].xyz) / voxel_size));
+        if (voxel_pos.x < -cascade_size_half.x || voxel_pos.x >= cascade_size_half.x ||
+            voxel_pos.y < -cascade_size_half.y || voxel_pos.y >= cascade_size_half.y ||
+            voxel_pos.z < -cascade_size_half.z || voxel_pos.z >= cascade_size_half.z) continue;
+        atomicAdd(bin_counters[indexFromCascadePos(i, voxel_pos)], 1);
+    }
+}

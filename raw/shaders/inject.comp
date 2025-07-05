@@ -1,5 +1,7 @@
 #version 460
 
+#include "include/defines.glsl"
+
 struct Bin {
     vec3 normal;
     float light_intensity;
@@ -26,14 +28,12 @@ layout(std430, set = 0, binding = 4) readonly buffer DiffuseTargets {
 layout(rgba16f, set = 1, binding = 0) uniform image3D u_luma_targets;
 layout(rg16f, set = 1, binding = 1) uniform image3D u_chroma_targets;
 
-layout(std140, set = 2, binding = 0) uniform VoxelizeUBO {
-    mat4 model_matrix;
-    vec4 diffuse; // rgb 0-1
-    vec4 emissive; // rgb 0-inf
-    uint target_cascade;
-    uint n_triangles;
-    uint first_index;
-    uint first_vertex;
+layout(std140, set = 2, binding = 0) uniform CommonUBO {
+    uvec4 cascade_size; // xyz
+    uvec4 cascade_mask;
+    uint n_cascades;
+    float min_voxel_size;
+    vec4 anchors[MAX_CASCADES];
 };
 
 void main() {}
