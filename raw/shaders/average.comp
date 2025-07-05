@@ -8,15 +8,15 @@ layout(std430, set = 0, binding = 0) readonly buffer OpacityTargets {
 layout(std430, set = 0, binding = 1) readonly buffer DiffuseTargets {
     uint diffuse_targets[];
 };
-layout(std430, set = 1, binding = 2) readonly buffer OldOpacityCascades {
-    uint old_opacity_cascades[];
+layout(std430, set = 0, binding = 2) readonly buffer OldOpacityCascades {
+    float old_opacity_cascades[];
 };
-layout(std430, set = 1, binding = 3) readonly buffer OldDiffuseCascades {
+layout(std430, set = 0, binding = 3) readonly buffer OldDiffuseCascades {
     uint old_diffuse_cascades[];
 };
 
 layout(std430, set = 1, binding = 0) buffer NewOpacityCascades {
-    uint new_opacity_cascades[];
+    float new_opacity_cascades[];
 };
 layout(std430, set = 1, binding = 1) buffer NewDiffuseCascades {
     uint new_diffuse_cascades[];
@@ -33,9 +33,21 @@ layout(std140, set = 2, binding = 0) uniform CommonUBO {
 layout(std140, set = 2, binding = 1) uniform AverageUBO {
     vec4 old_anchor; // xyz
     vec4 new_anchor; // xyz
+    float half_life;
 };
 
 #include "include/voxel_utils.glsl"
+
+int floorDiv2(int x) {
+    return x >= 0 ? x / 2 : (x - 1) / 2;
+}
+ivec3 floorDiv2(ivec3 v) {
+    return ivec3(
+        floorDiv2(v.x),
+        floorDiv2(v.y),
+        floorDiv2(v.z)
+    );
+}
 
 void main() {
     uint global_id = gl_GlobalInvocationID.x;
@@ -43,16 +55,39 @@ void main() {
     
     uint cascade = indexToCascade(global_id);
 
-    // TODO reproject and blend
-    new_opacity_cascades[global_id] = opacity_targets[global_id];
-    new_diffuse_cascades[global_id] = diffuse_targets[global_id];
+    // TODO actually test whether reprojection improves visual outcome
+    // new_opacity_cascades[global_id] = float(bitCount(opacity_targets[global_id])) / 32.0;
+    // new_diffuse_cascades[global_id] = diffuse_targets[global_id];
+    
+    ivec3 voxel_pos = indexToPos(global_id);
+    vec3 anchor_move = (new_anchor.xyz - old_anchor.xyz) / voxelSize(cascade);
+    ivec3 reprojected_pos = voxel_pos + ivec3(round(anchor_move));
+    uint reprojected_cascade = cascade;
 
-    // // TEST
-    // if (cascade == 0) {
-    //     new_opacity_cascades[global_id] = 0xFFFFFFFF;
-    //     new_diffuse_cascades[global_id] = 0xFFFFFFFF;
-    // } else {
-    //     new_opacity_cascades[global_id] = 0;
-    //     new_diffuse_cascades[global_id] = 0;
-    // }
+    // could probably optimize this to not use a loop
+    while (reprojected_pos.x < -int(cascade_size.x) / 2 ||
+           reprojected_pos.x >= int(cascade_size.x) / 2 ||
+           reprojected_pos.y < -int(cascade_size.y) / 2 ||
+           reprojected_pos.y >= int(cascade_size.y) / 2 ||
+           reprojected_pos.z < -int(cascade_size.z) / 2 ||
+           reprojected_pos.z >= int(cascade_size.z) / 2) {
+        reprojected_pos = floorDiv2(reprojected_pos);
+        reprojected_cascade += 1;
+    }
+
+    float old_opacity = 0;
+    uint old_diffuse = 0;
+    if (reprojected_cascade < n_cascades) {
+        uint reprojected_index = indexFromCascadePos(reprojected_cascade, reprojected_pos);
+        old_opacity = old_opacity_cascades[reprojected_index];
+        old_diffuse = old_diffuse_cascades[reprojected_index];
+    }
+    float new_opacity = float(bitCount(opacity_targets[global_id])) / 32.0;
+    uint new_diffuse = diffuse_targets[global_id];
+
+    float alpha = 1.0 - pow(0.5, 1.0 / (0.5 * float(1 << cascade / 2)));
+    float mixed_opacity = mix(old_opacity, new_opacity, alpha);
+    if (mixed_opacity < 0.05) mixed_opacity = 0.0;
+    new_opacity_cascades[global_id] = clamp(mix(old_opacity, new_opacity, alpha), 0, 1);
+    new_diffuse_cascades[global_id] = old_diffuse | new_diffuse; // blend explicitly
 }

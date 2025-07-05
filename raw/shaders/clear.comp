@@ -32,11 +32,6 @@ layout(std140, set = 2, binding = 1) uniform ClearUBO {
 
 #include "include/voxel_utils.glsl"
 
-int iabsmax(ivec3 a) {
-    ivec3 b = abs(a);
-    return max(b.x, max(b.y, b.z));
-}
-
 int floorDiv2(int x) {
     return x >= 0 ? x / 2 : (x - 1) / 2;
 }
@@ -68,9 +63,12 @@ void main() {
     uint reprojected_cascade = cascade;
 
     // could probably optimize this to not use a loop
-    while (reprojected_pos.x < -int(cascade_size.x) / 2 || reprojected_pos.x >= int(cascade_size.x) / 2 ||
-           reprojected_pos.y < -int(cascade_size.y) / 2 || reprojected_pos.y >= int(cascade_size.y) / 2 ||
-           reprojected_pos.z < -int(cascade_size.z) / 2 || reprojected_pos.z >= int(cascade_size.z) / 2) {
+    while (reprojected_pos.x < -int(cascade_size.x) / 2 ||
+           reprojected_pos.x >= int(cascade_size.x) / 2 ||
+           reprojected_pos.y < -int(cascade_size.y) / 2 ||
+           reprojected_pos.y >= int(cascade_size.y) / 2 ||
+           reprojected_pos.z < -int(cascade_size.z) / 2 ||
+           reprojected_pos.z >= int(cascade_size.z) / 2) {
         reprojected_pos = floorDiv2(reprojected_pos);
         reprojected_cascade += 1;
     }
@@ -82,5 +80,5 @@ void main() {
     } else {
         new_opacity_targets[global_id] = 0u;
         new_diffuse_targets[global_id] = 0u;
-    };
+    }
 }

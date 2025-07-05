@@ -3,7 +3,7 @@
 layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
 
 layout(std430, set = 0, binding = 0) readonly buffer OpacityCascades {
-    uint opacity_cascades[];
+    float opacity_cascades[];
 };
 layout(std430, set = 0, binding = 1) readonly buffer DiffuseCascades {
     uint diffuse_cascades[];
@@ -31,7 +31,7 @@ float voxelAt(vec3 pos) {
     if (cascade >= n_cascades) return 0.0;
     float voxel_size = voxelSize(cascade);
     ivec3 voxel_pos = ivec3(floor(pos / voxel_size));
-    return float(opacity_cascades[indexFromCascadePos(cascade, voxel_pos)]) / 4294967296.0;
+    return opacity_cascades[indexFromCascadePos(cascade, voxel_pos)];
 }
 
 const vec3 cascade_colors[8] = {

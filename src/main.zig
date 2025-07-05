@@ -358,6 +358,7 @@ const VoxelizePass = struct {
     const AverageUBO = extern struct {
         old_anchor: [3]f32 align(16),
         new_anchor: [3]f32 align(16),
+        half_life: f32,
     };
     const VoxelizeUBO = extern struct {
         model_matrix: [16]f32 align(16),
@@ -541,13 +542,13 @@ const VoxelizePass = struct {
         opacity_cascades[0] = try sdl.createGPUBuffer(device, &.{
             .usage = sdl.c.SDL_GPU_BUFFERUSAGE_COMPUTE_STORAGE_READ |
                 sdl.c.SDL_GPU_BUFFERUSAGE_COMPUTE_STORAGE_WRITE,
-            .size = len_cascades * @sizeOf(u32),
+            .size = len_cascades * @sizeOf(f32),
         });
         errdefer sdl.releaseGPUBuffer(device, opacity_cascades[0]);
         opacity_cascades[1] = try sdl.createGPUBuffer(device, &.{
             .usage = sdl.c.SDL_GPU_BUFFERUSAGE_COMPUTE_STORAGE_READ |
                 sdl.c.SDL_GPU_BUFFERUSAGE_COMPUTE_STORAGE_WRITE,
-            .size = len_cascades * @sizeOf(u32),
+            .size = len_cascades * @sizeOf(f32),
         });
         errdefer sdl.releaseGPUBuffer(device, opacity_cascades[1]);
 
@@ -804,6 +805,7 @@ const VoxelizePass = struct {
         sdl.pushGPUComputeUniformData(command_buffer, 1, &AverageUBO{
             .old_anchor = pass.old_anchor,
             .new_anchor = pass.new_anchor,
+            .half_life = 0.25, // NOTE think about units?
         }, @sizeOf(AverageUBO));
         sdl.dispatchGPUCompute(average_pass, (len_cascades + 63) / 64, 1, 1);
         sdl.endGPUComputePass(average_pass);
