@@ -159,6 +159,12 @@ pub fn main() !void {
             camera.update(&input);
             if (input.peek(.toggle_debug_view).pressed) debug_mode = !debug_mode;
             if (input.peek(.trigger_capture).pressed) try trigger();
+            if (input.peek(.prev_debug_view).pressed) {
+                debug_pass.debug_view = (debug_pass.debug_view + 1) % 2;
+            }
+            if (input.peek(.next_debug_view).pressed) {
+                debug_pass.debug_view = (debug_pass.debug_view + 1) % 2;
+            }
 
             input.decay();
             lag -= tick_ns;
@@ -245,11 +251,14 @@ const DebugPass = struct {
     const DebugUBO = extern struct {
         inverse_view_matrix: [16]f32 align(16),
         inverse_projection_matrix: [16]f32 align(16),
+        debug_view: u32 align(16),
     };
     device: *sdl.GPUDevice,
 
     pipeline: *sdl.GPUComputePipeline,
     color_target: *sdl.GPUTexture,
+
+    debug_view: u32 = 0,
 
     fn init(gpa: std.mem.Allocator, device: *sdl.GPUDevice) !DebugPass {
         const debug_pipeline = blk: {
@@ -335,6 +344,7 @@ const DebugPass = struct {
         sdl.pushGPUComputeUniformData(command_buffer, 1, &DebugUBO{
             .inverse_view_matrix = zm.matToArr(zm.inverse(camera_view)),
             .inverse_projection_matrix = zm.matToArr(zm.inverse(camera_projection)),
+            .debug_view = pass.debug_view,
         }, @sizeOf(DebugUBO));
         sdl.dispatchGPUCompute(debug_pass, (640 + 7) / 8, (360 + 7) / 8, 1);
         sdl.endGPUComputePass(debug_pass);
@@ -358,7 +368,7 @@ const VoxelizePass = struct {
     const AverageUBO = extern struct {
         old_anchor: [3]f32 align(16),
         new_anchor: [3]f32 align(16),
-        half_life: f32,
+        half_life: f32 align(16),
     };
     const VoxelizeUBO = extern struct {
         model_matrix: [16]f32 align(16),
@@ -805,7 +815,7 @@ const VoxelizePass = struct {
         sdl.pushGPUComputeUniformData(command_buffer, 1, &AverageUBO{
             .old_anchor = pass.old_anchor,
             .new_anchor = pass.new_anchor,
-            .half_life = 0.25, // NOTE think about units?
+            .half_life = 0.5, // NOTE think about units?
         }, @sizeOf(AverageUBO));
         sdl.dispatchGPUCompute(average_pass, (len_cascades + 63) / 64, 1, 1);
         sdl.endGPUComputePass(average_pass);
