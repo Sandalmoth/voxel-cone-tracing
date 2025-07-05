@@ -832,7 +832,7 @@ const VoxelizePass = struct {
         }, @sizeOf(CommonUBO));
         sdl.pushGPUComputeUniformData(command_buffer, 1, &AverageUBO{
             .anchor_moves = pass.anchor_moves,
-            .half_life = 0.5, // NOTE think about units?
+            .half_life = 1.0, // NOTE think about units?
         }, @sizeOf(AverageUBO));
         sdl.dispatchGPUCompute(average_pass, (len_cascades + 63) / 64, 1, 1);
         sdl.endGPUComputePass(average_pass);
