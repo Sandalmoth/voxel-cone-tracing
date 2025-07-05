@@ -6,6 +6,8 @@ const sdl = @import("sdl.zig");
 const Input = @import("input.zig");
 const Scene = @import("scene.zig");
 
+const MAX_ANCHORS = 8;
+
 const log = std.log;
 const perf_counter = @import("perfcounter.zig");
 
@@ -317,7 +319,7 @@ const DebugPass = struct {
     fn run(
         pass: *DebugPass,
         command_buffer: *sdl.GPUCommandBuffer,
-        cascade_anchors: [8][4]f32,
+        cascade_anchors: [MAX_ANCHORS][4]f32,
         opacity_cascades: *sdl.GPUBuffer,
         diffuse_cascades: *sdl.GPUBuffer,
         camera_view: zm.Mat,
@@ -358,11 +360,10 @@ const VoxelizePass = struct {
         cascade_mask: [4]u32 align(16),
         n_cascades: u32 align(16),
         min_voxel_size: f32,
-        anchors: [8][4]f32 align(16),
+        anchors: [MAX_ANCHORS][4]f32 align(16),
     };
     const ClearUBO = extern struct {
-        old_anchor: [3]f32 align(16),
-        new_anchor: [3]f32 align(16),
+        anchor_moves: [MAX_ANCHORS][4]f32 align(16),
         clear_mask: u32 align(16),
     };
     const AverageUBO = extern struct {
@@ -430,8 +431,8 @@ const VoxelizePass = struct {
     chroma_cascades: *sdl.GPUTexture,
 
     ix_time_slice: u32 = @intCast(time_slices.len - 1),
-    anchors: [8][4]f32 = .{.{ 0.0, 0.0, 0.0, 0.0 }} ** 8,
-    anchor_moves: [8][4]f32 = .{.{ 0.0, 0.0, 0.0, 0.0 }} ** 8,
+    anchors: [MAX_ANCHORS][4]f32 = .{.{ 0.0, 0.0, 0.0, 0.0 }} ** MAX_ANCHORS,
+    anchor_moves: [MAX_ANCHORS][4]f32 = .{.{ 0.0, 0.0, 0.0, 0.0 }} ** MAX_ANCHORS,
     ix_old_slot: u32 = 0,
     ix_new_slot: u32 = 1,
 
@@ -690,7 +691,24 @@ const VoxelizePass = struct {
         pass.ix_time_slice = (pass.ix_time_slice + 1) % @as(u32, @intCast(time_slices.len));
         std.mem.swap(u32, &pass.ix_old_slot, &pass.ix_new_slot);
         // TODO update anchors
-        _ = anchor;
+        // std.debug.print("\n{any}\n", .{anchor});
+        for (0..n_cascades) |i| {
+            const cascade_voxel_size = min_voxel_size * std.math.pow(f32, 2.0, @floatFromInt(i));
+            const old_anchor = pass.anchors[i];
+            pass.anchors[i] = .{
+                2.0 * cascade_voxel_size * @floor(0.5 * anchor[0] / cascade_voxel_size),
+                2.0 * cascade_voxel_size * @floor(0.5 * anchor[1] / cascade_voxel_size),
+                2.0 * cascade_voxel_size * @floor(0.5 * anchor[2] / cascade_voxel_size),
+                0.0,
+            };
+            pass.anchor_moves[i] = .{
+                pass.anchors[i][0] - old_anchor[0],
+                pass.anchors[i][1] - old_anchor[1],
+                pass.anchors[i][2] - old_anchor[2],
+                0.0,
+            };
+            // std.debug.print("{}\t{any}\t{any}\n", .{ i, pass.anchors[i], pass.anchor_moves[i] });
+        }
 
         var clear_mask: u32 = 0;
         for (time_slices[pass.ix_time_slice]) |target_cascade| {
@@ -719,8 +737,7 @@ const VoxelizePass = struct {
             .anchors = pass.anchors,
         }, @sizeOf(CommonUBO));
         sdl.pushGPUComputeUniformData(command_buffer, 1, &ClearUBO{
-            .old_anchor = undefined,
-            .new_anchor = undefined,
+            .anchor_moves = pass.anchor_moves,
             .clear_mask = clear_mask,
         }, @sizeOf(ClearUBO));
         sdl.dispatchGPUCompute(clear_pass, (len_cascades + 63) / 64, 1, 1);

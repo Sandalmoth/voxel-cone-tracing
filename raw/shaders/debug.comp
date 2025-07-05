@@ -34,7 +34,7 @@ float voxelAt(vec3 pos) {
     uint cascade = cascadeAt(pos);
     if (cascade >= n_cascades) return 0.0;
     float voxel_size = voxelSize(cascade);
-    ivec3 voxel_pos = ivec3(floor(pos / voxel_size));
+    ivec3 voxel_pos = ivec3(floor((pos - anchors[cascade].xyz) / voxel_size));
     return opacity_cascades[indexFromCascadePos(cascade, voxel_pos)];
 }
 
@@ -82,36 +82,32 @@ void main() {
 
     if (debug_view == 0) {
     
-        uint current_cascade = cascadeAt(pos);
         float d = 0.0;
+        float step = min_voxel_size * 0.25;
         for (int i = 0; i < 1024; ++i) {
-            if (current_cascade != cascadeAt(pos)) {
-                d = 0.0;
-                current_cascade = cascadeAt(pos);
-            }
-            float step = 0.5 * voxelSize(cascadeAt(pos));
             d += step;
+            step *= 1.01;
             pos += step * ray_dir;
             float occlusion = voxelAt(pos);
-            vec4 voxel_color = vec4(cascade_colors[cascadeAt(pos) % 8], occlusion);
-            voxel_color = vec4(voxel_color.rgb * exp(-d/step*0.05), voxel_color.a);
-            acc.rgb += voxel_color.rgb * occlusion * (1.0 - acc.a);
-            acc.a += voxel_color.a * (1.0 - acc.a);
+            vec3 voxel_color = cascade_colors[cascadeAt(pos) % 8];
+            voxel_color = voxel_color * exp(-d*0.15);
+            acc.rgb += voxel_color * occlusion * (1.0 - acc.a);
+            acc.a += occlusion * (1.0 - acc.a);
 
             if (acc.a > 0.99) break;
         }
 
     } else if (debug_view == 1) {
 
-        for (int i = 0; i < 1024; ++i) {
-            float step = 0.5 * voxelSize(cascadeAt(pos));
-            pos += step * ray_dir;
-            vec4 voxel_color = voxelAt2(pos);
-            acc.rgb += voxel_color.rgb * voxel_color.a * (1.0 - acc.a);
-            acc.a += voxel_color.a * (1.0 - acc.a);
+        // for (int i = 0; i < 1024; ++i) {
+        //     float step = 0.5 * voxelSize(cascadeAt(pos));
+        //     pos += step * ray_dir;
+        //     vec4 voxel_color = voxelAt2(pos);
+        //     acc.rgb += voxel_color.rgb * voxel_color.a * (1.0 - acc.a);
+        //     acc.a += voxel_color.a * (1.0 - acc.a);
 
-            if (acc.a > 0.99) break;
-        }
+        //     if (acc.a > 0.99) break;
+        // }
         
     }
 

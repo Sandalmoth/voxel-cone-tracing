@@ -27,8 +27,7 @@ layout(std140, set = 2, binding = 0) uniform CommonUBO {
 };
 
 layout(std140, set = 2, binding = 1) uniform ClearUBO {
-    vec4 old_anchor; // xyz
-    vec4 new_anchor; // xyz
+    vec4 anchor_moves[MAX_CASCADES];
     uint clear_mask;
 };
 
@@ -54,34 +53,34 @@ void main() {
         new_opacity_targets[global_id] = 0u;
         new_diffuse_targets[global_id] = 0u;
         return;
-    } else {
-        new_opacity_targets[global_id] = old_opacity_targets[global_id];
-        new_diffuse_targets[global_id] = old_diffuse_targets[global_id];
-        return;
+    // } else {
+    //     new_opacity_targets[global_id] = old_opacity_targets[global_id];
+    //     new_diffuse_targets[global_id] = old_diffuse_targets[global_id];
+    //     return;
     }
 
-    // ivec3 voxel_pos = indexToPos(global_id);
-    // vec3 anchor_move = (new_anchor.xyz - old_anchor.xyz) / voxelSize(cascade);
-    // ivec3 reprojected_pos = voxel_pos + ivec3(round(anchor_move));
-    // uint reprojected_cascade = cascade;
+    ivec3 voxel_pos = indexToPos(global_id);
+    vec3 anchor_move = anchor_moves[cascade].xyz / voxelSize(cascade);
+    ivec3 reprojected_pos = voxel_pos + ivec3(round(anchor_move));
+    uint reprojected_cascade = cascade;
 
-    // // could probably optimize this to not use a loop
-    // while (reprojected_pos.x < -int(cascade_size.x) / 2 ||
-    //        reprojected_pos.x >= int(cascade_size.x) / 2 ||
-    //        reprojected_pos.y < -int(cascade_size.y) / 2 ||
-    //        reprojected_pos.y >= int(cascade_size.y) / 2 ||
-    //        reprojected_pos.z < -int(cascade_size.z) / 2 ||
-    //        reprojected_pos.z >= int(cascade_size.z) / 2) {
-    //     reprojected_pos = floorDiv2(reprojected_pos);
-    //     reprojected_cascade += 1;
-    // }
+    // could probably optimize this to not use a loop
+    while (reprojected_pos.x < -int(cascade_size.x) / 2 ||
+           reprojected_pos.x >= int(cascade_size.x) / 2 ||
+           reprojected_pos.y < -int(cascade_size.y) / 2 ||
+           reprojected_pos.y >= int(cascade_size.y) / 2 ||
+           reprojected_pos.z < -int(cascade_size.z) / 2 ||
+           reprojected_pos.z >= int(cascade_size.z) / 2) {
+        reprojected_pos = floorDiv2(reprojected_pos);
+        reprojected_cascade += 1;
+    }
 
-    // if (reprojected_cascade < n_cascades) {
-    //     uint reprojected_index = indexFromCascadePos(reprojected_cascade, reprojected_pos);
-    //     new_opacity_targets[global_id] = old_opacity_targets[reprojected_index];
-    //     new_diffuse_targets[global_id] = old_diffuse_targets[reprojected_index];
-    // } else {
-    //     new_opacity_targets[global_id] = 0u;
-    //     new_diffuse_targets[global_id] = 0u;
-    // }
+    if (reprojected_cascade < n_cascades) {
+        uint reprojected_index = indexFromCascadePos(reprojected_cascade, reprojected_pos);
+        new_opacity_targets[global_id] = old_opacity_targets[reprojected_index];
+        new_diffuse_targets[global_id] = old_diffuse_targets[reprojected_index];
+    } else {
+        new_opacity_targets[global_id] = 0u;
+        new_diffuse_targets[global_id] = 0u;
+    }
 }
