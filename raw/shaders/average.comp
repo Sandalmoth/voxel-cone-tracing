@@ -33,8 +33,7 @@ layout(std140, set = 2, binding = 0) uniform CommonUBO {
 };
 
 layout(std140, set = 2, binding = 1) uniform AverageUBO {
-    vec4 old_anchor; // xyz
-    vec4 new_anchor; // xyz
+    vec4 anchor_moves[MAX_CASCADES];
     float half_life;
 };
 
@@ -56,13 +55,14 @@ void main() {
     if (global_id >= n_cascades * cascade_size[3]) return;
     
     // TODO actually test whether reprojection improves visual outcome
+    // i think it either way won't be very visible for static geometry
     new_opacity_cascades[global_id] = float(bitCount(opacity_targets[global_id])) / 32.0;
     new_diffuse_cascades[global_id] =
         packUnorm4x8(vec4(unpackDiffuse(diffuse_targets[global_id]), 0.0));
     
     // uint cascade = indexToCascade(global_id);
     // ivec3 voxel_pos = indexToPos(global_id);
-    // vec3 anchor_move = (new_anchor.xyz - old_anchor.xyz) / voxelSize(cascade);
+    // vec3 anchor_move = anchor_moves[cascade].xyz / voxelSize(cascade);
     // ivec3 reprojected_pos = voxel_pos + ivec3(round(anchor_move));
     // uint reprojected_cascade = cascade;
 
@@ -88,7 +88,8 @@ void main() {
     // vec3 new_diffuse = unpackDiffuse(diffuse_targets[global_id]);
 
     // // we might want to use a slower fade for color
-    // float alpha = 1.0 - pow(0.5, 1.0 / (half_life * float(1 << cascade / 2)));
+    // // float alpha = 1.0 - pow(0.5, 1.0 / (half_life * float(1 << cascade / 2)));
+    // alpha = 0.01;
 
     // float mixed_opacity = mix(old_opacity, new_opacity, alpha);
     // if (mixed_opacity < 0.01) mixed_opacity = 0.0;

@@ -367,8 +367,7 @@ const VoxelizePass = struct {
         clear_mask: u32 align(16),
     };
     const AverageUBO = extern struct {
-        old_anchor: [3]f32 align(16),
-        new_anchor: [3]f32 align(16),
+        anchor_moves: [MAX_ANCHORS][4]f32 align(16),
         half_life: f32 align(16),
     };
     const VoxelizeUBO = extern struct {
@@ -830,8 +829,7 @@ const VoxelizePass = struct {
             .anchors = pass.anchors,
         }, @sizeOf(CommonUBO));
         sdl.pushGPUComputeUniformData(command_buffer, 1, &AverageUBO{
-            .old_anchor = undefined,
-            .new_anchor = undefined,
+            .anchor_moves = pass.anchor_moves,
             .half_life = 0.5, // NOTE think about units?
         }, @sizeOf(AverageUBO));
         sdl.dispatchGPUCompute(average_pass, (len_cascades + 63) / 64, 1, 1);

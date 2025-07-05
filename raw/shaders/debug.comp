@@ -30,7 +30,6 @@ layout(std140, set = 2, binding = 1) uniform DebugUBO {
 #include "include/voxel_utils.glsl"
 
 float voxelAt(vec3 pos) {
-    // TODO incorporate anchor???
     uint cascade = cascadeAt(pos);
     if (cascade >= n_cascades) return 0.0;
     float voxel_size = voxelSize(cascade);
@@ -39,11 +38,10 @@ float voxelAt(vec3 pos) {
 }
 
 vec4 voxelAt2(vec3 pos) {
-    // TODO incorporate anchor???
     uint cascade = cascadeAt(pos);
     if (cascade >= n_cascades) return vec4(0.0);
     float voxel_size = voxelSize(cascade);
-    ivec3 voxel_pos = ivec3(floor(pos / voxel_size));
+    ivec3 voxel_pos = ivec3(floor((pos - anchors[cascade].xyz) / voxel_size));
     float opacity = opacity_cascades[indexFromCascadePos(cascade, voxel_pos)];
     vec4 diffuse = unpackUnorm4x8(diffuse_cascades[indexFromCascadePos(cascade, voxel_pos)]);
     return vec4(diffuse.rgb, opacity);
@@ -86,8 +84,8 @@ void main() {
         float step = min_voxel_size * 0.25;
         for (int i = 0; i < 1024; ++i) {
             d += step;
-            step *= 1.01;
             pos += step * ray_dir;
+            step *= 1.01;
             float occlusion = voxelAt(pos);
             vec3 voxel_color = cascade_colors[cascadeAt(pos) % 8];
             voxel_color = voxel_color * exp(-d*0.15);
@@ -99,15 +97,16 @@ void main() {
 
     } else if (debug_view == 1) {
 
-        // for (int i = 0; i < 1024; ++i) {
-        //     float step = 0.5 * voxelSize(cascadeAt(pos));
-        //     pos += step * ray_dir;
-        //     vec4 voxel_color = voxelAt2(pos);
-        //     acc.rgb += voxel_color.rgb * voxel_color.a * (1.0 - acc.a);
-        //     acc.a += voxel_color.a * (1.0 - acc.a);
+        float step = min_voxel_size * 0.25;
+        for (int i = 0; i < 1024; ++i) {
+            pos += step * ray_dir;
+            step *= 1.01;
+            vec4 voxel_color = voxelAt2(pos);
+            acc.rgb += voxel_color.rgb * voxel_color.a * (1.0 - acc.a);
+            acc.a += voxel_color.a * (1.0 - acc.a);
 
-        //     if (acc.a > 0.99) break;
-        // }
+            if (acc.a > 0.99) break;
+        }
         
     }
 
