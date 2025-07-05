@@ -1,3 +1,39 @@
 #version 460
 
+struct Bin {
+    vec3 normal;
+    float light_intensity;
+};
+
+layout(local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
+
+layout(std430, set = 0, binding = 0) readonly buffer BinCounters {
+    uint bin_counters[];
+};
+layout(std430, set = 0, binding = 1) readonly buffer BinOffsets {
+    uint bin_offsets[];
+};
+layout(std430, set = 0, binding = 2) readonly buffer Bins {
+    Bin bins[];
+};
+layout(std430, set = 0, binding = 3) readonly buffer OpacityTargets {
+    uint opacity_targets[];
+};
+layout(std430, set = 0, binding = 4) readonly buffer DiffuseTargets {
+    uint diffuse_targets[];
+};
+
+layout(rgba16f, set = 1, binding = 0) uniform image3D u_luma_targets;
+layout(rg16f, set = 1, binding = 1) uniform image3D u_chroma_targets;
+
+layout(std140, set = 2, binding = 0) uniform VoxelizeUBO {
+    mat4 model_matrix;
+    vec4 diffuse; // rgb 0-1
+    vec4 emissive; // rgb 0-inf
+    uint target_cascade;
+    uint n_triangles;
+    uint first_index;
+    uint first_vertex;
+};
+
 void main() {}

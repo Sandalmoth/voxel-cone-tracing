@@ -19,6 +19,9 @@ pub const max_tick_ns: u64 = 250_000_000;
 const window_width = 1920;
 const window_height = 1080;
 
+const shadowmap_width = 1024;
+const shadowmap_height = 1024;
+
 pub fn main() !void {
     sdl.setMainReady();
 
@@ -199,16 +202,6 @@ pub fn main() !void {
             try voxelize_pass.end(command_buffer);
         }
         {
-            try draw_pass.beginPrepass(command_buffer);
-            for (scene.objects.items) |object| draw_pass.drawObjectPrepass(
-                command_buffer,
-                object,
-                camera_matrix,
-                alpha,
-            );
-            draw_pass.endPrepass(command_buffer);
-        }
-        {
             try draw_pass.beginShadowmap(command_buffer);
             for (scene.objects.items) |object| draw_pass.drawObjectShadowmap(
                 command_buffer,
@@ -217,6 +210,23 @@ pub fn main() !void {
                 alpha,
             );
             draw_pass.endShadowmap(command_buffer);
+        }
+        try voxelize_pass.inject(
+            command_buffer,
+            draw_pass.shadowmap_target,
+            .{ shadowmap_width, shadowmap_height },
+            light_matrix,
+            0.5,
+        );
+        {
+            try draw_pass.beginPrepass(command_buffer);
+            for (scene.objects.items) |object| draw_pass.drawObjectPrepass(
+                command_buffer,
+                object,
+                camera_matrix,
+                alpha,
+            );
+            draw_pass.endPrepass(command_buffer);
         }
         {
             try draw_pass.begin(command_buffer);
@@ -588,8 +598,8 @@ const VoxelizePass = struct {
                 .num_readwrite_storage_textures = 0,
                 .num_readwrite_storage_buffers = 1,
                 .num_uniform_buffers = 0,
-                .threadcount_x = 8,
-                .threadcount_y = 8,
+                .threadcount_x = 64,
+                .threadcount_y = 1,
                 .threadcount_z = 1,
             });
         };
@@ -639,11 +649,11 @@ const VoxelizePass = struct {
                 .num_samplers = 0,
                 .num_readonly_storage_textures = 0,
                 .num_readonly_storage_buffers = 5,
-                .num_readwrite_storage_textures = 0,
-                .num_readwrite_storage_buffers = 2,
+                .num_readwrite_storage_textures = 2,
+                .num_readwrite_storage_buffers = 0,
                 .num_uniform_buffers = 1,
-                .threadcount_x = 8,
-                .threadcount_y = 8,
+                .threadcount_x = 64,
+                .threadcount_y = 1,
                 .threadcount_z = 1,
             });
         };
@@ -1007,12 +1017,113 @@ const VoxelizePass = struct {
         pass: *VoxelizePass,
         command_buffer: *sdl.GPUCommandBuffer,
         shadowmap: *sdl.GPUTexture,
+        shadowmap_size: [2]u32,
+        light_space_matrix: zm.Mat,
         light_intensity: f32,
     ) !void {
-        _ = pass;
-        _ = command_buffer;
-        _ = shadowmap;
-        _ = light_intensity;
+        sdl.pushGPUDebugGroup(command_buffer, "inject");
+
+        const count_pass = try sdl.beginGPUComputePass(
+            command_buffer,
+            &.{},
+            &.{
+                .{ .buffer = pass.bin_counters, .cycle = true },
+            },
+        );
+        sdl.bindGPUComputePipeline(count_pass, pass.count_pipeline);
+        sdl.bindGPUComputeSamplers(count_pass, 0, &.{
+            .{ .texture = shadowmap, .sampler = pass.sampler },
+        });
+        sdl.pushGPUComputeUniformData(command_buffer, 0, &CommonUBO{
+            .cascade_size = cascade_size,
+            .cascade_mask = cascade_mask,
+            .n_cascades = n_cascades,
+            .min_voxel_size = min_voxel_size,
+            .anchors = pass.anchors,
+        }, @sizeOf(CommonUBO));
+        sdl.pushGPUComputeUniformData(command_buffer, 1, &InjectUBO{
+            .light_space_matrix = zm.matToArr(light_space_matrix),
+            .light_intensity = light_intensity,
+        }, @sizeOf(InjectUBO));
+        sdl.dispatchGPUCompute(
+            count_pass,
+            (shadowmap_size[0] + 7) / 8,
+            (shadowmap_size[1] + 7) / 8,
+            1,
+        );
+        sdl.endGPUComputePass(count_pass);
+
+        const prefix_pass = try sdl.beginGPUComputePass(
+            command_buffer,
+            &.{},
+            &.{.{ .buffer = pass.bin_offsets, .cycle = true }},
+        );
+        sdl.bindGPUComputePipeline(prefix_pass, pass.prefix_pipeline);
+        sdl.bindGPUComputeStorageBuffers(prefix_pass, 0, &.{pass.bin_counters});
+        sdl.dispatchGPUCompute(prefix_pass, (len_cascades + 63) / 64, 1, 1);
+        sdl.endGPUComputePass(prefix_pass);
+
+        const assign_pass = try sdl.beginGPUComputePass(
+            command_buffer,
+            &.{},
+            &.{
+                .{ .buffer = pass.bins, .cycle = true },
+            },
+        );
+        sdl.bindGPUComputePipeline(assign_pass, pass.assign_pipeline);
+        sdl.bindGPUComputeSamplers(assign_pass, 0, &.{
+            .{ .texture = shadowmap, .sampler = pass.sampler },
+        });
+        sdl.bindGPUComputeStorageBuffers(assign_pass, 0, &.{
+            pass.bin_counters,
+            pass.bin_offsets,
+        });
+        sdl.pushGPUComputeUniformData(command_buffer, 0, &CommonUBO{
+            .cascade_size = cascade_size,
+            .cascade_mask = cascade_mask,
+            .n_cascades = n_cascades,
+            .min_voxel_size = min_voxel_size,
+            .anchors = pass.anchors,
+        }, @sizeOf(CommonUBO));
+        sdl.pushGPUComputeUniformData(command_buffer, 1, &InjectUBO{
+            .light_space_matrix = zm.matToArr(light_space_matrix),
+            .light_intensity = light_intensity,
+        }, @sizeOf(InjectUBO));
+        sdl.dispatchGPUCompute(
+            assign_pass,
+            (shadowmap_size[0] + 7) / 8,
+            (shadowmap_size[1] + 7) / 8,
+            1,
+        );
+        sdl.endGPUComputePass(assign_pass);
+
+        const inject_pass = try sdl.beginGPUComputePass(
+            command_buffer,
+            &.{
+                .{ .texture = pass.luma_cascades, .cycle = true },
+                .{ .texture = pass.chroma_cascades, .cycle = true },
+            },
+            &.{},
+        );
+        sdl.bindGPUComputePipeline(inject_pass, pass.inject_pipeline);
+        sdl.bindGPUComputeStorageBuffers(assign_pass, 0, &.{
+            pass.bin_counters,
+            pass.bin_offsets,
+            pass.bins,
+            pass.opacity_cascades[pass.ix_new_slot],
+            pass.diffuse_cascades[pass.ix_new_slot],
+        });
+        sdl.pushGPUComputeUniformData(command_buffer, 0, &CommonUBO{
+            .cascade_size = cascade_size,
+            .cascade_mask = cascade_mask,
+            .n_cascades = n_cascades,
+            .min_voxel_size = min_voxel_size,
+            .anchors = pass.anchors,
+        }, @sizeOf(CommonUBO));
+        sdl.dispatchGPUCompute(inject_pass, (len_cascades + 63) / 64, 1, 1);
+        sdl.endGPUComputePass(inject_pass);
+
+        sdl.popGPUDebugGroup(command_buffer);
     }
 };
 
@@ -1287,8 +1398,8 @@ const DrawPass = struct {
             .format = @intCast(depth_stencil_format),
             .usage = sdl.c.SDL_GPU_TEXTUREUSAGE_DEPTH_STENCIL_TARGET |
                 sdl.c.SDL_GPU_TEXTUREUSAGE_SAMPLER,
-            .width = 1024,
-            .height = 1024,
+            .width = shadowmap_width,
+            .height = shadowmap_height,
             .layer_count_or_depth = 1,
             .num_levels = 1,
             .sample_count = sdl.c.SDL_GPU_SAMPLECOUNT_1,
