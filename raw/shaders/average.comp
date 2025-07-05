@@ -1,5 +1,7 @@
 #version 460
 
+#include "include/defines.glsl"
+
 layout(local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
 
 layout(std430, set = 0, binding = 0) readonly buffer OpacityTargets {
@@ -25,9 +27,9 @@ layout(std430, set = 1, binding = 1) buffer NewDiffuseCascades {
 layout(std140, set = 2, binding = 0) uniform CommonUBO {
     uvec4 cascade_size; // xyz
     uvec4 cascade_mask;
-    vec4 anchor;
     uint n_cascades;
     float min_voxel_size;
+    vec4 anchors[MAX_CASCADES];
 };
 
 layout(std140, set = 2, binding = 1) uniform AverageUBO {
@@ -51,57 +53,56 @@ ivec3 floorDiv2(ivec3 v) {
 
 void main() {
     uint global_id = gl_GlobalInvocationID.x;
-    if (global_id >= n_cascades * cascade_size[0] * cascade_size[1] * cascade_size[2]) return;
+    if (global_id >= n_cascades * cascade_size[3]) return;
     
-    uint cascade = indexToCascade(global_id);
-
     // TODO actually test whether reprojection improves visual outcome
-    // new_opacity_cascades[global_id] = float(bitCount(opacity_targets[global_id])) / 32.0;
-    // new_diffuse_cascades[global_id] =
-    //     packUnorm4x8(vec4(unpackDiffuse(diffuse_targets[global_id]), 0.0));
+    new_opacity_cascades[global_id] = float(bitCount(opacity_targets[global_id])) / 32.0;
+    new_diffuse_cascades[global_id] =
+        packUnorm4x8(vec4(unpackDiffuse(diffuse_targets[global_id]), 0.0));
     
-    ivec3 voxel_pos = indexToPos(global_id);
-    vec3 anchor_move = (new_anchor.xyz - old_anchor.xyz) / voxelSize(cascade);
-    ivec3 reprojected_pos = voxel_pos + ivec3(round(anchor_move));
-    uint reprojected_cascade = cascade;
+    // uint cascade = indexToCascade(global_id);
+    // ivec3 voxel_pos = indexToPos(global_id);
+    // vec3 anchor_move = (new_anchor.xyz - old_anchor.xyz) / voxelSize(cascade);
+    // ivec3 reprojected_pos = voxel_pos + ivec3(round(anchor_move));
+    // uint reprojected_cascade = cascade;
 
-    // could probably optimize this to not use a loop
-    while (reprojected_pos.x < -int(cascade_size.x) / 2 ||
-           reprojected_pos.x >= int(cascade_size.x) / 2 ||
-           reprojected_pos.y < -int(cascade_size.y) / 2 ||
-           reprojected_pos.y >= int(cascade_size.y) / 2 ||
-           reprojected_pos.z < -int(cascade_size.z) / 2 ||
-           reprojected_pos.z >= int(cascade_size.z) / 2) {
-        reprojected_pos = floorDiv2(reprojected_pos);
-        reprojected_cascade += 1;
-    }
+    // // could probably optimize this to not use a loop
+    // while (reprojected_pos.x < -int(cascade_size.x) / 2 ||
+    //        reprojected_pos.x >= int(cascade_size.x) / 2 ||
+    //        reprojected_pos.y < -int(cascade_size.y) / 2 ||
+    //        reprojected_pos.y >= int(cascade_size.y) / 2 ||
+    //        reprojected_pos.z < -int(cascade_size.z) / 2 ||
+    //        reprojected_pos.z >= int(cascade_size.z) / 2) {
+    //     reprojected_pos = floorDiv2(reprojected_pos);
+    //     reprojected_cascade += 1;
+    // }
 
-    float old_opacity = 0;
-    vec3 old_diffuse = vec3(0.0, 0.0, 0.0);
-    if (reprojected_cascade < n_cascades) {
-        uint reprojected_index = indexFromCascadePos(reprojected_cascade, reprojected_pos);
-        old_opacity = old_opacity_cascades[reprojected_index];
-        old_diffuse = unpackUnorm4x8(old_diffuse_cascades[reprojected_index]).rgb;
-    }
-    float new_opacity = float(bitCount(opacity_targets[global_id])) / 32.0;
-    vec3 new_diffuse = unpackDiffuse(diffuse_targets[global_id]);
+    // float old_opacity = 0;
+    // vec3 old_diffuse = vec3(0.0, 0.0, 0.0);
+    // if (reprojected_cascade < n_cascades) {
+    //     uint reprojected_index = indexFromCascadePos(reprojected_cascade, reprojected_pos);
+    //     old_opacity = old_opacity_cascades[reprojected_index];
+    //     old_diffuse = unpackUnorm4x8(old_diffuse_cascades[reprojected_index]).rgb;
+    // }
+    // float new_opacity = float(bitCount(opacity_targets[global_id])) / 32.0;
+    // vec3 new_diffuse = unpackDiffuse(diffuse_targets[global_id]);
 
-    // we might want to use a slower fade for color
-    float alpha = 1.0 - pow(0.5, 1.0 / (half_life * float(1 << cascade / 2)));
+    // // we might want to use a slower fade for color
+    // float alpha = 1.0 - pow(0.5, 1.0 / (half_life * float(1 << cascade / 2)));
 
-    float mixed_opacity = mix(old_opacity, new_opacity, alpha);
-    if (mixed_opacity < 0.01) mixed_opacity = 0.0;
-    new_opacity_cascades[global_id] = mixed_opacity;
+    // float mixed_opacity = mix(old_opacity, new_opacity, alpha);
+    // if (mixed_opacity < 0.01) mixed_opacity = 0.0;
+    // new_opacity_cascades[global_id] = mixed_opacity;
     
-    vec3 mixed_diffuse;
-    if (new_opacity > 0) {
-        if (old_opacity > 0) {
-            mixed_diffuse = mix(old_diffuse, new_diffuse, alpha);
-        } else {
-            mixed_diffuse = new_diffuse;
-        }
-    } else {
-        mixed_diffuse = old_diffuse;
-    }
-    new_diffuse_cascades[global_id] = packUnorm4x8(vec4(mixed_diffuse, 0.0));
+    // vec3 mixed_diffuse;
+    // if (new_opacity > 0) {
+    //     if (old_opacity > 0) {
+    //         mixed_diffuse = mix(old_diffuse, new_diffuse, alpha);
+    //     } else {
+    //         mixed_diffuse = new_diffuse;
+    //     }
+    // } else {
+    //     mixed_diffuse = old_diffuse;
+    // }
+    // new_diffuse_cascades[global_id] = packUnorm4x8(vec4(mixed_diffuse, 0.0));
 }

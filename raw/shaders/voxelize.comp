@@ -1,5 +1,7 @@
 #version 460
 
+#include "include/defines.glsl"
+
 #define M_PI 3.1415926535897932384626433832795
 
 layout(local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
@@ -27,9 +29,9 @@ layout(std430, set = 1, binding = 1) buffer DiffuseTargets {
 layout(std140, set = 2, binding = 0) uniform CommonUBO {
     uvec4 cascade_size; // xyz
     uvec4 cascade_mask;
-    vec4 anchor;
     uint n_cascades;
     float min_voxel_size;
+    vec4 anchors[MAX_CASCADES];
 };
 layout(std140, set = 2, binding = 1) uniform VoxelizeUBO {
     mat4 model_matrix;
@@ -116,9 +118,9 @@ void main() {
     vec3 p1_model = vertices[i1].position;
     vec3 p2_model = vertices[i2].position;
 
-    vec3 p0 = (model_matrix * vec4(p0_model, 1.0)).xyz - anchor.xyz;
-    vec3 p1 = (model_matrix * vec4(p1_model, 1.0)).xyz - anchor.xyz;
-    vec3 p2 = (model_matrix * vec4(p2_model, 1.0)).xyz - anchor.xyz;
+    vec3 p0 = (model_matrix * vec4(p0_model, 1.0)).xyz - anchors[target_cascade].xyz;
+    vec3 p1 = (model_matrix * vec4(p1_model, 1.0)).xyz - anchors[target_cascade].xyz;
+    vec3 p2 = (model_matrix * vec4(p2_model, 1.0)).xyz - anchors[target_cascade].xyz;
 
     float voxel_size = voxelSize(target_cascade);
 

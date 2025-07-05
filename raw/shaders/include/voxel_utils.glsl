@@ -1,14 +1,14 @@
 // the function in this header rely on the existance of some shared values
 // layout(std140, set = 2, binding = 0) uniform CommonUBO {
-//     uvec4 cascade_size; // x, y, z, _
+//     uvec4 cascade_size; // x, y, z, x*y*z
 //     uvec4 cascade_mask; // x, y, z, x*y*z
-//     vec4 anchor; // x, y, z, _
 //     uint n_cascades;
 //     float min_voxel_size;
+//     vec4 anchors[MAX_CASCADES]; // x, y, z, _
 // };
 
 uint indexToCascade(uint index) {
-    return index / (cascade_size[0] * cascade_size[1] * cascade_size[2]);
+    return index / cascade_size[3];
 }
 
 ivec3 indexToPos(uint index) {
@@ -21,7 +21,7 @@ ivec3 indexToPos(uint index) {
 
 uint indexFromCascadePos(uint cascade, ivec3 pos) {
     pos += ivec3(cascade_size.xyz / 2);
-    return cascade * cascade_size[0] * cascade_size[1] * cascade_size[2] +
+    return cascade * cascade_size[3] +
            pos.x +
            pos.y * cascade_size[0] +
            pos.z * cascade_size[0] * cascade_size[1];
