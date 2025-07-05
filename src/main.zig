@@ -168,6 +168,8 @@ pub fn main() !void {
                 debug_pass.debug_view = (debug_pass.debug_view + 1) % 2;
             }
 
+            for (scene.motions.items) |*motion| motion.update(tick);
+
             input.decay();
             lag -= tick_ns;
             time += 1.0 / @as(f64, @floatFromInt(ticks_per_second));

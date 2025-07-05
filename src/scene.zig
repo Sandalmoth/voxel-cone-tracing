@@ -27,12 +27,82 @@ const Model = struct {
     first_vertex: u32,
     first_index: u32,
     n_indices: u32,
+
+    fn init(device: *sdl.c.SDL_GPUDevice, vertices: []const Vertex, indices: []const u32) !Model {
+        const sizeof_vertices: u32 = @intCast(vertices.len * @sizeOf(Vertex));
+        const sizeof_indices: u32 = @intCast(indices.len * @sizeOf(u32));
+
+        const vertex_buffer = try sdl.createGPUBuffer(device, &.{
+            .usage = sdl.c.SDL_GPU_BUFFERUSAGE_VERTEX |
+                sdl.c.SDL_GPU_BUFFERUSAGE_COMPUTE_STORAGE_READ,
+            .size = sizeof_vertices,
+        });
+        errdefer sdl.releaseGPUBuffer(device, vertex_buffer);
+
+        const index_buffer = try sdl.createGPUBuffer(device, &.{
+            .usage = sdl.c.SDL_GPU_BUFFERUSAGE_INDEX |
+                sdl.c.SDL_GPU_BUFFERUSAGE_COMPUTE_STORAGE_READ,
+            .size = sizeof_indices,
+        });
+        errdefer sdl.releaseGPUBuffer(device, index_buffer);
+
+        const transfer_buffer = try sdl.createGPUTransferBuffer(device, &.{
+            .usage = sdl.c.SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD,
+            .size = sizeof_vertices + sizeof_indices,
+        });
+        defer sdl.releaseGPUTransferBuffer(device, transfer_buffer);
+
+        const command_buffer = try sdl.acquireGPUCommandBuffer(device);
+
+        const bytes: [*]u8 = @alignCast(@ptrCast(
+            try sdl.mapGPUTransferBuffer(device, transfer_buffer, true),
+        ));
+        @memcpy(@as([*]Vertex, @alignCast(@ptrCast(bytes))), vertices);
+        @memcpy(@as([*]u32, @alignCast(@ptrCast(bytes + sizeof_vertices))), indices);
+        sdl.unmapGPUTransferBuffer(device, transfer_buffer);
+
+        const copy_pass = try sdl.beginGPUCopyPass(command_buffer);
+        sdl.uploadToGPUBuffer(copy_pass, &.{
+            .transfer_buffer = transfer_buffer,
+            .offset = 0,
+        }, &.{
+            .buffer = vertex_buffer,
+            .offset = 0,
+            .size = sizeof_vertices,
+        }, false);
+        sdl.uploadToGPUBuffer(copy_pass, &.{
+            .transfer_buffer = transfer_buffer,
+            .offset = sizeof_vertices,
+        }, &.{
+            .buffer = index_buffer,
+            .offset = 0,
+            .size = sizeof_indices,
+        }, false);
+        sdl.endGPUCopyPass(copy_pass);
+
+        try sdl.submitGPUCommandBuffer(command_buffer);
+
+        return .{
+            .vertex_buffer = vertex_buffer,
+            .index_buffer = index_buffer,
+            .first_vertex = 0,
+            .first_index = 0,
+            .n_indices = @intCast(indices.len),
+        };
+    }
+
+    fn deinit(model: *Model, device: *sdl.c.SDL_GPUDevice) void {
+        sdl.releaseGPUBuffer(device, model.index_buffer);
+        sdl.releaseGPUBuffer(device, model.vertex_buffer);
+        model.* = undefined;
+    }
 };
 
 pub const Object = struct {
     model: *Model,
 
     position: zm.Vec,
+    prev_position: zm.Vec,
     rotation: zm.Quat,
     scale: zm.Vec,
 
@@ -41,19 +111,35 @@ pub const Object = struct {
     roughness: f32,
 
     pub fn transform(object: Object, alpha: f32) zm.Mat {
-        _ = alpha;
+        const position = zm.lerp(object.prev_position, object.position, alpha);
         return zm.mul(
             zm.scalingV(object.scale),
             zm.mul(
                 zm.matFromQuat(object.rotation),
-                zm.translationV(object.position),
+                zm.translationV(position),
             ),
         );
     }
 };
 
+const Motion = struct {
+    object: *Object,
+    timer: f32,
+    amplitude: zm.Vec,
+    frequency: zm.Vec,
+
+    pub fn update(motion: *Motion, dt: f32) void {
+        motion.timer += dt;
+        const velocity: zm.Vec =
+            motion.amplitude * @cos(motion.frequency * zm.f32x4s(motion.timer));
+        motion.object.prev_position = motion.object.position;
+        motion.object.position += velocity * zm.f32x4s(dt);
+    }
+};
+
 models: std.ArrayListUnmanaged(Model),
 objects: std.ArrayListUnmanaged(Object),
+motions: std.ArrayListUnmanaged(Motion),
 
 pub fn init(gpa: std.mem.Allocator, device: *sdl.GPUDevice) !Scene {
     const data_models = try std.fs.cwd().readFileAlloc(
@@ -132,10 +218,18 @@ pub fn init(gpa: std.mem.Allocator, device: *sdl.GPUDevice) !Scene {
 
     try sdl.submitGPUCommandBuffer(command_buffer);
 
-    var models = try std.ArrayListUnmanaged(Model).initCapacity(gpa, json_models.value.len);
+    var models = try std.ArrayListUnmanaged(Model).initCapacity(
+        gpa,
+        json_models.value.len + 1,
+    );
     errdefer models.deinit(gpa);
-    var objects = try std.ArrayListUnmanaged(Object).initCapacity(gpa, json_models.value.len * 3);
+    var objects = try std.ArrayListUnmanaged(Object).initCapacity(
+        gpa,
+        json_models.value.len * 3 + 1,
+    );
     errdefer objects.deinit(gpa);
+    var motions = try std.ArrayListUnmanaged(Motion).initCapacity(gpa, 1);
+    errdefer motions.deinit(gpa);
     for (json_models.value) |model| {
         std.debug.assert(model.num_indices % 3 == 0);
         std.debug.assert(model.num_indices >= model.num_vertices);
@@ -149,6 +243,7 @@ pub fn init(gpa: std.mem.Allocator, device: *sdl.GPUDevice) !Scene {
         objects.appendAssumeCapacity(.{
             .model = &models.items[models.items.len - 1],
             .position = zm.f32x4(0.0, 0.0, 0.0, 1.0),
+            .prev_position = zm.f32x4(0.0, 0.0, 0.0, 1.0),
             .rotation = zm.qidentity(),
             .scale = zm.f32x4(1.0, 1.0, 1.0, 0.0),
             .diffuse = castColor(model.diffuse),
@@ -158,6 +253,7 @@ pub fn init(gpa: std.mem.Allocator, device: *sdl.GPUDevice) !Scene {
         objects.appendAssumeCapacity(.{
             .model = &models.items[models.items.len - 1],
             .position = zm.f32x4(0.0, -60.0, 1.0, 1.0),
+            .prev_position = zm.f32x4(0.0, -60.0, 1.0, 1.0),
             .rotation = zm.qidentity(),
             .scale = zm.f32x4(7.0, 7.0, 7.0, 0.0),
             .diffuse = castColor(model.diffuse),
@@ -167,6 +263,7 @@ pub fn init(gpa: std.mem.Allocator, device: *sdl.GPUDevice) !Scene {
         objects.appendAssumeCapacity(.{
             .model = &models.items[models.items.len - 1],
             .position = zm.f32x4(0.0, -450.0, 7.0, 1.0),
+            .prev_position = zm.f32x4(0.0, -450.0, 7.0, 1.0),
             .rotation = zm.qidentity(),
             .scale = zm.f32x4(49.0, 49.0, 49.0, 0.0),
             .diffuse = castColor(model.diffuse),
@@ -175,20 +272,43 @@ pub fn init(gpa: std.mem.Allocator, device: *sdl.GPUDevice) !Scene {
         });
     }
 
+    const cube = try Model.init(device, &cube_vertices, &cube_indices);
+    errdefer cube.deinit(device);
+    models.appendAssumeCapacity(cube);
+    objects.appendAssumeCapacity(.{
+        .model = &models.items[models.items.len - 1],
+        .position = zm.f32x4(0.0, 1.5, 0.0, 1.0),
+        .prev_position = zm.f32x4(0.0, 1.5, 0.0, 1.0),
+        .rotation = zm.qidentity(),
+        .scale = zm.f32x4(1.0, 1.0, 1.0, 0.0),
+        .diffuse = zm.f32x4(0.5, 0.5, 0.5, 1.0),
+        .emissive = .{ 0.0, 0.0, 0.0, 0.0 },
+        .roughness = 0.0,
+    });
+    motions.appendAssumeCapacity(.{
+        .object = &objects.items[objects.items.len - 1],
+        .timer = 0.0,
+        .amplitude = zm.f32x4(20.0, 0.0, 0.0, 0.0),
+        .frequency = zm.f32x4(3.0, 0.0, 0.0, 0.0),
+    });
+
     return .{
         .models = models,
         .objects = objects,
+        .motions = motions,
     };
 }
 
 pub fn deinit(scene: *Scene, gpa: std.mem.Allocator, device: *sdl.GPUDevice) void {
     // FIXME? is we mix in other vertex buffers, this gets awkward
     if (scene.models.items.len > 0) {
-        sdl.releaseGPUBuffer(device, scene.models.items[0].vertex_buffer);
-        sdl.releaseGPUBuffer(device, scene.models.items[0].index_buffer);
+        sdl.releaseGPUBuffer(device, scene.models.items[0].vertex_buffer); // sponza
+        sdl.releaseGPUBuffer(device, scene.models.items[0].index_buffer); // sponza
+        scene.models.items[scene.models.items.len - 1].deinit(device); // the cube
     }
     scene.models.deinit(gpa);
     scene.objects.deinit(gpa);
+    scene.motions.deinit(gpa);
     scene.* = undefined;
 }
 
@@ -200,3 +320,39 @@ fn castColor(a: []const u8) [4]f32 {
         0,
     };
 }
+
+pub const cube_vertices = [_]Vertex{
+    .{ .position = .{ 0.5, 0.5, 0.5 }, .normal = .{ 0, 0, 1 } },
+    .{ .position = .{ 0.5, -0.5, 0.5 }, .normal = .{ 0, 0, 1 } },
+    .{ .position = .{ -0.5, 0.5, 0.5 }, .normal = .{ 0, 0, 1 } },
+    .{ .position = .{ -0.5, -0.5, 0.5 }, .normal = .{ 0, 0, 1 } },
+    .{ .position = .{ 0.5, 0.5, 0.5 }, .normal = .{ 0, 1, 0 } },
+    .{ .position = .{ 0.5, 0.5, -0.5 }, .normal = .{ 0, 1, 0 } },
+    .{ .position = .{ -0.5, 0.5, 0.5 }, .normal = .{ 0, 1, 0 } },
+    .{ .position = .{ -0.5, 0.5, -0.5 }, .normal = .{ 0, 1, 0 } },
+    .{ .position = .{ 0.5, 0.5, 0.5 }, .normal = .{ 1, 0, 0 } },
+    .{ .position = .{ 0.5, 0.5, -0.5 }, .normal = .{ 1, 0, 0 } },
+    .{ .position = .{ 0.5, -0.5, 0.5 }, .normal = .{ 1, 0, 0 } },
+    .{ .position = .{ 0.5, -0.5, -0.5 }, .normal = .{ 1, 0, 0 } },
+    .{ .position = .{ 0.5, 0.5, -0.5 }, .normal = .{ 0, 0, -1 } },
+    .{ .position = .{ 0.5, -0.5, -0.5 }, .normal = .{ 0, 0, -1 } },
+    .{ .position = .{ -0.5, 0.5, -0.5 }, .normal = .{ 0, 0, -1 } },
+    .{ .position = .{ -0.5, -0.5, -0.5 }, .normal = .{ 0, 0, -1 } },
+    .{ .position = .{ 0.5, -0.5, 0.5 }, .normal = .{ 0, -1, 0 } },
+    .{ .position = .{ 0.5, -0.5, -0.5 }, .normal = .{ 0, -1, 0 } },
+    .{ .position = .{ -0.5, -0.5, 0.5 }, .normal = .{ 0, -1, 0 } },
+    .{ .position = .{ -0.5, -0.5, -0.5 }, .normal = .{ 0, -1, 0 } },
+    .{ .position = .{ -0.5, 0.5, 0.5 }, .normal = .{ -1, 0, 0 } },
+    .{ .position = .{ -0.5, 0.5, -0.5 }, .normal = .{ -1, 0, 0 } },
+    .{ .position = .{ -0.5, -0.5, 0.5 }, .normal = .{ -1, 0, 0 } },
+    .{ .position = .{ -0.5, -0.5, -0.5 }, .normal = .{ -1, 0, 0 } },
+};
+
+pub const cube_indices = [_]u32{
+    4,  5,  6,  7,  6,  5,
+    12, 13, 14, 15, 14, 13,
+    20, 21, 22, 23, 22, 21,
+    2,  1,  0,  1,  2,  3,
+    10, 9,  8,  9,  10, 11,
+    18, 17, 16, 17, 18, 19,
+};

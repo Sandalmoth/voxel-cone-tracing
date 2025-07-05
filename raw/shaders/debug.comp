@@ -88,7 +88,7 @@ void main() {
             step *= 1.01;
             float occlusion = voxelAt(pos);
             vec3 voxel_color = cascade_colors[cascadeAt(pos) % 8];
-            voxel_color = voxel_color * exp(-d*0.15);
+            voxel_color = voxel_color * max(exp(-d*0.1), 0.01);
             acc.rgb += voxel_color * occlusion * (1.0 - acc.a);
             acc.a += occlusion * (1.0 - acc.a);
 
@@ -102,7 +102,7 @@ void main() {
             pos += step * ray_dir;
             step *= 1.01;
             vec4 voxel_color = voxelAt2(pos);
-            acc.rgb += voxel_color.rgb * voxel_color.a * (1.0 - acc.a);
+            acc.rgb += 0.5 * voxel_color.rgb * voxel_color.a * (1.0 - acc.a);
             acc.a += voxel_color.a * (1.0 - acc.a);
 
             if (acc.a > 0.99) break;
