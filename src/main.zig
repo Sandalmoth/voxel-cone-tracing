@@ -847,7 +847,6 @@ const DrawPass = struct {
 
     color_target: *sdl.GPUTexture,
     depth_target: *sdl.GPUTexture,
-    normal_target: *sdl.GPUTexture,
 
     shadowmap_target: *sdl.GPUTexture,
 
@@ -966,9 +965,6 @@ const DrawPass = struct {
         const color_target_descriptions = [_]sdl.GPUColorTargetDescription{
             .{ .format = sdl.c.SDL_GPU_TEXTUREFORMAT_R16G16B16A16_FLOAT }, // hdr color
         };
-        const color_target_descriptions_prepass = [_]sdl.GPUColorTargetDescription{
-            .{ .format = sdl.c.SDL_GPU_TEXTUREFORMAT_R16G16_FLOAT }, // normals
-        };
         // i don't like how there's no obvious name for this function in my renaming scheme...
         const depth_stencil_format = if (sdl.c.SDL_GPUTextureSupportsFormat(
             device,
@@ -992,7 +988,7 @@ const DrawPass = struct {
             },
             .multisample_state = .{},
             .depth_stencil_state = .{
-                .compare_op = sdl.c.SDL_GPU_COMPAREOP_GREATER_OR_EQUAL,
+                .compare_op = sdl.c.SDL_GPU_COMPAREOP_EQUAL,
                 .enable_depth_test = true,
                 .enable_depth_write = true, // i assume it doesn't matter?
             },
@@ -1026,8 +1022,8 @@ const DrawPass = struct {
                 .enable_depth_write = true,
             },
             .target_info = .{
-                .color_target_descriptions = &color_target_descriptions_prepass[0],
-                .num_color_targets = color_target_descriptions_prepass.len,
+                .color_target_descriptions = null,
+                .num_color_targets = 0,
                 .depth_stencil_format = @intCast(depth_stencil_format),
                 .has_depth_stencil_target = true,
             },
@@ -1095,18 +1091,6 @@ const DrawPass = struct {
         });
         errdefer sdl.releaseGPUTexture(device, depth_target);
 
-        const normal_target = try sdl.createGPUTexture(device, &.{
-            .type = sdl.c.SDL_GPU_TEXTURETYPE_2D,
-            .format = sdl.c.SDL_GPU_TEXTUREFORMAT_R16G16_FLOAT,
-            .usage = sdl.c.SDL_GPU_TEXTUREUSAGE_COLOR_TARGET | sdl.c.SDL_GPU_TEXTUREUSAGE_SAMPLER,
-            .width = window_width,
-            .height = window_height,
-            .layer_count_or_depth = 1,
-            .num_levels = 1,
-            .sample_count = sdl.c.SDL_GPU_SAMPLECOUNT_1,
-        });
-        errdefer sdl.releaseGPUTexture(device, normal_target);
-
         const shadowmap_target = try sdl.createGPUTexture(device, &.{
             .type = sdl.c.SDL_GPU_TEXTURETYPE_2D,
             .format = @intCast(depth_stencil_format),
@@ -1136,7 +1120,6 @@ const DrawPass = struct {
             .shadowmap_pipeline = shadowmap_pipeline,
             .color_target = color_target,
             .depth_target = depth_target,
-            .normal_target = normal_target,
             .shadowmap_target = shadowmap_target,
             .sampler = sampler,
         };
@@ -1145,7 +1128,6 @@ const DrawPass = struct {
     fn deinit(pass: *DrawPass) void {
         sdl.releaseGPUSampler(pass.device, pass.sampler);
         sdl.releaseGPUTexture(pass.device, pass.shadowmap_target);
-        sdl.releaseGPUTexture(pass.device, pass.normal_target);
         sdl.releaseGPUTexture(pass.device, pass.depth_target);
         sdl.releaseGPUTexture(pass.device, pass.color_target);
         sdl.releaseGPUGraphicsPipeline(pass.device, pass.shadowmap_pipeline);
@@ -1161,17 +1143,9 @@ const DrawPass = struct {
         std.debug.assert(pass.active_pass == null);
         sdl.pushGPUDebugGroup(command_buffer, "prepass");
 
-        const color_target_infos = [_]sdl.GPUColorTargetInfo{
-            .{
-                .texture = pass.normal_target,
-                .clear_color = sdl.FColor{ .r = 0.0, .g = 0.0, .b = 0.0, .a = 0.0 },
-                .load_op = sdl.c.SDL_GPU_LOADOP_CLEAR,
-                .store_op = sdl.c.SDL_GPU_STOREOP_STORE,
-            },
-        };
         pass.active_pass = try sdl.beginGPURenderPass(
             command_buffer,
-            &color_target_infos,
+            &.{},
             &.{
                 .texture = pass.depth_target,
                 .clear_depth = 0,
