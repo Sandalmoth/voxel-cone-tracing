@@ -36,4 +36,7 @@ layout(std140, set = 2, binding = 0) uniform CommonUBO {
     vec4 anchors[MAX_CASCADES];
 };
 
-void main() {}
+void main() {
+    uint global_id = gl_GlobalInvocationID.x;
+    if (global_id >= n_cascades * cascade_size[3]) return;
+}

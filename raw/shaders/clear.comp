@@ -17,6 +17,12 @@ layout(std430, set = 1, binding = 0) buffer NewOpacityTargets {
 layout(std430, set = 1, binding = 1) buffer NewDiffuseTargets {
     uint new_diffuse_targets[];
 };
+layout(std430, set = 1, binding = 0) buffer BinCounters {
+    uint bin_counters[];
+};
+layout(std430, set = 1, binding = 1) buffer BinOffsets {
+    uint bin_offsets[];
+};
 
 layout(std140, set = 2, binding = 0) uniform CommonUBO {
     uvec4 cascade_size; // xyz
@@ -47,6 +53,9 @@ ivec3 floorDiv2(ivec3 v) {
 void main() {
     uint global_id = gl_GlobalInvocationID.x;
     if (global_id >= n_cascades * cascade_size[3]) return;
+
+    bin_counters[global_id] = 0u;
+    bin_offsets[global_id] = 0u;
 
     uint cascade = indexToCascade(global_id);
     if (bool(clear_mask & (1u << cascade))) {

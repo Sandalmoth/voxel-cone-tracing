@@ -662,7 +662,7 @@ const VoxelizePass = struct {
                 .num_readonly_storage_textures = 0,
                 .num_readonly_storage_buffers = 2,
                 .num_readwrite_storage_textures = 0,
-                .num_readwrite_storage_buffers = 2,
+                .num_readwrite_storage_buffers = 4,
                 .num_uniform_buffers = 2,
                 .threadcount_x = 64,
                 .threadcount_y = 1,
@@ -768,9 +768,9 @@ const VoxelizePass = struct {
                 .format = sdl.c.SDL_GPU_SHADERFORMAT_SPIRV,
                 .num_samplers = 1,
                 .num_readonly_storage_textures = 0,
-                .num_readonly_storage_buffers = 2,
+                .num_readonly_storage_buffers = 1,
                 .num_readwrite_storage_textures = 0,
-                .num_readwrite_storage_buffers = 1,
+                .num_readwrite_storage_buffers = 2,
                 .num_uniform_buffers = 2,
                 .threadcount_x = 8,
                 .threadcount_y = 8,
@@ -1045,6 +1045,8 @@ const VoxelizePass = struct {
             &.{
                 .{ .buffer = pass.opacity_targets[pass.ix_new_slot], .cycle = true },
                 .{ .buffer = pass.diffuse_targets[pass.ix_new_slot], .cycle = true },
+                .{ .buffer = pass.bin_counters, .cycle = true },
+                .{ .buffer = pass.bin_offsets, .cycle = true },
             },
         );
         sdl.bindGPUComputePipeline(clear_pass, pass.clear_pipeline);
@@ -1177,7 +1179,7 @@ const VoxelizePass = struct {
             command_buffer,
             &.{},
             &.{
-                .{ .buffer = pass.bin_counters, .cycle = true },
+                .{ .buffer = pass.bin_offsets },
             },
         );
         sdl.bindGPUComputePipeline(count_pass, pass.count_pipeline);
@@ -1203,14 +1205,14 @@ const VoxelizePass = struct {
         );
         sdl.endGPUComputePass(count_pass);
 
-        // prefix sum here
-        try pass.prefix_pass.run(command_buffer, pass.bin_counters, len_cascades);
+        try pass.prefix_pass.run(command_buffer, pass.bin_offsets, len_cascades);
 
         const assign_pass = try sdl.beginGPUComputePass(
             command_buffer,
             &.{},
             &.{
                 .{ .buffer = pass.bins, .cycle = true },
+                .{ .buffer = pass.bin_counters },
             },
         );
         sdl.bindGPUComputePipeline(assign_pass, pass.assign_pipeline);
@@ -1218,7 +1220,6 @@ const VoxelizePass = struct {
             .{ .texture = shadowmap, .sampler = pass.sampler },
         });
         sdl.bindGPUComputeStorageBuffers(assign_pass, 0, &.{
-            pass.bin_counters,
             pass.bin_offsets,
         });
         sdl.pushGPUComputeUniformData(command_buffer, 0, &CommonUBO{

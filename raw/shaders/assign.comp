@@ -10,15 +10,15 @@ struct Bin {
 layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
 
 layout(set = 0, binding = 0) uniform sampler2D u_shadowmap;
-layout(std430, set = 0, binding = 1) readonly buffer BinCounters {
-    uint bin_counters[];
-};
-layout(std430, set = 0, binding = 2) readonly buffer BinOffsets {
+layout(std430, set = 0, binding = 1) readonly buffer BinOffsets {
     uint bin_offsets[];
 };
 
 layout(std430, set = 1, binding = 0) buffer Bins {
     Bin bins[];
+};
+layout(std430, set = 1, binding = 1) buffer BinCounters {
+    uint bin_counters[];
 };
 
 layout(std140, set = 2, binding = 0) uniform CommonUBO {
@@ -76,6 +76,8 @@ void main() {
         if (voxel_pos.x < -cascade_size_half.x || voxel_pos.x >= cascade_size_half.x ||
             voxel_pos.y < -cascade_size_half.y || voxel_pos.y >= cascade_size_half.y ||
             voxel_pos.z < -cascade_size_half.z || voxel_pos.z >= cascade_size_half.z) continue;
-        // atomicAdd(bin_counters[indexFromCascadePos(i, voxel_pos)], 1);
+        uint index = indexFromCascadePos(i, voxel_pos);
+        uint slot = atomicAdd(bin_counters[index], 1);
+        bins[bin_offsets[index] + slot] = Bin(normal, light_intensity);
     }
 }
