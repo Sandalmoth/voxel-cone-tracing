@@ -1,12 +1,97 @@
 #version 460
 
-layout(local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
+#define BLOCK_SIZE 256
 
-layout(std430, set = 0, binding = 0) readonly buffer BinCounters {
-    uint bin_counters[];
+layout(local_size_x = BLOCK_SIZE, local_size_y = 1, local_size_z = 1) in;
+
+layout(std430, set = 1, binding = 0) buffer Counters {
+    uint counters[];
 };
-layout(std430, set = 1, binding = 0) buffer BinOffsets {
-    uint bin_offsets[];
+layout(std430, set = 1, binding = 1) buffer Workspace {
+    uint workspace[];
 };
 
-void main() {}
+layout(std140, set = 2, binding = 0) uniform PrefixUBO {
+    uint mode;
+    uint n_counters; // number of items in counters or in workspace
+    uint workspace_offset;
+};
+
+shared uint local_hist[256];
+
+void main() {
+    uint global_id = gl_GlobalInvocationID.x;
+    uint local_id = gl_LocalInvocationID.x;
+    uint group_id = gl_WorkGroupID.x;
+    // uint n_blocks = (n_counters + BLOCK_SIZE - 1) / BLOCK_SIZE;
+
+    if (mode == 0) {
+        local_hist[local_id] = (global_id < n_counters) ? counters[global_id] : 0u;
+        barrier();
+
+        for (uint stride = 1; stride < BLOCK_SIZE; stride *= 2) {
+            uint index = (local_id + 1) * stride * 2 - 1;
+            if (index < BLOCK_SIZE)
+                local_hist[index] += local_hist[index - stride];
+            barrier();
+        }
+        if (local_id == BLOCK_SIZE - 1) {
+            workspace[group_id] = local_hist[BLOCK_SIZE - 1]; // store the total for the next pass
+            local_hist[BLOCK_SIZE - 1] = 0;
+        }
+        barrier();
+        for (uint stride = BLOCK_SIZE / 2; stride > 0; stride /= 2) {
+            uint index = (local_id + 1) * stride * 2 - 1;
+            if (index < BLOCK_SIZE) {
+                uint t = local_hist[index - stride];
+                local_hist[index - stride] = local_hist[index];
+                local_hist[index] += t;
+            }
+            barrier();
+        }
+
+        if (global_id < n_counters) {
+            counters[global_id] = local_hist[local_id];
+        }
+    }
+
+    if (mode == 1) {
+        local_hist[local_id] = (global_id < n_counters) ?
+            workspace[global_id + workspace_offset] : 0u;
+        barrier();
+
+        for (uint stride = 1; stride < BLOCK_SIZE; stride *= 2) {
+            uint index = (local_id + 1) * stride * 2 - 1;
+            if (index < BLOCK_SIZE)
+                local_hist[index] += local_hist[index - stride];
+            barrier();
+        }
+        if (local_id == BLOCK_SIZE - 1) {
+            workspace[group_id + n_counters + workspace_offset] = local_hist[BLOCK_SIZE - 1];
+            local_hist[BLOCK_SIZE - 1] = 0;
+        }
+        barrier();
+        for (uint stride = BLOCK_SIZE / 2; stride > 0; stride /= 2) {
+            uint index = (local_id + 1) * stride * 2 - 1;
+            if (index < BLOCK_SIZE) {
+                uint t = local_hist[index - stride];
+                local_hist[index - stride] = local_hist[index];
+                local_hist[index] += t;
+            }
+            barrier();
+        }
+
+        if (global_id < n_counters) {
+            workspace[global_id + workspace_offset] = local_hist[local_id];
+        }
+    }
+
+    if (mode == 2) {
+        workspace[global_id + workspace_offset] +=
+            workspace[group_id + n_counters + workspace_offset];   
+    }
+
+    if (mode == 3) {
+        counters[global_id] += workspace[group_id];
+    }
+}

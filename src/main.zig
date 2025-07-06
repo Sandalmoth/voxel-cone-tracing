@@ -261,6 +261,171 @@ pub fn main() !void {
     }
 }
 
+const PrefixSumPass = struct {
+    device: *sdl.GPUDevice,
+    pipeline: *sdl.GPUComputePipeline,
+    workspace: *sdl.GPUBuffer,
+
+    pub fn init(gpa: std.mem.Allocator, device: *sdl.GPUDevice, max_counts: u32) !PrefixSumPass {
+        const pipeline = blk: {
+            const file = try std.fs.cwd().openFile(
+                "data/shaders/prefix.comp.spv",
+                .{ .mode = .read_only },
+            );
+            defer file.close();
+            const bytes = try file.reader().readAllAlloc(gpa, 1_000_000);
+            defer gpa.free(bytes);
+
+            break :blk try sdl.createGPUComputePipeline(device, &.{
+                .code_size = bytes.len,
+                .code = bytes.ptr,
+                .entrypoint = "main",
+                .format = sdl.c.SDL_GPU_SHADERFORMAT_SPIRV,
+                .num_samplers = 0,
+                .num_readonly_storage_textures = 0,
+                .num_readonly_storage_buffers = 0,
+                .num_readwrite_storage_textures = 0,
+                .num_readwrite_storage_buffers = 2,
+                .num_uniform_buffers = 1,
+                .threadcount_x = 1,
+                .threadcount_y = 1,
+                .threadcount_z = 1,
+            });
+        };
+        errdefer sdl.releaseGPUComputePipeline(device, pipeline);
+
+        const max_counts_u64: u64 = @intCast(max_counts);
+        var workspace_size: u64 = 0;
+        workspace_size += (max_counts_u64 + 255) / 256;
+        workspace_size += (max_counts_u64 + 65535) / 65536;
+        workspace_size += (max_counts_u64 + 16777215) / 16777216;
+        workspace_size += (max_counts_u64 + 4294967295) / 4294967296;
+
+        const workspace = try sdl.createGPUBuffer(device, &.{
+            .usage = sdl.c.SDL_GPU_BUFFERUSAGE_COMPUTE_STORAGE_READ |
+                sdl.c.SDL_GPU_BUFFERUSAGE_COMPUTE_STORAGE_WRITE,
+            .size = @as(u32, @intCast(workspace_size)) * @sizeOf(u32),
+        });
+        errdefer sdl.releaseGPUBuffer(device, workspace);
+
+        return .{
+            .device = device,
+            .pipeline = pipeline,
+            .workspace = workspace,
+        };
+    }
+
+    pub fn deinit(pass: *PrefixSumPass) void {
+        sdl.releaseGPUBuffer(pass.device, pass.workspace);
+        sdl.releaseGPUComputePipeline(pass.device, pass.pipeline);
+        pass.* = undefined;
+    }
+
+    pub fn run(
+        pass: *PrefixSumPass,
+        command_buffer: *sdl.GPUCommandBuffer,
+        counts: *sdl.GPUBuffer,
+        n_counts: u32,
+    ) !void {
+        sdl.pushGPUDebugGroup(command_buffer, "prefix_sum");
+
+        const initial_pass = try sdl.beginGPUComputePass(
+            command_buffer,
+            &.{},
+            &.{
+                .{ .buffer = counts },
+                .{ .buffer = pass.workspace, .cycle = true },
+            },
+        );
+        sdl.bindGPUComputePipeline(initial_pass, pass.pipeline);
+        sdl.pushGPUComputeUniformData(command_buffer, 0, &[3]u32{
+            0,
+            n_counts,
+            0,
+        }, @sizeOf([3]u32));
+        sdl.dispatchGPUCompute(initial_pass, (n_counts + 255) / 256, 1, 1);
+        sdl.endGPUComputePass(initial_pass);
+
+        var n: u32 = (n_counts + 255) / 256;
+        var offset: u32 = 0;
+        var ns: [4]u32 = undefined;
+        var offsets: [4]u32 = undefined;
+        var m: u32 = 0;
+        while (n > 1) {
+            const internal_pass = try sdl.beginGPUComputePass(
+                command_buffer,
+                &.{},
+                &.{
+                    .{ .buffer = counts },
+                    .{ .buffer = pass.workspace },
+                },
+            );
+            sdl.bindGPUComputePipeline(internal_pass, pass.pipeline);
+            sdl.pushGPUComputeUniformData(command_buffer, 0, &[3]u32{
+                1,
+                n,
+                offset,
+            }, @sizeOf([3]u32));
+            sdl.dispatchGPUCompute(internal_pass, (n + 255) / 256, 1, 1);
+            sdl.endGPUComputePass(internal_pass);
+
+            ns[m] = n;
+            offsets[m] = offset;
+            m += 1;
+
+            offset += n;
+            n = (n + 255) / 256;
+        }
+
+        while (m > 1) {
+            n = ns[m - 2];
+            offset = offsets[m - 2];
+
+            const internal_pass = try sdl.beginGPUComputePass(
+                command_buffer,
+                &.{},
+                &.{
+                    .{ .buffer = counts },
+                    .{ .buffer = pass.workspace },
+                },
+            );
+            sdl.bindGPUComputePipeline(internal_pass, pass.pipeline);
+            sdl.pushGPUComputeUniformData(command_buffer, 0, &[3]u32{
+                2,
+                n,
+                offset,
+            }, @sizeOf([3]u32));
+            sdl.dispatchGPUCompute(internal_pass, (n + 255) / 256, 1, 1);
+            sdl.endGPUComputePass(internal_pass);
+
+            ns[m] = n;
+            offsets[m] = offset;
+            m -= 1;
+        }
+
+        if (m > 0) {
+            const final_pass = try sdl.beginGPUComputePass(
+                command_buffer,
+                &.{},
+                &.{
+                    .{ .buffer = counts },
+                    .{ .buffer = pass.workspace },
+                },
+            );
+            sdl.bindGPUComputePipeline(final_pass, pass.pipeline);
+            sdl.pushGPUComputeUniformData(command_buffer, 0, &[3]u32{
+                3,
+                n_counts,
+                0,
+            }, @sizeOf([3]u32));
+            sdl.dispatchGPUCompute(final_pass, (n_counts + 255) / 256, 1, 1);
+            sdl.endGPUComputePass(final_pass);
+        }
+
+        sdl.popGPUDebugGroup(command_buffer);
+    }
+};
+
 const DebugPass = struct {
     const DebugUBO = extern struct {
         inverse_view_matrix: [16]f32 align(16),
@@ -396,6 +561,14 @@ const VoxelizePass = struct {
         inverse_light_space_matrix: [16]f32 align(16),
         light_intensity: f32,
     };
+    const PrefixUBO = extern struct {
+        mode: u32,
+        pass: u32,
+        n_bins: u32,
+        offset_in: u32,
+        offset_out: u32,
+        block_sums_offset: u32,
+    };
 
     // these could be runtime values to allow for e.g. graphics settings
     const min_voxel_size = 0.1618;
@@ -461,9 +634,10 @@ const VoxelizePass = struct {
     // finally, process each bin, adding the light to the voxel
 
     count_pipeline: *sdl.GPUComputePipeline,
-    prefix_pipeline: *sdl.GPUComputePipeline,
     assign_pipeline: *sdl.GPUComputePipeline,
     inject_pipeline: *sdl.GPUComputePipeline,
+
+    prefix_pass: PrefixSumPass,
 
     bin_counters: *sdl.GPUBuffer,
     bin_offsets: *sdl.GPUBuffer,
@@ -577,33 +751,6 @@ const VoxelizePass = struct {
             });
         };
         errdefer sdl.releaseGPUComputePipeline(device, count_pipeline);
-
-        const prefix_pipeline = blk: {
-            const file = try std.fs.cwd().openFile(
-                "data/shaders/prefix.comp.spv",
-                .{ .mode = .read_only },
-            );
-            defer file.close();
-            const bytes = try file.reader().readAllAlloc(gpa, 1_000_000);
-            defer gpa.free(bytes);
-
-            break :blk try sdl.createGPUComputePipeline(device, &.{
-                .code_size = bytes.len,
-                .code = bytes.ptr,
-                .entrypoint = "main",
-                .format = sdl.c.SDL_GPU_SHADERFORMAT_SPIRV,
-                .num_samplers = 0,
-                .num_readonly_storage_textures = 0,
-                .num_readonly_storage_buffers = 1,
-                .num_readwrite_storage_textures = 0,
-                .num_readwrite_storage_buffers = 1,
-                .num_uniform_buffers = 0,
-                .threadcount_x = 64,
-                .threadcount_y = 1,
-                .threadcount_z = 1,
-            });
-        };
-        errdefer sdl.releaseGPUComputePipeline(device, prefix_pipeline);
 
         const assign_pipeline = blk: {
             const file = try std.fs.cwd().openFile(
@@ -811,6 +958,9 @@ const VoxelizePass = struct {
         sdl.endGPUCopyPass(copy_pass);
         try sdl.submitGPUCommandBuffer(command_buffer);
 
+        var prefix_pass = try PrefixSumPass.init(gpa, device, len_cascades);
+        errdefer prefix_pass.deinit();
+
         return .{
             .device = device,
             .clear_pipeline = clear_pipeline,
@@ -825,9 +975,9 @@ const VoxelizePass = struct {
             .chroma_cascades = chroma_cascades,
             .bitmask_texture = bitmask_texture,
             .count_pipeline = count_pipeline,
-            .prefix_pipeline = prefix_pipeline,
             .assign_pipeline = assign_pipeline,
             .inject_pipeline = inject_pipeline,
+            .prefix_pass = prefix_pass,
             .bin_counters = bin_counters,
             .bin_offsets = bin_offsets,
             .bins = bins,
@@ -838,6 +988,7 @@ const VoxelizePass = struct {
         sdl.releaseGPUBuffer(pass.device, pass.bins);
         sdl.releaseGPUBuffer(pass.device, pass.bin_offsets);
         sdl.releaseGPUBuffer(pass.device, pass.bin_counters);
+        pass.prefix_pass.deinit();
         sdl.releaseGPUTexture(pass.device, pass.bitmask_texture);
         sdl.releaseGPUSampler(pass.device, pass.sampler);
         sdl.releaseGPUTexture(pass.device, pass.chroma_cascades);
@@ -850,7 +1001,6 @@ const VoxelizePass = struct {
         }
         sdl.releaseGPUComputePipeline(pass.device, pass.inject_pipeline);
         sdl.releaseGPUComputePipeline(pass.device, pass.assign_pipeline);
-        sdl.releaseGPUComputePipeline(pass.device, pass.prefix_pipeline);
         sdl.releaseGPUComputePipeline(pass.device, pass.count_pipeline);
         sdl.releaseGPUComputePipeline(pass.device, pass.average_pipeline);
         sdl.releaseGPUComputePipeline(pass.device, pass.voxelize_pipeline);
@@ -1053,15 +1203,8 @@ const VoxelizePass = struct {
         );
         sdl.endGPUComputePass(count_pass);
 
-        const prefix_pass = try sdl.beginGPUComputePass(
-            command_buffer,
-            &.{},
-            &.{.{ .buffer = pass.bin_offsets, .cycle = true }},
-        );
-        sdl.bindGPUComputePipeline(prefix_pass, pass.prefix_pipeline);
-        sdl.bindGPUComputeStorageBuffers(prefix_pass, 0, &.{pass.bin_counters});
-        sdl.dispatchGPUCompute(prefix_pass, (len_cascades + 63) / 64, 1, 1);
-        sdl.endGPUComputePass(prefix_pass);
+        // prefix sum here
+        try pass.prefix_pass.run(command_buffer, pass.bin_counters, len_cascades);
 
         const assign_pass = try sdl.beginGPUComputePass(
             command_buffer,
