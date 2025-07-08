@@ -84,6 +84,10 @@ const vec3 cascade_colors[8] = {
     vec3(0.0, 0.0, 0.0),
 };
 
+const float PI = 3.141592653589793;
+const float sqrt_3_over_4pi = sqrt(3.0/(4.0 * PI));
+const float inv_sqrt_4pi = 1.0 / sqrt(4.0 * PI);
+
 void main() {
     ivec2 global_id = ivec2(gl_GlobalInvocationID.xy);
     if (global_id.x >= 640 || global_id.y >= 360) return;
@@ -136,13 +140,16 @@ void main() {
         
     } else if (debug_view == 2) {
 
+        vec4 basis = vec4(-ray_dir * sqrt_3_over_4pi, inv_sqrt_4pi);
+
         float step = min_voxel_size * 0.25;
         for (int i = 0; i < 1024; ++i) {
             pos += step * ray_dir;
             step *= 1.01;
             vec4 voxel_energy = voxelEnergyAt(pos);
+            float energy = dot(basis, voxel_energy);
             vec4 voxel_color = voxelColorAt(pos);
-            voxel_color = vec4(voxel_energy.a * voxel_color.rgb, voxel_color.a);
+            voxel_color = vec4(energy * voxel_color.rgb, voxel_color.a);
             acc.rgb += 0.5 * voxel_color.rgb * voxel_color.a * (1.0 - acc.a);
             acc.a += voxel_color.a * (1.0 - acc.a);
 
