@@ -4,10 +4,13 @@
 
 layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
 
-layout(std430, set = 0, binding = 0) readonly buffer OpacityCascades {
+
+layout(set = 0, binding = 0) uniform sampler3D u_energy_cascades;
+layout(set = 0, binding = 1) uniform sampler3D u_color_cascades;
+layout(std430, set = 0, binding = 2) readonly buffer OpacityCascades {
     float opacity_cascades[];
 };
-layout(std430, set = 0, binding = 1) readonly buffer DiffuseCascades {
+layout(std430, set = 0, binding = 3) readonly buffer DiffuseCascades {
     uint diffuse_cascades[];
 };
 
@@ -45,6 +48,29 @@ vec4 voxelAt2(vec3 pos) {
     float opacity = opacity_cascades[indexFromCascadePos(cascade, voxel_pos)];
     vec4 diffuse = unpackUnorm4x8(diffuse_cascades[indexFromCascadePos(cascade, voxel_pos)]);
     return vec4(diffuse.rgb, opacity);
+}
+
+vec4 voxelEnergyAt(vec3 pos) {
+    uint cascade = cascadeAt(pos);
+    if (cascade >= n_cascades) return vec4(0.0);
+    float voxel_size = voxelSize(cascade);
+    ivec3 voxel_pos = ivec3(floor((pos - anchors[cascade].xyz) / voxel_size));
+    return texelFetch(
+        u_energy_cascades,
+        voxel_pos + ivec3(cascade_size.xyz / 2) + ivec3(cascade * cascade_size.x, 0, 0),
+        0
+    );
+}
+vec4 voxelColorAt(vec3 pos) {
+    uint cascade = cascadeAt(pos);
+    if (cascade >= n_cascades) return vec4(0.0);
+    float voxel_size = voxelSize(cascade);
+    ivec3 voxel_pos = ivec3(floor((pos - anchors[cascade].xyz) / voxel_size));
+    return texelFetch(
+        u_color_cascades,
+        voxel_pos + ivec3(cascade_size.xyz / 2) + ivec3(cascade * cascade_size.x, 0, 0),
+        0
+    );
 }
 
 const vec3 cascade_colors[8] = {
@@ -102,6 +128,21 @@ void main() {
             pos += step * ray_dir;
             step *= 1.01;
             vec4 voxel_color = voxelAt2(pos);
+            acc.rgb += 0.5 * voxel_color.rgb * voxel_color.a * (1.0 - acc.a);
+            acc.a += voxel_color.a * (1.0 - acc.a);
+
+            if (acc.a > 0.99) break;
+        }
+        
+    } else if (debug_view == 2) {
+
+        float step = min_voxel_size * 0.25;
+        for (int i = 0; i < 1024; ++i) {
+            pos += step * ray_dir;
+            step *= 1.01;
+            vec4 voxel_energy = voxelEnergyAt(pos);
+            vec4 voxel_color = voxelColorAt(pos);
+            voxel_color = vec4(voxel_energy.a * voxel_color.rgb, voxel_color.a);
             acc.rgb += 0.5 * voxel_color.rgb * voxel_color.a * (1.0 - acc.a);
             acc.a += voxel_color.a * (1.0 - acc.a);
 

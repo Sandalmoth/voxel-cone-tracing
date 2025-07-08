@@ -35,7 +35,7 @@ uint cascadeAt(vec3 pos) {
     uvec3 cascades = uvec3(clamp(
         ceil(log2(abs(pos - anchors[0].xyz) / (0.5 * min_voxel_size * vec3(cascade_size.xyz - 6)))),
         0,
-        n_cascades + 1
+        n_cascades
     ));
     return max(cascades.x, max(cascades.y, cascades.z));
 }

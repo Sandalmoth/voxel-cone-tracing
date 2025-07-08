@@ -17,10 +17,10 @@ layout(std430, set = 1, binding = 0) buffer NewOpacityTargets {
 layout(std430, set = 1, binding = 1) buffer NewDiffuseTargets {
     uint new_diffuse_targets[];
 };
-layout(std430, set = 1, binding = 0) buffer BinCounters {
+layout(std430, set = 1, binding = 2) buffer BinCounters {
     uint bin_counters[];
 };
-layout(std430, set = 1, binding = 1) buffer BinOffsets {
+layout(std430, set = 1, binding = 3) buffer BinOffsets {
     uint bin_offsets[];
 };
 

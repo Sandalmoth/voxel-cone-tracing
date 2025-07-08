@@ -54,9 +54,6 @@ void main() {
 
     // might be better to pick one than to average
     vec3 world = 0.25 * (world00 + world01 + world10 + world11);
-    // vec3 dx = (world10 + world11 - world00 - world01) * 0.5;
-    // vec3 dy = (world01 + world11 - world00 - world10) * 0.5;
-    // vec3 normal = normalize(cross(dx, dy));
 
     ivec3 cascade_size_half = ivec3(cascade_size.xyz / 2);
     for (int i = 0; i < n_cascades; ++i) {
