@@ -53,10 +53,15 @@ void main() {
 
     uint count = bin_counters[global_id];
     uint offset = bin_offsets[global_id];
-    for (int i = 0; i < count; ++i) {
+    for (int i = 0; i < count && i < 8; ++i) {
         Bin bin = bins[i + offset];
+        // NOTE the normalization here actually needs to depend on the shadomap resolution/extent
         energy += vec4(0.0, 0.0, 0.0, bin.light_intensity / pow(10 * voxel_size, 2.0));
     }
+    // one means of dealing with overinjected voxels is to just normalize like so
+    // another could be to mipmap the shadowmap and to not inject as much into high cascades
+    // or to only inject into the finest cascade per texel and then mipmap
+    if (count > 8) energy *= float(count) / 8.0;
     
     imageStore(
         u_energy_targets,

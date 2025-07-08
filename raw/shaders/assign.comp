@@ -79,5 +79,6 @@ void main() {
         uint index = indexFromCascadePos(i, voxel_pos);
         uint slot = atomicAdd(bin_counters[index], 1);
         bins[bin_offsets[index] + slot] = Bin(normal, light_intensity);
+        // break; // if we do this we have to mipmap
     }
 }

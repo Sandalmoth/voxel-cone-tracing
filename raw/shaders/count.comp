@@ -63,5 +63,6 @@ void main() {
             voxel_pos.y < -cascade_size_half.y || voxel_pos.y >= cascade_size_half.y ||
             voxel_pos.z < -cascade_size_half.z || voxel_pos.z >= cascade_size_half.z) continue;
         atomicAdd(bin_counters[indexFromCascadePos(i, voxel_pos)], 1);
+        // break; // if we do this we have to mipmap
     }
 }
