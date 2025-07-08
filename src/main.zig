@@ -1220,8 +1220,8 @@ const VoxelizePass = struct {
             }, @sizeOf(InjectUBO));
             sdl.dispatchGPUCompute(
                 count_pass,
-                (shadowmap_size[0] + 7) / 8,
-                (shadowmap_size[1] + 7) / 8,
+                (shadowmap_size[0] / 2 + 7) / 8,
+                (shadowmap_size[1] / 2 + 7) / 8,
                 1,
             );
             sdl.endGPUComputePass(count_pass);
@@ -1258,8 +1258,8 @@ const VoxelizePass = struct {
             }, @sizeOf(InjectUBO));
             sdl.dispatchGPUCompute(
                 assign_pass,
-                (shadowmap_size[0] + 7) / 8,
-                (shadowmap_size[1] + 7) / 8,
+                (shadowmap_size[0] / 2 + 7) / 8,
+                (shadowmap_size[1] / 2 + 7) / 8,
                 1,
             );
             sdl.endGPUComputePass(assign_pass);

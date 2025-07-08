@@ -48,26 +48,31 @@ vec3 worldPos(vec2 uv, float depth) {
 }
 
 void main() {
+    vec3 light_dir = normalize(vec3(-1.0, 2.0, 0.5)); // TODO provide in ubo or compute from mat
+
     ivec2 shadowmap_size = textureSize(u_shadowmap, 0);    
     ivec2 global_id = ivec2(gl_GlobalInvocationID.xy);
     if (global_id.x >= shadowmap_size.x || global_id.y >= shadowmap_size.y) return;
 
-    float depth00 = texelFetch(u_shadowmap, global_id + ivec2(0, 0), 0).r;
-    float depth01 = texelFetch(u_shadowmap, global_id + ivec2(0, 1), 0).r;
-    float depth10 = texelFetch(u_shadowmap, global_id + ivec2(1, 0), 0).r;
-    float depth11 = texelFetch(u_shadowmap, global_id + ivec2(1, 1), 0).r;
+    float depth00 = texelFetch(u_shadowmap, 2 * global_id + ivec2(0, 0), 0).r;
+    float depth01 = texelFetch(u_shadowmap, 2 * global_id + ivec2(0, 1), 0).r;
+    float depth10 = texelFetch(u_shadowmap, 2 * global_id + ivec2(1, 0), 0).r;
+    float depth11 = texelFetch(u_shadowmap, 2 * global_id + ivec2(1, 1), 0).r;
 
-    vec2 uv = vec2(global_id) / vec2(shadowmap_size - 1);
-    vec3 world00 = worldPos(uv, depth00);
-    vec3 world01 = worldPos(uv, depth01);
-    vec3 world10 = worldPos(uv, depth10);
-    vec3 world11 = worldPos(uv, depth11);
+    vec2 uv00 = vec2(2 * global_id + ivec2(0, 0)) / vec2(shadowmap_size - 1);
+    vec2 uv01 = vec2(2 * global_id + ivec2(0, 1)) / vec2(shadowmap_size - 1);
+    vec2 uv10 = vec2(2 * global_id + ivec2(1, 0)) / vec2(shadowmap_size - 1);
+    vec2 uv11 = vec2(2 * global_id + ivec2(1, 1)) / vec2(shadowmap_size - 1);
+    vec3 world00 = worldPos(uv00, depth00);
+    vec3 world01 = worldPos(uv01, depth01);
+    vec3 world10 = worldPos(uv10, depth10);
+    vec3 world11 = worldPos(uv11, depth11);
 
     // might be better to pick one than to average
     vec3 world = 0.25 * (world00 + world01 + world10 + world11);
-    vec3 dx = (world10 + world11 - world00 - world01) * 0.5;
-    vec3 dy = (world01 + world11 - world00 - world10) * 0.5;
-    vec3 normal = normalize(cross(dx, dy));
+    vec3 dx = world10 + world11 - world00 - world01;
+    vec3 dy = world01 + world11 - world00 - world10;
+    vec3 normal = normalize(cross(dy, dx));
 
     ivec3 cascade_size_half = ivec3(cascade_size.xyz / 2);
     for (int i = 0; i < n_cascades; ++i) {
@@ -78,7 +83,11 @@ void main() {
             voxel_pos.z < -cascade_size_half.z || voxel_pos.z >= cascade_size_half.z) continue;
         uint index = indexFromCascadePos(i, voxel_pos);
         uint slot = atomicAdd(bin_counters[index], 1);
-        bins[bin_offsets[index] + slot] = Bin(normal, light_intensity);
+        bins[bin_offsets[index] + slot] = Bin(
+            normal,
+            // light_intensity
+            light_intensity * max(0.0, dot(light_dir, normal))
+        );
         // break; // if we do this we have to mipmap
     }
 }

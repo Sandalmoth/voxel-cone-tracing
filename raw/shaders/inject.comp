@@ -38,6 +38,10 @@ layout(std140, set = 2, binding = 0) uniform CommonUBO {
 
 #include "include/voxel_utils.glsl"
 
+const float PI = 3.141592653589793;
+const float sqrt_3_over_4pi = sqrt(3.0/(4.0 * PI));
+const float inv_sqrt_4pi = 1.0 / sqrt(4.0 * PI);
+
 void main() {
     uint global_id = gl_GlobalInvocationID.x;
     if (global_id >= n_cascades * cascade_size[3]) return;
@@ -49,14 +53,18 @@ void main() {
     vec3 diffuse = unpackUnorm4x8(diffuse_cascades[global_id]).rgb;
 
     vec4 energy = vec4(0.0, 0.0, 0.0, 0.0);
-    vec4 color = vec4(diffuse, opacity);
+    vec4 color = vec4(diffuse, opacity); // kinda implies that the source cascades could be joined
 
     uint count = bin_counters[global_id];
     uint offset = bin_offsets[global_id];
     for (int i = 0; i < count && i < 8; ++i) {
+    // for (int i = 0; i < count; ++i) {
         Bin bin = bins[i + offset];
         // NOTE the normalization here actually needs to depend on the shadomap resolution/extent
-        energy += vec4(0.0, 0.0, 0.0, bin.light_intensity / pow(10 * voxel_size, 2.0));
+        // energy += vec4(0.0, 0.0, 0.0, bin.light_intensity / pow(10 * voxel_size, 2.0));
+
+        float intensity = bin.light_intensity / pow(10 * voxel_size, 2.0);
+        energy += intensity * vec4(sqrt_3_over_4pi * bin.normal, inv_sqrt_4pi);
     }
     // one means of dealing with overinjected voxels is to just normalize like so
     // another could be to mipmap the shadowmap and to not inject as much into high cascades

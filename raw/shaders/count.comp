@@ -41,16 +41,19 @@ void main() {
     ivec2 global_id = ivec2(gl_GlobalInvocationID.xy);
     if (global_id.x >= shadowmap_size.x || global_id.y >= shadowmap_size.y) return;
 
-    float depth00 = texelFetch(u_shadowmap, global_id + ivec2(0, 0), 0).r;
-    float depth01 = texelFetch(u_shadowmap, global_id + ivec2(0, 1), 0).r;
-    float depth10 = texelFetch(u_shadowmap, global_id + ivec2(1, 0), 0).r;
-    float depth11 = texelFetch(u_shadowmap, global_id + ivec2(1, 1), 0).r;
+    float depth00 = texelFetch(u_shadowmap, 2 * global_id + ivec2(0, 0), 0).r;
+    float depth01 = texelFetch(u_shadowmap, 2 * global_id + ivec2(0, 1), 0).r;
+    float depth10 = texelFetch(u_shadowmap, 2 * global_id + ivec2(1, 0), 0).r;
+    float depth11 = texelFetch(u_shadowmap, 2 * global_id + ivec2(1, 1), 0).r;
 
-    vec2 uv = vec2(global_id) / vec2(shadowmap_size - 1);
-    vec3 world00 = worldPos(uv, depth00);
-    vec3 world01 = worldPos(uv, depth01);
-    vec3 world10 = worldPos(uv, depth10);
-    vec3 world11 = worldPos(uv, depth11);
+    vec2 uv00 = vec2(2 * global_id + ivec2(0, 0)) / vec2(shadowmap_size - 1);
+    vec2 uv01 = vec2(2 * global_id + ivec2(0, 1)) / vec2(shadowmap_size - 1);
+    vec2 uv10 = vec2(2 * global_id + ivec2(1, 0)) / vec2(shadowmap_size - 1);
+    vec2 uv11 = vec2(2 * global_id + ivec2(1, 1)) / vec2(shadowmap_size - 1);
+    vec3 world00 = worldPos(uv00, depth00);
+    vec3 world01 = worldPos(uv01, depth01);
+    vec3 world10 = worldPos(uv10, depth10);
+    vec3 world11 = worldPos(uv11, depth11);
 
     // might be better to pick one than to average
     vec3 world = 0.25 * (world00 + world01 + world10 + world11);
