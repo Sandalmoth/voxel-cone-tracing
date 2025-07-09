@@ -1,0 +1,147 @@
+#version 460
+
+#include "include/defines.glsl"
+
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+
+layout(set = 0, binding = 0) uniform sampler2D u_downsampled_depth;
+layout(set = 0, binding = 1) uniform sampler2D u_downsampled_normals;
+layout(set = 0, binding = 2) uniform sampler3D u_energy_cascades;
+layout(set = 0, binding = 3) uniform sampler3D u_color_cascades;
+
+layout(rgba16f, set = 1, binding = 0) uniform image2D u_gi_target;
+layout(rgba16f, set = 1, binding = 1) uniform image2D u_specular_target;
+
+layout(std140, set = 2, binding = 0) uniform CommonUBO {
+    uvec4 cascade_size; // xyz
+    uvec4 cascade_mask;
+    uint n_cascades;
+    float min_voxel_size;
+    vec4 anchors[MAX_CASCADES];
+};
+layout(std140, set = 2, binding = 1) uniform DownsampleUBO {
+    mat4 inverse_vp_matrix;
+};
+
+#include "include/octahedral.glsl"
+#include "include/voxel_utils.glsl"
+
+const float PI = 3.141592653589793;
+const float sqrt_3_over_4pi = sqrt(3.0/(4.0 * PI));
+const float inv_sqrt_4pi = 1.0 / sqrt(4.0 * PI);
+
+float absmax(vec3 v) {
+    vec3 a = abs(v);
+    return max(max(a.x, a.y), a.z);
+}
+
+vec4 gatherRadiance(vec3 origin, vec3 normal, vec3 dir) {
+    uint cascade = cascadeAt(origin);
+    float radius = 0.5 * voxelSize(cascade);
+
+    const float initial_step = 1.5 / absmax(normal);
+    origin += normal * 2.0 * radius * initial_step;
+
+    vec4 basis = vec4(-dir * sqrt_3_over_4pi, inv_sqrt_4pi);
+
+    vec4 acc = vec4(0.0, 0.0, 0.0, 0.0);
+    cascade = 0;
+    while (cascade < 8) {
+
+        vec3 cascade_world_size = vec3(cascade_size.xyz) * voxelSize(cascade);
+        vec3 uvw = origin / cascade_world_size + 0.5;
+        float energy = dot(basis, texture(u_energy_cascades, vec3(
+            (uvw.x + float(cascade)) / float(n_cascades),
+            uvw.yz
+        )));
+        vec4 color = texture(u_color_cascades, vec3(
+            (uvw.x + float(cascade)) / float(n_cascades),
+            uvw.yz
+        ));
+        // color.rgb *= energy;
+
+        acc.rgb += (1 - acc.a) * color.a * color.rgb;
+        acc.a += (1 - acc.a) * color.a;
+
+        radius = 2 * radius;
+        origin += radius * dir;
+        cascade += 1;
+
+        acc = color;
+        break;
+    }
+
+    return vec4(acc.rgb, 0.0);
+}
+
+vec3 diffuse_cones[6] = {
+    vec3(0, 1, 0),
+    vec3(0, 0.5, 0.866025),
+    vec3(0.823639, 0.5, 0.267617),
+    vec3(0.509037, 0.5, -0.700629),
+    vec3(-0.509037, 0.5, -0.700629),
+    vec3(-0.823639, 0.5, 0.267617)
+};
+float cone_weights[6] = {0.25, 0.15, 0.15, 0.15, 0.15, 0.15};
+
+vec3 worldPos(vec2 uv, float depth) {
+    vec4 ndc = vec4(
+        2.0 * uv.x - 1.0,
+        1.0 - 2.0 * uv.y,
+        depth,
+        1.0
+    );
+    vec4 world_pos = inverse_vp_matrix * ndc;
+    world_pos /= world_pos.w;
+    return world_pos.rgb;
+}
+
+// https://www.reedbeta.com/blog/hash-functions-for-gpu-rendering/
+uint pcg_hash(uint seed) {
+    uint state = seed * 747796405u + 2891336453u;
+    uint word = ((state >> ((state >> 28u) + 4u)) ^ state) * 277803737u;
+    return (word >> 22u) ^ word;
+}
+
+vec3 randomVec(uint seed) {
+    // not really uniform, but it's not that important
+    uint r = pcg_hash(seed);
+    return normalize(vec3(
+        float((r >> 0) & 0x3FFu) / 1023.0 - 0.5,
+        float((r >> 10) & 0x3FFu) / 1023.0 - 0.5,
+        float((r >> 20) & 0x3FFu) / 1023.0 - 0.5
+    ));
+}
+
+mat3 getAlignmentMatrix(vec3 normal, uint seed) {
+    // from learnopengl
+    vec3 random_vector = randomVec(seed);
+    vec3 tangent   = normalize(random_vector - normal * dot(random_vector, normal));
+    vec3 bitangent = cross(normal, tangent);
+    // return mat3(tangent, bitangent, normal); // original
+    return mat3(bitangent, normal, tangent); // seems better?
+    // return mat3(tangent, normal, bitangent); // also seems better?
+}
+
+void main() {
+    ivec2 depth_size = textureSize(u_downsampled_depth, 0);    
+    ivec2 global_id = ivec2(gl_GlobalInvocationID.xy);
+    if (global_id.x >= depth_size.x || global_id.y >= depth_size.y) return;
+    
+    float depth = texelFetch(u_downsampled_depth, global_id, 0).r;
+    vec2 uv = vec2(global_id) / vec2(depth_size - 1);
+    vec3 pos = worldPos(uv, depth);
+    vec3 normal = decodeOctahedral(texelFetch(u_downsampled_normals, global_id, 0).rg);
+
+    uint seed = (uint(global_id.x) + uint(global_id.y)) % 2;
+    vec4 bounced = vec4(0.0, 0.0, 0.0, 0.0);
+
+    mat3 amat = getAlignmentMatrix(normal, seed);
+    for (int i = 0; i < diffuse_cones.length(); ++i) {
+        bounced += cone_weights[i] * gatherRadiance(pos.xyz, normal, amat * diffuse_cones[i]);
+    }
+    bounced.a = 1.0 - bounced.a;
+
+    imageStore(u_gi_target, global_id, bounced);
+    imageStore(u_specular_target, global_id, vec4(0.5 * normal + 0.5, 0.0));
+}

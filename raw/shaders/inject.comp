@@ -63,7 +63,7 @@ void main() {
         // NOTE the normalization here actually needs to depend on the shadomap resolution/extent
         // energy += vec4(0.0, 0.0, 0.0, bin.light_intensity / pow(10 * voxel_size, 2.0));
 
-        float intensity = bin.light_intensity / pow(10 * voxel_size, 2.0);
+        float intensity = bin.light_intensity / pow(6.0 * voxel_size, 2.0);
         energy += intensity * vec4(sqrt_3_over_4pi * bin.normal, inv_sqrt_4pi);
     }
     // one means of dealing with overinjected voxels is to just normalize like so

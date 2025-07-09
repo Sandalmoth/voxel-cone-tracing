@@ -1,0 +1,22 @@
+#version 460
+
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+
+layout(set = 0, binding = 0) uniform sampler2D u_depth;
+layout(set = 0, binding = 1) uniform sampler2D u_downsampled_depth;
+layout(set = 0, binding = 2) uniform sampler2D u_gi_target;
+layout(set = 0, binding = 3) uniform sampler2D u_specular_target;
+
+layout(rgba16f, set = 1, binding = 0) uniform image2D u_upsampled_gi_target;
+layout(rgba16f, set = 1, binding = 1) uniform image2D u_upsampled_specular_target;
+
+void main() {
+    ivec2 depth_size = textureSize(u_depth, 0);    
+    ivec2 global_id = ivec2(gl_GlobalInvocationID.xy);
+    if (global_id.x >= depth_size.x || global_id.y >= depth_size.y) return;
+
+    vec4 gi = texelFetch(u_gi_target, global_id / 2, 0);
+    vec4 specular = texelFetch(u_specular_target, global_id / 2, 0);
+    imageStore(u_upsampled_gi_target, global_id, gi);
+    imageStore(u_upsampled_specular_target, global_id, specular);
+}

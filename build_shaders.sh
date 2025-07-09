@@ -15,3 +15,7 @@ glslc --target-env=vulkan1.0 raw/shaders/inject.comp -o data/shaders/inject.comp
 
 glslc --target-env=vulkan1.0 raw/shaders/debug.comp -o data/shaders/debug.comp.spv
 
+glslc --target-env=vulkan1.0 raw/shaders/upsample.comp -o data/shaders/upsample.comp.spv
+glslc --target-env=vulkan1.0 raw/shaders/tracing.comp -o data/shaders/tracing.comp.spv
+glslc --target-env=vulkan1.0 raw/shaders/downsample.comp -o data/shaders/downsample.comp.spv
+
