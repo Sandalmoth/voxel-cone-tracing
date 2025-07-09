@@ -45,11 +45,10 @@ vec4 gatherRadiance(vec3 origin, vec3 normal, vec3 dir) {
     vec4 basis = vec4(-dir * sqrt_3_over_4pi, inv_sqrt_4pi);
 
     vec4 acc = vec4(0.0, 0.0, 0.0, 0.0);
-    cascade = 0;
-    while (cascade < 8) {
+    while (cascade < n_cascades) {
 
         vec3 cascade_world_size = vec3(cascade_size.xyz) * voxelSize(cascade);
-        vec3 uvw = origin / cascade_world_size + 0.5;
+        vec3 uvw = (origin - anchors[cascade].xyz) / cascade_world_size + 0.5;
         float energy = dot(basis, texture(u_energy_cascades, vec3(
             (uvw.x + float(cascade)) / float(n_cascades),
             uvw.yz
@@ -58,7 +57,7 @@ vec4 gatherRadiance(vec3 origin, vec3 normal, vec3 dir) {
             (uvw.x + float(cascade)) / float(n_cascades),
             uvw.yz
         ));
-        // color.rgb *= energy;
+        color.rgb *= energy;
 
         acc.rgb += (1 - acc.a) * color.a * color.rgb;
         acc.a += (1 - acc.a) * color.a;
@@ -66,9 +65,6 @@ vec4 gatherRadiance(vec3 origin, vec3 normal, vec3 dir) {
         radius = 2 * radius;
         origin += radius * dir;
         cascade += 1;
-
-        acc = color;
-        break;
     }
 
     return vec4(acc.rgb, 0.0);
@@ -138,10 +134,14 @@ void main() {
 
     mat3 amat = getAlignmentMatrix(normal, seed);
     for (int i = 0; i < diffuse_cones.length(); ++i) {
-        bounced += cone_weights[i] * gatherRadiance(pos.xyz, normal, amat * diffuse_cones[i]);
+        bounced += cone_weights[i] * gatherRadiance(pos, normal, amat * diffuse_cones[i]);
     }
     bounced.a = 1.0 - bounced.a;
 
     imageStore(u_gi_target, global_id, bounced);
     imageStore(u_specular_target, global_id, vec4(0.5 * normal + 0.5, 0.0));
+
+    // imageStore(u_gi_target, global_id, vec4(depth, depth, depth, 0.0));
+    // imageStore(u_gi_target, global_id, vec4(clamp(0.1 * pos + 0.5, 0, 1), 0.0));
+    // imageStore(u_gi_target, global_id, vec4(clamp(0.5 * normal + 0.5, 0, 1), 0.0));
 }

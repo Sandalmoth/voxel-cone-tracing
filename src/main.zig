@@ -615,7 +615,13 @@ const TracingPass = struct {
         });
         errdefer sdl.releaseGPUTexture(device, upsampled_specular_target);
 
-        const sampler = try sdl.createGPUSampler(device, &.{});
+        const sampler = try sdl.createGPUSampler(device, &.{
+            .min_filter = sdl.c.SDL_GPU_FILTER_LINEAR,
+            .mag_filter = sdl.c.SDL_GPU_FILTER_LINEAR,
+            .address_mode_u = sdl.c.SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE,
+            .address_mode_v = sdl.c.SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE,
+            .address_mode_w = sdl.c.SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE,
+        });
         errdefer sdl.releaseGPUSampler(device, sampler);
 
         return .{
@@ -699,12 +705,6 @@ const TracingPass = struct {
             .{ .texture = energy_cascades, .sampler = pass.sampler },
             .{ .texture = color_cascades, .sampler = pass.sampler },
         });
-        sdl.dispatchGPUCompute(
-            tracing_pass,
-            (window_width / 2 + 7) / 8,
-            (window_height / 2 + 7) / 8,
-            1,
-        );
         sdl.pushGPUComputeUniformData(command_buffer, 0, &VoxelizePass.CommonUBO{
             .cascade_size = VoxelizePass.cascade_size,
             .cascade_mask = VoxelizePass.cascade_mask,
@@ -717,6 +717,12 @@ const TracingPass = struct {
             1,
             &zm.matToArr(inverse_camera_vp),
             @sizeOf([16]f32),
+        );
+        sdl.dispatchGPUCompute(
+            tracing_pass,
+            (window_width / 2 + 7) / 8,
+            (window_height / 2 + 7) / 8,
+            1,
         );
         sdl.endGPUComputePass(tracing_pass);
 
