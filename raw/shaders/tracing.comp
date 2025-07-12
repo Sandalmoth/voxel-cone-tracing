@@ -42,7 +42,7 @@ vec4 gatherRadiance(vec3 origin, vec3 normal, vec3 dir) {
     vec4 basis = vec4(-dir * sqrt_3_over_4pi, inv_sqrt_4pi);
     vec4 acc = vec4(0.0, 0.0, 0.0, 0.0);
 
-    uint mode = 0;
+    uint mode = 1;
 
     if (mode == 0) {
 
@@ -70,6 +70,28 @@ vec4 gatherRadiance(vec3 origin, vec3 normal, vec3 dir) {
         }
 
     } else if (mode == 1) {
+
+        while (cascade < n_cascades) {
+            vec3 pos = origin + normal * initial_step * min_voxel_size
+                              + dir * 2.0 * min_voxel_size * float((1 << cascade) - 1);
+            vec3 cascade_world_size = vec3(cascade_size.xyz) * voxelSize(cascade);
+            vec3 uvw = (pos - anchors[cascade].xyz) / cascade_world_size + 0.5;
+            float energy = dot(basis, texture(u_energy_cascades, vec3(
+                (uvw.x + float(cascade)) / float(n_cascades),
+                uvw.yz
+            )));
+            vec4 color = texture(u_color_cascades, vec3(
+                (uvw.x + float(cascade)) / float(n_cascades),
+                uvw.yz
+            ));
+            // color.rgb *= energy / (1 + radius);
+            color.rgb *= energy;
+
+            acc.rgb += (1 - acc.a) * color.a * color.rgb;
+            acc.a += (1 - acc.a) * color.a;
+
+            cascade += 1;
+        }
 
     } else if (mode == 2) {
 
