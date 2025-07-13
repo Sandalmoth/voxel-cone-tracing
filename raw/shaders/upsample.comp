@@ -18,7 +18,7 @@ void main() {
 
     float depth = texelFetch(u_depth, global_id, 0).r;
     float world_depth = 1.0 / (depth * 10); // NOTE near plane should be a parameter
-    const float ivar_depth = 3.0;
+    const float ivar_depth = 10.0;
 
     vec4 gi = vec4(0.0);
     vec4 sp = vec4(0.0);

@@ -167,10 +167,10 @@ pub fn main() !void {
             if (input.peek(.toggle_debug_view).pressed) debug_mode = !debug_mode;
             if (input.peek(.trigger_capture).pressed) try trigger();
             if (input.peek(.prev_debug_view).pressed) {
-                debug_pass.debug_view = (debug_pass.debug_view + 2) % 3;
+                debug_pass.debug_view = (debug_pass.debug_view + 3) % 4;
             }
             if (input.peek(.next_debug_view).pressed) {
-                debug_pass.debug_view = (debug_pass.debug_view + 1) % 3;
+                debug_pass.debug_view = (debug_pass.debug_view + 1) % 4;
             }
 
             for (scene.motions.items) |*motion| motion.update(tick);
@@ -239,7 +239,11 @@ pub fn main() !void {
             voxelize_pass.color_cascades,
         );
         {
-            try draw_pass.begin(command_buffer);
+            try draw_pass.begin(
+                command_buffer,
+                tracing_pass.upsampled_gi_target,
+                tracing_pass.upsampled_specular_target,
+            );
             for (scene.objects.items) |object| draw_pass.drawObject(
                 command_buffer,
                 object,
@@ -259,12 +263,17 @@ pub fn main() !void {
             camera.v(alpha),
             camera.p(alpha),
         );
+        const backbuffer = if (!debug_mode)
+            draw_pass.color_target
+        else if (debug_pass.debug_view == 3)
+            tracing_pass.upsampled_gi_target
+        else
+            debug_pass.color_target;
         {
             try present_pass.run(
                 window,
                 command_buffer,
-                if (debug_mode) tracing_pass.upsampled_gi_target else draw_pass.color_target,
-                // if (debug_mode) debug_pass.color_target else draw_pass.color_target,
+                backbuffer,
             );
         }
 
@@ -1689,7 +1698,7 @@ const DrawPass = struct {
                 .entrypoint = "main",
                 .format = sdl.c.SDL_GPU_SHADERFORMAT_SPIRV,
                 .stage = sdl.c.SDL_GPU_SHADERSTAGE_FRAGMENT,
-                .num_samplers = 1,
+                .num_samplers = 3,
                 .num_storage_textures = 0,
                 .num_storage_buffers = 0,
                 .num_uniform_buffers = 1,
@@ -2069,6 +2078,8 @@ const DrawPass = struct {
     fn begin(
         pass: *DrawPass,
         command_buffer: *sdl.GPUCommandBuffer,
+        gi_target: *sdl.GPUTexture,
+        specular_target: *sdl.GPUTexture,
     ) !void {
         std.debug.assert(pass.active_pass == null);
         sdl.pushGPUDebugGroup(command_buffer, "draw");
@@ -2093,6 +2104,8 @@ const DrawPass = struct {
         sdl.bindGPUGraphicsPipeline(pass.active_pass.?, pass.pipeline);
         sdl.bindGPUFragmentSamplers(pass.active_pass.?, 0, &.{
             .{ .texture = pass.shadowmap_target, .sampler = pass.sampler },
+            .{ .texture = gi_target, .sampler = pass.sampler },
+            .{ .texture = specular_target, .sampler = pass.sampler },
         });
     }
 

@@ -9,6 +9,8 @@ layout(location = 2) in vec4 v_position_light_space;
 layout(location = 0) out vec4 o_color;
 
 layout(set = 2, binding = 0) uniform sampler2D u_shadowmap;
+layout(set = 2, binding = 1) uniform sampler2D u_gi;
+layout(set = 2, binding = 2) uniform sampler2D u_specular;
 
 layout(set = 3, binding = 0) uniform MaterialData {
     vec4 diffuse;
@@ -50,13 +52,19 @@ void main() {
 
     float shadow = computeShadow();
 
-    vec3 rad = u_material_data.diffuse.rgb * vec3(0.01, 0.01, 0.01);
+    vec3 rad = vec3(0.0);
 
     rad += u_material_data.diffuse.rgb *
         shadow * light_intensity *
         max(dot(v_normal, light_dir), 0.0);
 
     rad += u_material_data.emissive.rgb;
+
+    const float gi_factor = 5.0;
+    const float ao_power = 1.0;
+    vec4 gi = texelFetch(u_gi, ivec2(gl_FragCoord.xy), 0);
+    rad += u_material_data.diffuse.rgb * pow(gi.a, ao_power) *
+          (gi_factor * gi.rgb + vec3(1e-1));
    
     o_color = vec4(rad, 1.0);
 }
