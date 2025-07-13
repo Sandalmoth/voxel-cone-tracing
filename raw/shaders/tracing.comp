@@ -37,97 +37,46 @@ float absmax(vec3 v) {
 
 vec4 gatherRadiance(vec3 origin, vec3 normal, vec3 dir) {
     const float initial_step = 1.5 / absmax(normal);
-    uint cascade = cascadeAt(origin);
+
+    float fcascade = cascadeAtFractional(origin);
+    uint cascade = uint(fcascade);    
+    float first_cascade_fraction = 1.0 - fract(fcascade);
+    
     float radius = 0.5 * voxelSize(cascade);
     vec4 basis = vec4(-dir * sqrt_3_over_4pi, inv_sqrt_4pi);
+
     vec4 acc = vec4(0.0, 0.0, 0.0, 0.0);
+    float ocl = 0.0;
 
-    uint mode = 1;
+    while (cascade < n_cascades) {
+        vec3 pos = origin + normal * initial_step * min_voxel_size
+                          + dir * 2.0 * min_voxel_size * float((1 << cascade) - 1);
+        vec3 cascade_world_size = vec3(cascade_size.xyz) * voxelSize(cascade);
+        vec3 uvw = (pos - anchors[cascade].xyz) / cascade_world_size + 0.5;
+        float energy = dot(basis, texture(u_energy_cascades, vec3(
+            (uvw.x + float(cascade)) / float(n_cascades),
+            uvw.yz
+        )));
+        vec4 color = texture(u_color_cascades, vec3(
+            (uvw.x + float(cascade)) / float(n_cascades),
+            uvw.yz
+        ));
+        // color.rgb *= energy / (1 + radius);
+        color.rgb *= energy;
 
-    if (mode == 0) {
+        color *= first_cascade_fraction;
+        first_cascade_fraction = 1.0;
 
-        origin += normal * 2.0 * radius * initial_step;
+        acc.rgb += (1 - acc.a) * color.a * color.rgb;
+        acc.a += (1 - acc.a) * color.a;
 
-        while (cascade < n_cascades) {
-            vec3 cascade_world_size = vec3(cascade_size.xyz) * voxelSize(cascade);
-            vec3 uvw = (origin - anchors[cascade].xyz) / cascade_world_size + 0.5;
-            float energy = dot(basis, texture(u_energy_cascades, vec3(
-                (uvw.x + float(cascade)) / float(n_cascades),
-                uvw.yz
-            )));
-            vec4 color = texture(u_color_cascades, vec3(
-                (uvw.x + float(cascade)) / float(n_cascades),
-                uvw.yz
-            ));
-            color.rgb *= energy;
+        ocl += (1 - ocl) * color.a / (1 + radius);
 
-            acc.rgb += (1 - acc.a) * color.a * color.rgb;
-            acc.a += (1 - acc.a) * color.a;
-
-            radius = 2 * radius;
-            origin += radius * dir;
-            cascade += 1;
-        }
-
-    } else if (mode == 1) {
-
-        while (cascade < n_cascades) {
-            vec3 pos = origin + normal * initial_step * min_voxel_size
-                              + dir * 2.0 * min_voxel_size * float((1 << cascade) - 1);
-            vec3 cascade_world_size = vec3(cascade_size.xyz) * voxelSize(cascade);
-            vec3 uvw = (pos - anchors[cascade].xyz) / cascade_world_size + 0.5;
-            float energy = dot(basis, texture(u_energy_cascades, vec3(
-                (uvw.x + float(cascade)) / float(n_cascades),
-                uvw.yz
-            )));
-            vec4 color = texture(u_color_cascades, vec3(
-                (uvw.x + float(cascade)) / float(n_cascades),
-                uvw.yz
-            ));
-            // color.rgb *= energy / (1 + radius);
-            color.rgb *= energy;
-
-            acc.rgb += (1 - acc.a) * color.a * color.rgb;
-            acc.a += (1 - acc.a) * color.a;
-
-            cascade += 1;
-        }
-
-    } else if (mode == 2) {
-
-        // so i think the reason why this doesn't work
-        // is that the dynamic offset actually contributes to the move
-        // hence changes cone angles quite severely
-        // so to do this kind of trace, we should handle directions differently
-        // origin += normal * 2.0 * min_voxel_size * initial_step;
-
-        while (cascade < n_cascades) {
-            vec3 pos = origin + normal * 2.0 * radius * initial_step
-                              + 2.0 * radius * float((1 << cascade) - 1) * dir;
-            // vec3 pos = origin + 2.0 * radius * float((1 << cascade) - 1) * dir;
-            vec3 cascade_world_size = vec3(cascade_size.xyz) * voxelSize(cascade);
-            vec3 uvw = (pos - anchors[cascade].xyz) / cascade_world_size + 0.5;
-            float energy = dot(basis, texture(u_energy_cascades, vec3(
-                (uvw.x + float(cascade)) / float(n_cascades),
-                uvw.yz
-            )));
-            vec4 color = texture(u_color_cascades, vec3(
-                (uvw.x + float(cascade)) / float(n_cascades),
-                uvw.yz
-            ));
-            // color.rgb *= energy / (1 + radius);
-            color.rgb *= energy;
-
-            acc.rgb += (1 - acc.a) * color.a * color.rgb;
-            acc.a += (1 - acc.a) * color.a;
-
-            radius = 2 * radius;
-            cascade += 1;
-        }
-
+        radius *= 2;
+        cascade += 1;
     }
 
-    return vec4(acc.rgb, 0.0);
+    return vec4(acc.rgb, ocl);
 }
 
 vec3 diffuse_cones[6] = {
@@ -197,6 +146,8 @@ void main() {
         bounced += cone_weights[i] * gatherRadiance(pos, normal, amat * diffuse_cones[i]);
     }
     bounced.a = 1.0 - bounced.a;
+
+    // bounced.rgb = vec3(bounced.a); // just show AO
 
     imageStore(u_gi_target, global_id, bounced);
     imageStore(u_specular_target, global_id, vec4(0.5 * normal + 0.5, 0.0));

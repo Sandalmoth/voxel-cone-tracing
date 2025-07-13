@@ -40,6 +40,15 @@ uint cascadeAt(vec3 pos) {
     return max(cascades.x, max(cascades.y, cascades.z));
 }
 
+float cascadeAtFractional(vec3 pos) {
+    vec3 cascades = clamp(
+        log2(abs(pos - anchors[0].xyz) / (0.5 * min_voxel_size * vec3(cascade_size.xyz - 6))) + 1,
+        0,
+        n_cascades
+    );
+    return max(cascades.x, max(cascades.y, cascades.z));
+}
+
 uint quantizeToBitmask(float v, int bits) {
     uint q = uint(v * float(bits) + 0.5);
     return (1u << q) - 1u;
