@@ -24,7 +24,7 @@ float computeShadow() {
     projected.xy = 0.5 * projected.xy + 0.5;
     projected.y = 1.0 - projected.y;
     if (projected.x < 0.0 || projected.x > 1.0 ||
-        projected.y < 0.0 || projected.y > 1.0) return 1.0;
+        projected.y < 0.0 || projected.y > 1.0) return 0.0;
 
     float current = projected.z;
     float bias = 0.0005;
@@ -64,7 +64,7 @@ void main() {
     const float ao_power = 1.0;
     vec4 gi = texelFetch(u_gi, ivec2(gl_FragCoord.xy), 0);
     rad += u_material_data.diffuse.rgb * pow(gi.a, ao_power) *
-          (gi_factor * gi.rgb + vec3(1e-1));
+          (gi_factor * gi.rgb + vec3(5e-2));
    
     o_color = vec4(rad, 1.0);
 }
