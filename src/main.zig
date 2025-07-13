@@ -263,7 +263,7 @@ pub fn main() !void {
             try present_pass.run(
                 window,
                 command_buffer,
-                if (debug_mode) tracing_pass.gi_target else draw_pass.color_target,
+                if (debug_mode) tracing_pass.upsampled_gi_target else draw_pass.color_target,
                 // if (debug_mode) debug_pass.color_target else draw_pass.color_target,
             );
         }

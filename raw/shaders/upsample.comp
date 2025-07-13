@@ -11,12 +11,36 @@ layout(rgba16f, set = 1, binding = 0) uniform image2D u_upsampled_gi_target;
 layout(rgba16f, set = 1, binding = 1) uniform image2D u_upsampled_specular_target;
 
 void main() {
-    ivec2 depth_size = textureSize(u_depth, 0);    
+    ivec2 size = textureSize(u_depth, 0);    
+    ivec2 downsampled_size = textureSize(u_downsampled_depth, 0);    
     ivec2 global_id = ivec2(gl_GlobalInvocationID.xy);
-    if (global_id.x >= depth_size.x || global_id.y >= depth_size.y) return;
+    if (global_id.x >= size.x || global_id.y >= size.y) return;
 
-    vec4 gi = texelFetch(u_gi_target, global_id / 2, 0);
-    vec4 specular = texelFetch(u_specular_target, global_id / 2, 0);
+    float depth = texelFetch(u_depth, global_id, 0).r;
+    float world_depth = 1.0 / (depth * 10); // NOTE near plane should be a parameter
+    const float ivar_depth = 3.0;
+
+    vec4 gi = vec4(0.0);
+    vec4 sp = vec4(0.0);
+    float w = 0.0;
+
+    for (int x = -1; x <= 1; ++x) {
+        for (int y = -1; y <= 1; ++y) {
+            ivec2 uv = clamp(global_id / 2 + ivec2(x, y), ivec2(0, 0), downsampled_size);
+            float lrd = texelFetch(u_downsampled_depth, uv, 0).r;
+            float world_lrd = 1.0 / (lrd * 10);
+            vec4 lrgi = texelFetch(u_gi_target, uv, 0);
+            vec4 lrsp = texelFetch(u_specular_target, uv, 0);
+
+            float weight = exp(-pow(world_depth - world_lrd, 2.0) * ivar_depth);
+            gi += lrgi * weight;
+            w += weight;
+        }
+    }
+    w = 1.0 / w;
+    gi *= w;
+    sp *= w;
+    
     imageStore(u_upsampled_gi_target, global_id, gi);
-    imageStore(u_upsampled_specular_target, global_id, specular);
+    imageStore(u_upsampled_specular_target, global_id, sp);
 }
