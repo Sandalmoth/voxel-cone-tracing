@@ -22,6 +22,8 @@ const window_height = 1080;
 const shadowmap_width = 1024;
 const shadowmap_height = 1024;
 
+var read_buffer: [1024]u8 align(64) = undefined;
+
 pub fn main() !void {
     sdl.setMainReady();
 
@@ -295,7 +297,8 @@ const PrefixSumPass = struct {
                 .{ .mode = .read_only },
             );
             defer file.close();
-            const bytes = try file.reader().readAllAlloc(gpa, 1_000_000);
+            var reader = file.reader(&read_buffer);
+            const bytes = try reader.interface.allocRemaining(gpa, .unlimited);
             defer gpa.free(bytes);
 
             break :blk try sdl.createGPUComputePipeline(device, &.{
@@ -471,7 +474,8 @@ const TracingPass = struct {
                 .{ .mode = .read_only },
             );
             defer file.close();
-            const bytes = try file.reader().readAllAlloc(gpa, 1_000_000);
+            var reader = file.reader(&read_buffer);
+            const bytes = try reader.interface.allocRemaining(gpa, .unlimited);
             defer gpa.free(bytes);
 
             break :blk try sdl.createGPUComputePipeline(device, &.{
@@ -498,7 +502,8 @@ const TracingPass = struct {
                 .{ .mode = .read_only },
             );
             defer file.close();
-            const bytes = try file.reader().readAllAlloc(gpa, 1_000_000);
+            var reader = file.reader(&read_buffer);
+            const bytes = try reader.interface.allocRemaining(gpa, .unlimited);
             defer gpa.free(bytes);
 
             break :blk try sdl.createGPUComputePipeline(device, &.{
@@ -525,7 +530,8 @@ const TracingPass = struct {
                 .{ .mode = .read_only },
             );
             defer file.close();
-            const bytes = try file.reader().readAllAlloc(gpa, 1_000_000);
+            var reader = file.reader(&read_buffer);
+            const bytes = try reader.interface.allocRemaining(gpa, .unlimited);
             defer gpa.free(bytes);
 
             break :blk try sdl.createGPUComputePipeline(device, &.{
@@ -784,7 +790,8 @@ const DebugPass = struct {
                 .{ .mode = .read_only },
             );
             defer file.close();
-            const bytes = try file.reader().readAllAlloc(gpa, 1_000_000);
+            var reader = file.reader(&read_buffer);
+            const bytes = try reader.interface.allocRemaining(gpa, .unlimited);
             defer gpa.free(bytes);
 
             break :blk try sdl.createGPUComputePipeline(device, &.{
@@ -1005,7 +1012,8 @@ const VoxelizePass = struct {
                 .{ .mode = .read_only },
             );
             defer file.close();
-            const bytes = try file.reader().readAllAlloc(gpa, 1_000_000);
+            var reader = file.reader(&read_buffer);
+            const bytes = try reader.interface.allocRemaining(gpa, .unlimited);
             defer gpa.free(bytes);
 
             break :blk try sdl.createGPUComputePipeline(device, &.{
@@ -1032,7 +1040,8 @@ const VoxelizePass = struct {
                 .{ .mode = .read_only },
             );
             defer file.close();
-            const bytes = try file.reader().readAllAlloc(gpa, 1_000_000);
+            var reader = file.reader(&read_buffer);
+            const bytes = try reader.interface.allocRemaining(gpa, .unlimited);
             defer gpa.free(bytes);
 
             break :blk try sdl.createGPUComputePipeline(device, &.{
@@ -1059,7 +1068,8 @@ const VoxelizePass = struct {
                 .{ .mode = .read_only },
             );
             defer file.close();
-            const bytes = try file.reader().readAllAlloc(gpa, 1_000_000);
+            var reader = file.reader(&read_buffer);
+            const bytes = try reader.interface.allocRemaining(gpa, .unlimited);
             defer gpa.free(bytes);
 
             break :blk try sdl.createGPUComputePipeline(device, &.{
@@ -1086,7 +1096,8 @@ const VoxelizePass = struct {
                 .{ .mode = .read_only },
             );
             defer file.close();
-            const bytes = try file.reader().readAllAlloc(gpa, 1_000_000);
+            var reader = file.reader(&read_buffer);
+            const bytes = try reader.interface.allocRemaining(gpa, .unlimited);
             defer gpa.free(bytes);
 
             break :blk try sdl.createGPUComputePipeline(device, &.{
@@ -1113,7 +1124,8 @@ const VoxelizePass = struct {
                 .{ .mode = .read_only },
             );
             defer file.close();
-            const bytes = try file.reader().readAllAlloc(gpa, 1_000_000);
+            var reader = file.reader(&read_buffer);
+            const bytes = try reader.interface.allocRemaining(gpa, .unlimited);
             defer gpa.free(bytes);
 
             break :blk try sdl.createGPUComputePipeline(device, &.{
@@ -1140,7 +1152,8 @@ const VoxelizePass = struct {
                 .{ .mode = .read_only },
             );
             defer file.close();
-            const bytes = try file.reader().readAllAlloc(gpa, 1_000_000);
+            var reader = file.reader(&read_buffer);
+            const bytes = try reader.interface.allocRemaining(gpa, .unlimited);
             defer gpa.free(bytes);
 
             break :blk try sdl.createGPUComputePipeline(device, &.{
@@ -1290,10 +1303,10 @@ const VoxelizePass = struct {
         });
         defer sdl.releaseGPUTransferBuffer(device, transfer_buffer);
         const command_buffer = try sdl.acquireGPUCommandBuffer(device);
-        const bytes: [*]u8 = @alignCast(@ptrCast(
+        const bytes: [*]u8 = @ptrCast(@alignCast(
             try sdl.mapGPUTransferBuffer(device, transfer_buffer, true),
         ));
-        @memcpy(@as([*][256]u32, @alignCast(@ptrCast(bytes))), &random_u32_bits);
+        @memcpy(@as([*][256]u32, @ptrCast(@alignCast(bytes))), &random_u32_bits);
         sdl.unmapGPUTransferBuffer(device, transfer_buffer);
         const copy_pass = try sdl.beginGPUCopyPass(command_buffer);
         sdl.uploadToGPUTexture(copy_pass, &.{
@@ -1666,7 +1679,8 @@ const DrawPass = struct {
                 .{ .mode = .read_only },
             );
             defer file.close();
-            const bytes = try file.reader().readAllAlloc(gpa, 1_000_000);
+            var reader = file.reader(&read_buffer);
+            const bytes = try reader.interface.allocRemaining(gpa, .unlimited);
             defer gpa.free(bytes);
 
             break :blk try sdl.createGPUShader(device, &.{
@@ -1689,7 +1703,8 @@ const DrawPass = struct {
                 .{ .mode = .read_only },
             );
             defer file.close();
-            const bytes = try file.reader().readAllAlloc(gpa, 1_000_000);
+            var reader = file.reader(&read_buffer);
+            const bytes = try reader.interface.allocRemaining(gpa, .unlimited);
             defer gpa.free(bytes);
 
             break :blk try sdl.createGPUShader(device, &.{
@@ -1712,7 +1727,8 @@ const DrawPass = struct {
                 .{ .mode = .read_only },
             );
             defer file.close();
-            const bytes = try file.reader().readAllAlloc(gpa, 1_000_000);
+            var reader = file.reader(&read_buffer);
+            const bytes = try reader.interface.allocRemaining(gpa, .unlimited);
             defer gpa.free(bytes);
 
             break :blk try sdl.createGPUShader(device, &.{
@@ -1735,7 +1751,8 @@ const DrawPass = struct {
                 .{ .mode = .read_only },
             );
             defer file.close();
-            const bytes = try file.reader().readAllAlloc(gpa, 1_000_000);
+            var reader = file.reader(&read_buffer);
+            const bytes = try reader.interface.allocRemaining(gpa, .unlimited);
             defer gpa.free(bytes);
 
             break :blk try sdl.createGPUShader(device, &.{
@@ -2193,7 +2210,8 @@ const PresentPass = struct {
                 .{ .mode = .read_only },
             );
             defer file.close();
-            const bytes = try file.reader().readAllAlloc(gpa, 1_000_000);
+            var reader = file.reader(&read_buffer);
+            const bytes = try reader.interface.allocRemaining(gpa, .unlimited);
             defer gpa.free(bytes);
 
             break :blk try sdl.createGPUShader(device, &.{
@@ -2216,7 +2234,8 @@ const PresentPass = struct {
                 .{ .mode = .read_only },
             );
             defer file.close();
-            const bytes = try file.reader().readAllAlloc(gpa, 1_000_000);
+            var reader = file.reader(&read_buffer);
+            const bytes = try reader.interface.allocRemaining(gpa, .unlimited);
             defer gpa.free(bytes);
 
             break :blk try sdl.createGPUShader(device, &.{
@@ -2287,10 +2306,10 @@ const PresentPass = struct {
         });
         defer sdl.releaseGPUTransferBuffer(device, transfer_buffer);
         const command_buffer = try sdl.acquireGPUCommandBuffer(device);
-        const bytes: [*]u8 = @alignCast(@ptrCast(
+        const bytes: [*]u8 = @ptrCast(@alignCast(
             try sdl.mapGPUTransferBuffer(device, transfer_buffer, true),
         ));
-        @memcpy(@as([*]Vertex, @alignCast(@ptrCast(bytes))), &full_screen_quad);
+        @memcpy(@as([*]Vertex, @ptrCast(@alignCast(bytes))), &full_screen_quad);
         sdl.unmapGPUTransferBuffer(device, transfer_buffer);
         const copy_pass = try sdl.beginGPUCopyPass(command_buffer);
         sdl.uploadToGPUBuffer(copy_pass, &.{
