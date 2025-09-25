@@ -197,13 +197,19 @@ pub fn main() !void {
         );
 
         {
-            try voxelize_pass.begin(command_buffer, camera.anchor(alpha));
-            for (scene.objects.items) |object| voxelize_pass.voxelizeObject(
+            try voxelize_pass.beginBinning(command_buffer, camera.anchor(alpha));
+            for (scene.objects.items) |object| voxelize_pass.bin(
                 command_buffer,
                 object,
                 alpha,
             );
-            try voxelize_pass.end(command_buffer);
+            try voxelize_pass.middleBinning(command_buffer);
+            for (scene.objects.items) |object| voxelize_pass.bin(
+                command_buffer,
+                object,
+                alpha,
+            );
+            try voxelize_pass.endBinning(command_buffer);
         }
         {
             try draw_pass.beginShadowmap(command_buffer);
@@ -215,13 +221,13 @@ pub fn main() !void {
             );
             draw_pass.endShadowmap(command_buffer);
         }
-        try voxelize_pass.inject(
-            command_buffer,
-            draw_pass.shadowmap_target,
-            .{ shadowmap_width, shadowmap_height },
-            light_matrix,
-            0.5,
-        );
+        // try voxelize_pass.inject(
+        //     command_buffer,
+        //     draw_pass.shadowmap_target,
+        //     .{ shadowmap_width, shadowmap_height },
+        //     light_matrix,
+        //     0.5,
+        // );
         {
             try draw_pass.beginPrepass(command_buffer);
             for (scene.objects.items) |object| draw_pass.drawObjectPrepass(
@@ -258,8 +264,9 @@ pub fn main() !void {
         if (debug_mode) try debug_pass.run(
             command_buffer,
             voxelize_pass.anchors,
-            voxelize_pass.opacity_cascades[voxelize_pass.ix_new_slot],
-            voxelize_pass.diffuse_cascades[voxelize_pass.ix_new_slot],
+            // FIXME we just have one now, and representation is different
+            voxelize_pass.voxel_cascades[voxelize_pass.ix_new_slot],
+            voxelize_pass.voxel_cascades[voxelize_pass.ix_new_slot],
             voxelize_pass.energy_cascades,
             voxelize_pass.color_cascades,
             camera.v(alpha),
@@ -976,12 +983,14 @@ const VoxelizePass = struct {
     // light injection strategy
     // - ???
     // - profit
+    // but i think i might go back to voxel ray-tracing instead of shadowmap injection
+    // at least for a directional skylight it will be much cheaper
 
     energy_cascades: *sdl.GPUTexture,
     color_cascades: *sdl.GPUTexture,
 
     fn init(gpa: std.mem.Allocator, device: *sdl.GPUDevice) !VoxelizePass {
-        const prefix_sum_pass: PrefixSumPass = try .init(gpa, device);
+        var prefix_sum_pass: PrefixSumPass = try .init(gpa, device, 2 * cascade_size[3] / 64);
         errdefer prefix_sum_pass.deinit();
 
         const triangle_binning_pipeline = blk: {
@@ -1003,7 +1012,7 @@ const VoxelizePass = struct {
                 .num_readonly_storage_textures = 0,
                 .num_readonly_storage_buffers = 2,
                 .num_readwrite_storage_textures = 0,
-                .num_readwrite_storage_buffers = 4,
+                .num_readwrite_storage_buffers = 3,
                 .num_uniform_buffers = 2,
                 .threadcount_x = 64,
                 .threadcount_y = 1,
@@ -1029,10 +1038,10 @@ const VoxelizePass = struct {
                 .format = sdl.c.SDL_GPU_SHADERFORMAT_SPIRV,
                 .num_samplers = 0,
                 .num_readonly_storage_textures = 0,
-                .num_readonly_storage_buffers = 2,
+                .num_readonly_storage_buffers = 0,
                 .num_readwrite_storage_textures = 0,
-                .num_readwrite_storage_buffers = 4,
-                .num_uniform_buffers = 2,
+                .num_readwrite_storage_buffers = 0,
+                .num_uniform_buffers = 1,
                 .threadcount_x = 64,
                 .threadcount_y = 1,
                 .threadcount_z = 1,
@@ -1057,10 +1066,10 @@ const VoxelizePass = struct {
                 .format = sdl.c.SDL_GPU_SHADERFORMAT_SPIRV,
                 .num_samplers = 0,
                 .num_readonly_storage_textures = 0,
-                .num_readonly_storage_buffers = 2,
+                .num_readonly_storage_buffers = 0,
                 .num_readwrite_storage_textures = 0,
-                .num_readwrite_storage_buffers = 4,
-                .num_uniform_buffers = 2,
+                .num_readwrite_storage_buffers = 0,
+                .num_uniform_buffers = 1,
                 .threadcount_x = 64,
                 .threadcount_y = 1,
                 .threadcount_z = 1,
@@ -1085,10 +1094,10 @@ const VoxelizePass = struct {
                 .format = sdl.c.SDL_GPU_SHADERFORMAT_SPIRV,
                 .num_samplers = 0,
                 .num_readonly_storage_textures = 0,
-                .num_readonly_storage_buffers = 2,
+                .num_readonly_storage_buffers = 0,
                 .num_readwrite_storage_textures = 0,
-                .num_readwrite_storage_buffers = 4,
-                .num_uniform_buffers = 2,
+                .num_readwrite_storage_buffers = 0,
+                .num_uniform_buffers = 1,
                 .threadcount_x = 64,
                 .threadcount_y = 1,
                 .threadcount_z = 1,
@@ -1127,14 +1136,14 @@ const VoxelizePass = struct {
         const triangle_bin_counters = try sdl.createGPUBuffer(device, &.{
             .usage = sdl.c.SDL_GPU_BUFFERUSAGE_COMPUTE_STORAGE_READ |
                 sdl.c.SDL_GPU_BUFFERUSAGE_COMPUTE_STORAGE_WRITE,
-            .size = 2 * cascade_size[3] / 64,
+            .size = 2 * cascade_size[3] / 64 * @sizeOf(u32),
         });
         errdefer sdl.releaseGPUBuffer(device, triangle_bin_counters);
 
         const triangle_bin_offsets = try sdl.createGPUBuffer(device, &.{
             .usage = sdl.c.SDL_GPU_BUFFERUSAGE_COMPUTE_STORAGE_READ |
                 sdl.c.SDL_GPU_BUFFERUSAGE_COMPUTE_STORAGE_WRITE,
-            .size = 2 * cascade_size[3] / 64,
+            .size = 2 * cascade_size[3] / 64 * @sizeOf(u32),
         });
         errdefer sdl.releaseGPUBuffer(device, triangle_bin_offsets);
 
@@ -1191,6 +1200,9 @@ const VoxelizePass = struct {
     fn deinit(pass: *VoxelizePass) void {
         sdl.releaseGPUTexture(pass.device, pass.color_cascades);
         sdl.releaseGPUTexture(pass.device, pass.energy_cascades);
+        sdl.releaseGPUBuffer(pass.device, pass.triangle_bins);
+        sdl.releaseGPUBuffer(pass.device, pass.triangle_bin_offsets);
+        sdl.releaseGPUBuffer(pass.device, pass.triangle_bin_counters);
         for (0..2) |i| {
             sdl.releaseGPUBuffer(pass.device, pass.voxel_cascades[i]);
             sdl.releaseGPUBuffer(pass.device, pass.voxel_targets[i]);
@@ -1229,9 +1241,19 @@ const VoxelizePass = struct {
 
         sdl.pushGPUDebugGroup(command_buffer, "binning");
 
-        pass.active_pass = try sdl.beginGPUComputePass(command_buffer, &.{}, &.{});
-        sdl.bindGPUComputePipeline(pass.active_pass, pass.triangle_binning_pipeline);
-        sdl.bindGPUComputeStorageBuffers(pass.active_pass, 0, &.{});
+        pass.active_pass = try sdl.beginGPUComputePass(
+            command_buffer,
+            &.{},
+            &.{
+                .{ .buffer = pass.triangle_bin_counters, .cycle = true },
+                .{ .buffer = pass.triangle_bin_offsets, .cycle = true },
+                .{ .buffer = pass.triangle_bins, .cycle = true },
+            },
+        );
+        sdl.bindGPUComputePipeline(pass.active_pass.?, pass.triangle_binning_pipeline);
+        sdl.bindGPUComputeStorageBuffers(pass.active_pass.?, 0, &.{
+            pass.voxel_cascades[0], pass.voxel_cascades[1], // NOTE not used, could be null?
+        });
         sdl.pushGPUComputeUniformData(command_buffer, 0, &CommonUBO{
             .cascade_size = cascade_size,
             .cascade_mask = cascade_mask,
@@ -1247,9 +1269,9 @@ const VoxelizePass = struct {
             .n_triangles = undefined,
             .first_index = undefined,
             .first_vertex = undefined,
-            .mode = 0,
+            .binning_mode = 0,
         }, @sizeOf(BinningUBO));
-        sdl.dispatchGPUCompute(pass.active_pass, (len_cascades + 63) / 64, 1, 1);
+        sdl.dispatchGPUCompute(pass.active_pass.?, (len_cascades + 63) / 64, 1, 1);
 
         pass.binning_step = 1;
     }
@@ -1259,13 +1281,14 @@ const VoxelizePass = struct {
         command_buffer: *sdl.GPUCommandBuffer,
         object: Scene.Object,
         alpha: f32,
-    ) !void {
+    ) void {
         sdl.bindGPUComputeStorageBuffers(pass.active_pass.?, 0, &.{
             object.model.vertex_buffer,
             object.model.index_buffer,
         });
         const transform = object.transform(alpha);
         const n_triangles: u32 = object.model.n_indices / 3;
+        // PERF probably better to bin to all target cascades in one step
         for (time_slices[pass.ix_time_slice]) |target_cascade| {
             sdl.pushGPUComputeUniformData(command_buffer, 1, &BinningUBO{
                 .model_matrix = zm.matToArr(transform),
@@ -1275,7 +1298,7 @@ const VoxelizePass = struct {
                 .n_triangles = n_triangles,
                 .first_index = object.model.first_index,
                 .first_vertex = object.model.first_vertex,
-                .mode = pass.binning_step,
+                .binning_mode = pass.binning_step,
             }, @sizeOf(BinningUBO));
             sdl.dispatchGPUCompute(
                 pass.active_pass.?,
@@ -1293,11 +1316,22 @@ const VoxelizePass = struct {
         sdl.endGPUComputePass(pass.active_pass.?);
         pass.active_pass = null;
 
-        try pass.prefix_sum_pass.run(command_buffer, pass.triangle_bin_offsets);
+        try pass.prefix_sum_pass.run(
+            command_buffer,
+            pass.triangle_bin_offsets,
+            2 * cascade_size[3] / 64,
+        );
 
-        pass.active_pass = try sdl.beginGPUComputePass(command_buffer, &.{}, &.{});
-        sdl.bindGPUComputePipeline(pass.active_pass, pass.triangle_binning_pipeline);
-        sdl.bindGPUComputeStorageBuffers(pass.active_pass, 0, &.{});
+        pass.active_pass = try sdl.beginGPUComputePass(
+            command_buffer,
+            &.{},
+            &.{
+                .{ .buffer = pass.triangle_bin_counters, .cycle = true },
+                .{ .buffer = pass.triangle_bin_offsets, .cycle = true },
+                .{ .buffer = pass.triangle_bins, .cycle = true },
+            },
+        );
+        sdl.bindGPUComputePipeline(pass.active_pass.?, pass.triangle_binning_pipeline);
         sdl.pushGPUComputeUniformData(command_buffer, 0, &CommonUBO{
             .cascade_size = cascade_size,
             .cascade_mask = cascade_mask,
@@ -1306,7 +1340,7 @@ const VoxelizePass = struct {
             .anchors = pass.anchors,
         }, @sizeOf(CommonUBO));
 
-        pass.binning_step = 1;
+        pass.binning_step = 2;
     }
 
     fn endBinning(
@@ -1318,7 +1352,7 @@ const VoxelizePass = struct {
 
         const target_update_pass = try sdl.beginGPUComputePass(command_buffer, &.{}, &.{});
         sdl.bindGPUComputePipeline(target_update_pass, pass.target_update_pipeline);
-        sdl.bindGPUComputeStorageBuffers(target_update_pass, 0, &.{});
+        // sdl.bindGPUComputeStorageBuffers(target_update_pass, 0, &.{});
         sdl.pushGPUComputeUniformData(command_buffer, 0, &CommonUBO{
             .cascade_size = cascade_size,
             .cascade_mask = cascade_mask,
@@ -1333,7 +1367,7 @@ const VoxelizePass = struct {
 
         const voxelization_pass = try sdl.beginGPUComputePass(command_buffer, &.{}, &.{});
         sdl.bindGPUComputePipeline(voxelization_pass, pass.voxelization_pipeline);
-        sdl.bindGPUComputeStorageBuffers(voxelization_pass, 0, &.{});
+        // sdl.bindGPUComputeStorageBuffers(voxelization_pass, 0, &.{});
         sdl.pushGPUComputeUniformData(command_buffer, 0, &CommonUBO{
             .cascade_size = cascade_size,
             .cascade_mask = cascade_mask,
@@ -1345,7 +1379,7 @@ const VoxelizePass = struct {
 
         const cascade_update_pass = try sdl.beginGPUComputePass(command_buffer, &.{}, &.{});
         sdl.bindGPUComputePipeline(cascade_update_pass, pass.cascade_update_pipeline);
-        sdl.bindGPUComputeStorageBuffers(cascade_update_pass, 0, &.{});
+        // sdl.bindGPUComputeStorageBuffers(cascade_update_pass, 0, &.{});
         sdl.pushGPUComputeUniformData(command_buffer, 0, &CommonUBO{
             .cascade_size = cascade_size,
             .cascade_mask = cascade_mask,
