@@ -79,12 +79,17 @@ void main() {
             // (triangle intersection test will go here)
             
             // for now, if a bin has content, mark all the voxels in it
-            voxel_color = vec4(triangles[i].diffuse, 1.0);
+            // voxel_color = vec4(triangles[i].diffuse, 1.0);
+            voxel_color += vec4(1.0);
             n_intersections += 1.0;
         }
         barrier();
     }
 
-    voxel_targets[ix_voxel] = packUnorm4x8(voxel_color / n_intersections);
+    if (n_intersections > 0.0) {
+        voxel_targets[ix_voxel] = packUnorm4x8(voxel_color / n_intersections);
+    } else {
+        voxel_targets[ix_voxel] = 0u;
+    }
 
 }

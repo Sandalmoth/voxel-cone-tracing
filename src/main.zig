@@ -265,8 +265,8 @@ pub fn main() !void {
             command_buffer,
             voxelize_pass.anchors,
             // FIXME we just have one now, and representation is different
-            voxelize_pass.voxel_cascades[voxelize_pass.ix_new_slot],
-            voxelize_pass.voxel_cascades[voxelize_pass.ix_new_slot],
+            voxelize_pass.voxel_cascades[0],
+            voxelize_pass.voxel_cascades[0],
             voxelize_pass.energy_cascades,
             voxelize_pass.color_cascades,
             camera.v(alpha),
