@@ -48,6 +48,7 @@ layout(std140, set = 2, binding = 1) uniform BinningUBO {
     vec4 diffuse; // rgb 0-1
     vec4 emissive; // rgb 0-inf
     uint target_cascade;
+    uint bin_group_offset;
     uint n_triangles;
     uint first_index;
     uint first_vertex;
@@ -57,6 +58,16 @@ layout(std140, set = 2, binding = 1) uniform BinningUBO {
 #include "include/voxel_utils.glsl"
 
 void main() {
+
+    if (binning_mode == 0) {
+        uint global_id = gl_GlobalInvocationID.x;
+        if (global_id < 2 * cascade_size[3] / 64) {
+            bin_counters[global_id] = 0;
+            bin_offsets[global_id] = 0;
+        }
+        return;
+    }
+    
     uint ix_src_triangle = gl_GlobalInvocationID.x;
     if (ix_src_triangle >= n_triangles) return;
     
@@ -85,9 +96,19 @@ void main() {
         for (int y = bin_lower_bound.y; y <= bin_upper_bound.y; ++y) {
             for (int z = bin_lower_bound.z; z <= bin_upper_bound.z; ++z) {
                 ivec3 bin_pos = ivec3(x, y, z);
-                uint bin_index = indexFromCascadePos(target_cascade, bin_pos); // FIXME FIXME
-                atomicAdd(bin_counters[bin_index], 1);
-                atomicAdd(bin_offsets[bin_index], 1);
+                uint bin_index = indexFromCascadePosBinning(target_cascade, bin_pos);
+
+                if (binning_mode == 1) {
+                    atomicAdd(bin_offsets[bin_index + bin_group_offset], 1);
+                } else if (binning_mode == 2) {
+                    uint offset = bin_offsets[bin_index + bin_group_offset];
+                    uint index = atomicAdd(bin_counters[bin_index + bin_group_offset], 1);
+                    bins[offset + index] = Triangle(
+                        p0, p1, p2,
+                        diffuse.rgb,
+                        0
+                    );
+                }
             }
         }
     }

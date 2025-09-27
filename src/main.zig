@@ -914,6 +914,7 @@ const VoxelizePass = struct {
         emissive: [4]f32 align(16),
 
         target_cascade: u32 align(16),
+        bin_group_offset: u32,
         n_triangles: u32,
         first_index: u32,
         first_vertex: u32,
@@ -922,6 +923,10 @@ const VoxelizePass = struct {
     };
     const UpdateUBO = extern struct {
         anchor_moves: [MAX_ANCHORS][4]f32 align(16),
+    };
+    const VoxelizeUBO = extern struct {
+        bin_group_offset: u32,
+        target_cascade: u32,
     };
 
     // these could be runtime values to allow for e.g. graphics settings
@@ -1066,10 +1071,10 @@ const VoxelizePass = struct {
                 .format = sdl.c.SDL_GPU_SHADERFORMAT_SPIRV,
                 .num_samplers = 0,
                 .num_readonly_storage_textures = 0,
-                .num_readonly_storage_buffers = 0,
+                .num_readonly_storage_buffers = 3,
                 .num_readwrite_storage_textures = 0,
-                .num_readwrite_storage_buffers = 0,
-                .num_uniform_buffers = 1,
+                .num_readwrite_storage_buffers = 1,
+                .num_uniform_buffers = 2,
                 .threadcount_x = 64,
                 .threadcount_y = 1,
                 .threadcount_z = 1,
@@ -1266,6 +1271,7 @@ const VoxelizePass = struct {
             .diffuse = undefined,
             .emissive = undefined,
             .target_cascade = undefined,
+            .bin_group_offset = undefined,
             .n_triangles = undefined,
             .first_index = undefined,
             .first_vertex = undefined,
@@ -1289,12 +1295,13 @@ const VoxelizePass = struct {
         const transform = object.transform(alpha);
         const n_triangles: u32 = object.model.n_indices / 3;
         // PERF probably better to bin to all target cascades in one step
-        for (time_slices[pass.ix_time_slice]) |target_cascade| {
+        for (time_slices[pass.ix_time_slice], 0..) |target_cascade, i| {
             sdl.pushGPUComputeUniformData(command_buffer, 1, &BinningUBO{
                 .model_matrix = zm.matToArr(transform),
                 .diffuse = object.diffuse,
                 .emissive = object.emissive,
                 .target_cascade = target_cascade,
+                .bin_group_offset = @intCast(i * cascade_size[3] / 64),
                 .n_triangles = n_triangles,
                 .first_index = object.model.first_index,
                 .first_vertex = object.model.first_vertex,
@@ -1322,15 +1329,11 @@ const VoxelizePass = struct {
             2 * cascade_size[3] / 64,
         );
 
-        pass.active_pass = try sdl.beginGPUComputePass(
-            command_buffer,
-            &.{},
-            &.{
-                .{ .buffer = pass.triangle_bin_counters, .cycle = true },
-                .{ .buffer = pass.triangle_bin_offsets, .cycle = true },
-                .{ .buffer = pass.triangle_bins, .cycle = true },
-            },
-        );
+        pass.active_pass = try sdl.beginGPUComputePass(command_buffer, &.{}, &.{
+            .{ .buffer = pass.triangle_bin_counters, .cycle = true },
+            .{ .buffer = pass.triangle_bin_offsets, .cycle = true },
+            .{ .buffer = pass.triangle_bins, .cycle = true },
+        });
         sdl.bindGPUComputePipeline(pass.active_pass.?, pass.triangle_binning_pipeline);
         sdl.pushGPUComputeUniformData(command_buffer, 0, &CommonUBO{
             .cascade_size = cascade_size,
@@ -1349,6 +1352,9 @@ const VoxelizePass = struct {
     ) !void {
         sdl.endGPUComputePass(pass.active_pass.?);
         pass.active_pass = null;
+        sdl.popGPUDebugGroup(command_buffer);
+
+        sdl.pushGPUDebugGroup(command_buffer, "voxelizing");
 
         const target_update_pass = try sdl.beginGPUComputePass(command_buffer, &.{}, &.{});
         sdl.bindGPUComputePipeline(target_update_pass, pass.target_update_pipeline);
@@ -1365,9 +1371,16 @@ const VoxelizePass = struct {
         }, @sizeOf(UpdateUBO));
         sdl.endGPUComputePass(target_update_pass);
 
-        const voxelization_pass = try sdl.beginGPUComputePass(command_buffer, &.{}, &.{});
+        const voxelization_pass = try sdl.beginGPUComputePass(command_buffer, &.{}, &.{
+            .{ .buffer = pass.voxel_cascades[0] }, // NOTE FIXME TEST cascades for now for quick viz
+            // .{ .buffer = pass.voxel_targets },
+        });
         sdl.bindGPUComputePipeline(voxelization_pass, pass.voxelization_pipeline);
-        // sdl.bindGPUComputeStorageBuffers(voxelization_pass, 0, &.{});
+        sdl.bindGPUComputeStorageBuffers(voxelization_pass, 0, &.{
+            pass.triangle_bin_counters,
+            pass.triangle_bin_offsets,
+            pass.triangle_bins,
+        });
         sdl.pushGPUComputeUniformData(command_buffer, 0, &CommonUBO{
             .cascade_size = cascade_size,
             .cascade_mask = cascade_mask,
@@ -1375,6 +1388,13 @@ const VoxelizePass = struct {
             .min_voxel_size = min_voxel_size,
             .anchors = pass.anchors,
         }, @sizeOf(CommonUBO));
+        for (time_slices[pass.ix_time_slice], 0..) |target_cascade, i| {
+            sdl.pushGPUComputeUniformData(command_buffer, 1, &VoxelizeUBO{
+                .bin_group_offset = @intCast(i * cascade_size[3] / 64),
+                .target_cascade = target_cascade,
+            }, @sizeOf(VoxelizeUBO));
+            sdl.dispatchGPUCompute(voxelization_pass, cascade_size[3] / 64, 1, 1);
+        }
         sdl.endGPUComputePass(voxelization_pass);
 
         const cascade_update_pass = try sdl.beginGPUComputePass(command_buffer, &.{}, &.{});

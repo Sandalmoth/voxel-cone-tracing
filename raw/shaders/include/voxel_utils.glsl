@@ -27,6 +27,14 @@ uint indexFromCascadePos(uint cascade, ivec3 pos) {
            pos.z * cascade_size[0] * cascade_size[1];
 }
 
+uint indexFromCascadePosBinning(uint cascade, ivec3 pos) {
+    pos += ivec3(cascade_size.xyz / 8);
+    return cascade * cascade_size[3] / 64 +
+           pos.x +
+           pos.y * cascade_size[0] / 4 +
+           pos.z * cascade_size[0] * cascade_size[1] / 4;
+}
+
 float voxelSize(uint cascade) {
     return min_voxel_size * float(1 << cascade);
 }

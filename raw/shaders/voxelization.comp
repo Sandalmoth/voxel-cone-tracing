@@ -2,12 +2,86 @@
 
 #include "include/defines.glsl"
 
+layout(local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
+
+struct Triangle {
+    // TODO pack to minimize memory usage
+    vec3 p0;
+    vec3 p1;
+    vec3 p2;
+    vec3 diffuse;
+    float emissive_power;
+};
+
+layout(std430, set = 0, binding = 0) buffer BinCounters {
+    uint bin_counters[];
+};
+layout(std430, set = 0, binding = 1) buffer BinOffsets {
+    uint bin_offsets[];
+};
+layout(std430, set = 0, binding = 2) buffer Bins {
+    Triangle bins[];
+};
+
+layout(std430, set = 1, binding = 0) buffer VoxelTargets {
+    uint voxel_targets[];
+};
+
 layout(std140, set = 2, binding = 0) uniform CommonUBO {
-    uvec4 cascade_size; // xyz
+    uvec4 cascade_size; // x, y, z, x*y*z
     uvec4 cascade_mask;
     uint n_cascades;
     float min_voxel_size;
     vec4 anchors[MAX_CASCADES];
 };
 
-void main() {}
+layout(std140, set = 2, binding = 1) uniform VoxelizeUBO {
+    uint bin_group_offset;
+    uint target_cascade;  
+};
+
+shared Triangle triangles[64];
+
+#include "include/voxel_utils.glsl"
+
+void main() {
+    uint global_id = gl_GlobalInvocationID.x;
+    uint local_id = gl_LocalInvocationID.x;
+    uint group_id = gl_WorkGroupID.x;
+
+    // NOTE hardcoded masks and sizes for now
+    ivec3 voxel_pos = ivec3(
+         global_id & 15,
+        (global_id / 16) & 15,
+        (global_id / (16 * 16)) & 15
+    ) * 4 + ivec3(
+        local_id & 3,
+        (local_id / 4) & 3,
+        (local_id / (4 * 4)) & 3
+    ) - ivec3(cascade_size.xyz / 2);
+    uint ix_voxel = indexFromCascadePos(target_cascade, voxel_pos);
+
+    // FIXME there's some trickyness with the bin group offset...
+    uint n_triangles = bin_counters[group_id + bin_group_offset];
+    uint offset = bin_offsets[group_id + bin_group_offset];
+
+    for (uint batch = 0; batch < n_triangles; batch += 64) {
+        // each thread loads one triangle and precomputes all the collision testing data
+        uint batch_size = min(n_triangles - batch, 64);
+        if (local_id < batch_size) {
+            triangles[batch + local_id] = bins[offset + batch + local_id];
+        }
+
+        // (triangle intersection prep will go here)
+        barrier();
+
+        // then each thread tests its voxel against all the triangles in the batch
+        for (uint i = 0; i < batch_size; ++i) {
+            // (triangle intersection test will go here)
+            
+            // for now, if a bin has content, mark all the voxels in it
+            voxel_targets[target_cascade * cascade_size[3] + ix_voxel] = 0xffffffff;
+        }
+    }
+
+}
