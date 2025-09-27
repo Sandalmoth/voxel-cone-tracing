@@ -51,25 +51,27 @@ void main() {
 
     // NOTE hardcoded masks and sizes for now
     ivec3 voxel_pos = ivec3(
-         global_id & 15,
-        (global_id / 16) & 15,
-        (global_id / (16 * 16)) & 15
+        int(group_id & 15u),
+        int((group_id >> 4u) & 15u),
+        int((group_id >> 8u) & 15u)
     ) * 4 + ivec3(
-        local_id & 3,
-        (local_id / 4) & 3,
-        (local_id / (4 * 4)) & 3
+        int(local_id & 3u),
+        int((local_id >> 2u) & 3u),
+        int((local_id >> 4u) & 3u)
     ) - ivec3(cascade_size.xyz / 2);
     uint ix_voxel = indexFromCascadePos(target_cascade, voxel_pos);
 
+    vec4 voxel_color = vec4(0.0);
+    
     // FIXME there's some trickyness with the bin group offset...
     uint n_triangles = bin_counters[group_id + bin_group_offset];
     uint offset = bin_offsets[group_id + bin_group_offset];
 
-    for (uint batch = 0; batch < n_triangles; batch += 64) {
+    for (uint batch = 0u; batch < n_triangles; batch += 64u) {
         // each thread loads one triangle and precomputes all the collision testing data
-        uint batch_size = min(n_triangles - batch, 64);
+        uint batch_size = min(n_triangles - batch, 64u);
         if (local_id < batch_size) {
-            triangles[batch + local_id] = bins[offset + batch + local_id];
+            triangles[local_id] = bins[offset + batch + local_id];
         }
 
         // (triangle intersection prep will go here)
@@ -80,8 +82,11 @@ void main() {
             // (triangle intersection test will go here)
             
             // for now, if a bin has content, mark all the voxels in it
-            voxel_targets[target_cascade * cascade_size[3] + ix_voxel] = 0xffffffff;
+            voxel_color = vec4(1.0);
         }
+        barrier();
     }
+
+    voxel_targets[ix_voxel] = packUnorm4x8(voxel_color);
 
 }

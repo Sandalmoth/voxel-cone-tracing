@@ -29,8 +29,7 @@ uint indexFromCascadePos(uint cascade, ivec3 pos) {
 
 uint indexFromCascadePosBinning(uint cascade, ivec3 pos) {
     pos += ivec3(cascade_size.xyz / 8);
-    return cascade * cascade_size[3] / 64 +
-           pos.x +
+    return pos.x +
            pos.y * cascade_size[0] / 4 +
            pos.z * cascade_size[0] * cascade_size[1] / 4;
 }

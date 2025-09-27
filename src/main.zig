@@ -1277,7 +1277,7 @@ const VoxelizePass = struct {
             .first_vertex = undefined,
             .binning_mode = 0,
         }, @sizeOf(BinningUBO));
-        sdl.dispatchGPUCompute(pass.active_pass.?, (len_cascades + 63) / 64, 1, 1);
+        sdl.dispatchGPUCompute(pass.active_pass.?, 2 * (len_cascades + 63) / 64, 1, 1);
 
         pass.binning_step = 1;
     }
