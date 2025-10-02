@@ -2,6 +2,16 @@
 
 #include "include/defines.glsl"
 
+layout(local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
+
+layout(std430, set = 0, binding = 0) readonly buffer OldVoxelTargets {
+    uint old_voxel_targets[];
+};
+
+layout(std430, set = 1, binding = 0) buffer NewVoxelTargets {
+    uint new_voxel_targets[];
+};
+
 layout(std140, set = 2, binding = 0) uniform CommonUBO {
     uvec4 cascade_size; // xyz
     uvec4 cascade_mask;
@@ -10,4 +20,13 @@ layout(std140, set = 2, binding = 0) uniform CommonUBO {
     vec4 anchors[MAX_CASCADES];
 };
 
-void main() {}
+layout(std140, set = 2, binding = 1) uniform UpdateUBO {
+    vec4 anchor_moves[MAX_CASCADES];
+};
+
+void main() {
+    uint global_id = gl_GlobalInvocationID.x;
+    if (global_id >= n_cascades * cascade_size[3]) return;
+    
+    new_voxel_targets[global_id] = old_voxel_targets[global_id];
+}
