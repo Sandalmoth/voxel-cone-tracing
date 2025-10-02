@@ -2,12 +2,39 @@
 
 #include "include/defines.glsl"
 
+layout(local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
+
+layout(std430, set = 0, binding = 0) readonly buffer OldVoxelCascades {
+    uint old_voxel_cascades[];
+};
+layout(std430, set = 0, binding = 1) readonly buffer NewVoxelTargets {
+    uint new_voxel_targets[];
+};
+
+layout(std430, set = 1, binding = 0) buffer NewVoxelCascades {
+    uint new_voxel_cascades[];
+};
+
 layout(std140, set = 2, binding = 0) uniform CommonUBO {
-    uvec4 cascade_size; // xyz
+    uvec4 cascade_size;
     uvec4 cascade_mask;
     uint n_cascades;
     float min_voxel_size;
     vec4 anchors[MAX_CASCADES];
 };
 
-void main() {}
+layout(std140, set = 2, binding = 1) uniform UpdateUBO {
+    vec4 anchor_moves[MAX_CASCADES];
+};
+
+#include "include/voxel_utils.glsl"
+
+void main() {
+    uint global_id = gl_GlobalInvocationID.x;
+    if (global_id >= n_cascades * cascade_size[3]) return;
+    
+    vec4 old_voxel_color = unpackUnorm4x8(old_voxel_cascades[global_id]);
+    vec4 new_voxel_color = unpackDiffuseOpacity(new_voxel_targets[global_id]);
+    vec4 voxel_color = mix(old_voxel_color, new_voxel_color, 0.5);
+    new_voxel_cascades[global_id] = packUnorm4x8(voxel_color);
+}

@@ -148,9 +148,9 @@ pub fn main() !void {
         }
 
         // if we had a lagspike, capture a trace
-        if (frame_timer.read() > 100_000_000) {
-            try trigger();
-        }
+        // if (frame_timer.read() > 100_000_000) {
+        //     try trigger();
+        // }
 
         lag += @min(frame_timer.lap(), max_tick_ns);
 
@@ -265,8 +265,8 @@ pub fn main() !void {
             command_buffer,
             voxelize_pass.anchors,
             // FIXME we just have one now, and representation is different
-            voxelize_pass.voxel_cascades[0],
-            voxelize_pass.voxel_cascades[0],
+            voxelize_pass.voxel_cascades[voxelize_pass.ix_new_slot],
+            voxelize_pass.voxel_cascades[voxelize_pass.ix_new_slot],
             voxelize_pass.energy_cascades,
             voxelize_pass.color_cascades,
             camera.v(alpha),
@@ -1099,10 +1099,10 @@ const VoxelizePass = struct {
                 .format = sdl.c.SDL_GPU_SHADERFORMAT_SPIRV,
                 .num_samplers = 0,
                 .num_readonly_storage_textures = 0,
-                .num_readonly_storage_buffers = 0,
+                .num_readonly_storage_buffers = 2,
                 .num_readwrite_storage_textures = 0,
-                .num_readwrite_storage_buffers = 0,
-                .num_uniform_buffers = 1,
+                .num_readwrite_storage_buffers = 1,
+                .num_uniform_buffers = 2,
                 .threadcount_x = 64,
                 .threadcount_y = 1,
                 .threadcount_z = 1,
@@ -1358,7 +1358,6 @@ const VoxelizePass = struct {
 
         const target_update_pass = try sdl.beginGPUComputePass(command_buffer, &.{}, &.{});
         sdl.bindGPUComputePipeline(target_update_pass, pass.target_update_pipeline);
-        // sdl.bindGPUComputeStorageBuffers(target_update_pass, 0, &.{});
         sdl.pushGPUComputeUniformData(command_buffer, 0, &CommonUBO{
             .cascade_size = cascade_size,
             .cascade_mask = cascade_mask,
@@ -1369,11 +1368,17 @@ const VoxelizePass = struct {
         sdl.pushGPUComputeUniformData(command_buffer, 1, &UpdateUBO{
             .anchor_moves = pass.anchor_moves,
         }, @sizeOf(UpdateUBO));
+        // sdl.dispatchGPUCompute(
+        //     target_update_pass,
+        //     cascade_size[0] / 4,
+        //     1,
+        //     1,
+        // );
         sdl.endGPUComputePass(target_update_pass);
 
         const voxelization_pass = try sdl.beginGPUComputePass(command_buffer, &.{}, &.{
-            .{ .buffer = pass.voxel_cascades[0] }, // NOTE FIXME TEST cascades for now for quick viz
-            // .{ .buffer = pass.voxel_targets },
+            // .{ .buffer = pass.voxel_cascades[0] }, // NOTE FIXME TEST cascades for now for quick viz
+            .{ .buffer = pass.voxel_targets[0] }, // FIXME should not be constant, needs the update
         });
         sdl.bindGPUComputePipeline(voxelization_pass, pass.voxelization_pipeline);
         sdl.bindGPUComputeStorageBuffers(voxelization_pass, 0, &.{
@@ -1402,9 +1407,14 @@ const VoxelizePass = struct {
         }
         sdl.endGPUComputePass(voxelization_pass);
 
-        const cascade_update_pass = try sdl.beginGPUComputePass(command_buffer, &.{}, &.{});
+        const cascade_update_pass = try sdl.beginGPUComputePass(command_buffer, &.{}, &.{
+            .{ .buffer = pass.voxel_cascades[pass.ix_new_slot] },
+        });
         sdl.bindGPUComputePipeline(cascade_update_pass, pass.cascade_update_pipeline);
-        // sdl.bindGPUComputeStorageBuffers(cascade_update_pass, 0, &.{});
+        sdl.bindGPUComputeStorageBuffers(cascade_update_pass, 0, &.{
+            pass.voxel_cascades[pass.ix_old_slot],
+            pass.voxel_targets[pass.ix_new_slot],
+        });
         sdl.pushGPUComputeUniformData(command_buffer, 0, &CommonUBO{
             .cascade_size = cascade_size,
             .cascade_mask = cascade_mask,
@@ -1415,6 +1425,7 @@ const VoxelizePass = struct {
         sdl.pushGPUComputeUniformData(command_buffer, 1, &UpdateUBO{
             .anchor_moves = pass.anchor_moves,
         }, @sizeOf(UpdateUBO));
+        sdl.dispatchGPUCompute(target_update_pass, (len_cascades + 63) / 64, 1, 1);
         sdl.endGPUComputePass(cascade_update_pass);
 
         sdl.popGPUDebugGroup(command_buffer);

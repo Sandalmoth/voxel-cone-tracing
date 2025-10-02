@@ -54,8 +54,7 @@ uint quantizeToBitmask(float v, int bits) {
     return (1u << q) - 1u;
 }
 
-uint packDiffuse(vec3 c) {
-    // this could be converted to a lookup table, it's only 1573 possible colors I think
+uint packDiffuseOpacity(vec4 c) {
     float r_pos = max(0, 2.0 * (c.r - 0.5));
     float r_neg = max(0, 2.0 * (0.5 - c.r));
     float g_pos = max(0, 2.0 * (c.g - 0.5));
@@ -65,17 +64,19 @@ uint packDiffuse(vec3 c) {
 
     uint r_pos_bits = quantizeToBitmask(r_pos, 5);
     uint r_neg_bits = quantizeToBitmask(r_neg, 5);
-    uint g_pos_bits = quantizeToBitmask(g_pos, 6);
-    uint g_neg_bits = quantizeToBitmask(g_neg, 6);
+    uint g_pos_bits = quantizeToBitmask(g_pos, 5);
+    uint g_neg_bits = quantizeToBitmask(g_neg, 5);
     uint b_pos_bits = quantizeToBitmask(b_pos, 5);
     uint b_neg_bits = quantizeToBitmask(b_neg, 5);
+    uint alpha_bits = quantizeToBitmask(c.a, 2);
 
-    return (r_pos_bits << 27) |
-           (r_neg_bits << 22) |
-           (g_pos_bits << 16) |
-           (g_neg_bits << 10) |
-           (b_pos_bits <<  5) |
-           (b_neg_bits      );
+    return (r_pos_bits << 27u) |
+           (r_neg_bits << 22u) |
+           (g_pos_bits << 17u) |
+           (g_neg_bits << 12u) |
+           (b_pos_bits <<  7u) |
+           (b_neg_bits <<  2u) |
+           (alpha_bits       );
 }
 
 float dequantizeFromBitmask(uint bits, int nbits) {
@@ -83,25 +84,27 @@ float dequantizeFromBitmask(uint bits, int nbits) {
     return float(q) / float(nbits);
 }
 
-vec3 unpackDiffuse(uint packed) {
-    uint r_pos_bits = (packed >> 27) & 0x1Fu;
-    uint r_neg_bits = (packed >> 22) & 0x1Fu;
-    uint g_pos_bits = (packed >> 16) & 0x3Fu;
-    uint g_neg_bits = (packed >> 10) & 0x3Fu;
-    uint b_pos_bits = (packed >>  5) & 0x1Fu;
-    uint b_neg_bits =  packed        & 0x1Fu;
+vec4 unpackDiffuseOpacity(uint packed) {
+    uint r_pos_bits = (packed >> 27u) & 0x1Fu;
+    uint r_neg_bits = (packed >> 22u) & 0x1Fu;
+    uint g_pos_bits = (packed >> 17u) & 0x1Fu;
+    uint g_neg_bits = (packed >> 12u) & 0x1Fu;
+    uint b_pos_bits = (packed >>  7u) & 0x1Fu;
+    uint b_neg_bits = (packed >>  2u) & 0x1Fu;
+    uint alpha_bits =  packed         & 0x3u;
 
     float r_pos = dequantizeFromBitmask(r_pos_bits, 5);
     float r_neg = dequantizeFromBitmask(r_neg_bits, 5);
-    float g_pos = dequantizeFromBitmask(g_pos_bits, 6);
-    float g_neg = dequantizeFromBitmask(g_neg_bits, 6);
+    float g_pos = dequantizeFromBitmask(g_pos_bits, 5);
+    float g_neg = dequantizeFromBitmask(g_neg_bits, 5);
     float b_pos = dequantizeFromBitmask(b_pos_bits, 5);
     float b_neg = dequantizeFromBitmask(b_neg_bits, 5);
+    float a = dequantizeFromBitmask(alpha_bits, 2);
 
     float r = 0.5 + 0.5 * (r_pos - r_neg);
     float g = 0.5 + 0.5 * (g_pos - g_neg);
     float b = 0.5 + 0.5 * (b_pos - b_neg);
 
-    return vec3(r, g, b);
+    return vec4(r, g, b, a);
 }
 

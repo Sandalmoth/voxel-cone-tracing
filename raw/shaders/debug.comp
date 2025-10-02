@@ -47,7 +47,8 @@ vec4 voxelAt2(vec3 pos) {
     ivec3 voxel_pos = ivec3(floor((pos - anchors[cascade].xyz) / voxel_size));
     float opacity = opacity_cascades[indexFromCascadePos(cascade, voxel_pos)];
     vec4 diffuse = unpackUnorm4x8(diffuse_cascades[indexFromCascadePos(cascade, voxel_pos)]);
-    return vec4(diffuse.rgb, opacity);
+    // return vec4(diffuse.rgb, opacity);
+    return diffuse;
 }
 
 vec4 voxelEnergyAt(vec3 pos) {
