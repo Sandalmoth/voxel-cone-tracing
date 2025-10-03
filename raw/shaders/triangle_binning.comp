@@ -35,6 +35,10 @@ layout(std430, set = 1, binding = 2) buffer Bins {
     Triangle bins[];
 };
 
+layout(std430, set = 1, binding = 3) buffer VoxelTargets {
+    uint voxel_targets[];
+};
+
 layout(std140, set = 2, binding = 0) uniform CommonUBO {
     uvec4 cascade_size; // x, y, z, x*y*z
     uvec4 cascade_mask;
@@ -64,6 +68,11 @@ uint binIndex(ivec3 pos) {
            upos.z * cascade_size[0] / 4u * cascade_size[1] / 4u;
 }
 
+uint triangleVolume(ivec3 lower_bound, ivec3 upper_bound) {
+    ivec3 extent = (upper_bound + 1) - lower_bound;
+    return extent.x * extent.y * extent.z;
+}
+
 void main() {
 
     if (binning_mode == 0u) {
@@ -90,14 +99,37 @@ void main() {
     vec3 p0 = (model_matrix * vec4(p0_model, 1.0)).xyz - anchors[target_cascade].xyz;
     vec3 p1 = (model_matrix * vec4(p1_model, 1.0)).xyz - anchors[target_cascade].xyz;
     vec3 p2 = (model_matrix * vec4(p2_model, 1.0)).xyz - anchors[target_cascade].xyz;
+    vec3 lower_bound = min(min(p0, p1), p2);
+    vec3 upper_bound = max(max(p0, p1), p2);
 
+    // directly voxelize small triangles
+    // this is increases the cost of the binning if we have many small triangles
+    // so should be combined with an LOD system to avoid voxelizing very fine geometry
+    // but it is absolutely necessary to avoid overloading the voxelization pass
+    float voxel_size = voxelSize(target_cascade);
+    ivec3 cascade_size_half = ivec3(cascade_size / 2u);
+    ivec3 voxel_lower_bound = max(ivec3(floor(lower_bound / voxel_size)), -cascade_size_half);
+    ivec3 voxel_upper_bound = min(ivec3(floor(upper_bound / voxel_size)), cascade_size_half - 1);
+    if (triangleVolume(voxel_lower_bound, voxel_upper_bound) <= 2) {
+        if (binning_mode == 1u) {
+            for (int x = voxel_lower_bound.x; x <= voxel_upper_bound.x; ++x) {
+                for (int y = voxel_lower_bound.y; y <= voxel_upper_bound.y; ++y) {
+                    for (int z = voxel_lower_bound.z; z <= voxel_upper_bound.z; ++z) {
+                        ivec3 voxel_pos = ivec3(x, y, z);
+                        uint voxel_index = indexFromCascadePos(target_cascade, voxel_pos);
+                        atomicOr(voxel_targets[voxel_index], packDiffuseOpacity(vec4(diffuse.rgb, 0.5)));
+                    }
+                }
+            }
+        }
+        return;
+    }
+    
     // each bins has 4x4x4 voxels
     float bin_size = voxelSize(target_cascade) * 4;
     ivec3 bin_cascade_size_half = ivec3(cascade_size / 8u);
 
     // NOTE even better would be to test for collisions also at this step
-    vec3 lower_bound = min(min(p0, p1), p2);
-    vec3 upper_bound = max(max(p0, p1), p2);
     ivec3 bin_lower_bound = max(ivec3(floor(lower_bound / bin_size)), -bin_cascade_size_half);
     ivec3 bin_upper_bound = min(ivec3(floor(upper_bound / bin_size)), bin_cascade_size_half - 1);
     for (int x = bin_lower_bound.x; x <= bin_upper_bound.x; ++x) {

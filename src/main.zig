@@ -923,6 +923,7 @@ const VoxelizePass = struct {
     };
     const UpdateUBO = extern struct {
         anchor_moves: [MAX_ANCHORS][4]f32 align(16),
+        target_cascades: [2]u32 align(16),
     };
     const VoxelizeUBO = extern struct {
         bin_group_offset: u32,
@@ -1017,7 +1018,7 @@ const VoxelizePass = struct {
                 .num_readonly_storage_textures = 0,
                 .num_readonly_storage_buffers = 2,
                 .num_readwrite_storage_textures = 0,
-                .num_readwrite_storage_buffers = 3,
+                .num_readwrite_storage_buffers = 4,
                 .num_uniform_buffers = 2,
                 .threadcount_x = 64,
                 .threadcount_y = 1,
@@ -1246,6 +1247,27 @@ const VoxelizePass = struct {
 
         sdl.pushGPUDebugGroup(command_buffer, "binning");
 
+        const target_update_pass = try sdl.beginGPUComputePass(command_buffer, &.{}, &.{
+            .{ .buffer = pass.voxel_targets[pass.ix_new_slot] },
+        });
+        sdl.bindGPUComputePipeline(target_update_pass, pass.target_update_pipeline);
+        sdl.bindGPUComputeStorageBuffers(target_update_pass, 0, &.{
+            pass.voxel_targets[pass.ix_old_slot],
+        });
+        sdl.pushGPUComputeUniformData(command_buffer, 0, &CommonUBO{
+            .cascade_size = cascade_size,
+            .cascade_mask = cascade_mask,
+            .n_cascades = n_cascades,
+            .min_voxel_size = min_voxel_size,
+            .anchors = pass.anchors,
+        }, @sizeOf(CommonUBO));
+        sdl.pushGPUComputeUniformData(command_buffer, 1, &UpdateUBO{
+            .anchor_moves = pass.anchor_moves,
+            .target_cascades = time_slices[pass.ix_time_slice],
+        }, @sizeOf(UpdateUBO));
+        sdl.dispatchGPUCompute(target_update_pass, (len_cascades + 63) / 64, 1, 1);
+        sdl.endGPUComputePass(target_update_pass);
+
         pass.active_pass = try sdl.beginGPUComputePass(
             command_buffer,
             &.{},
@@ -1253,6 +1275,7 @@ const VoxelizePass = struct {
                 .{ .buffer = pass.triangle_bin_counters, .cycle = true },
                 .{ .buffer = pass.triangle_bin_offsets, .cycle = true },
                 .{ .buffer = pass.triangle_bins, .cycle = true },
+                .{ .buffer = pass.voxel_targets[pass.ix_new_slot] },
             },
         );
         sdl.bindGPUComputePipeline(pass.active_pass.?, pass.triangle_binning_pipeline);
@@ -1333,6 +1356,7 @@ const VoxelizePass = struct {
             .{ .buffer = pass.triangle_bin_counters },
             .{ .buffer = pass.triangle_bin_offsets },
             .{ .buffer = pass.triangle_bins },
+            .{ .buffer = pass.voxel_targets[pass.ix_new_slot] },
         });
         sdl.bindGPUComputePipeline(pass.active_pass.?, pass.triangle_binning_pipeline);
         sdl.pushGPUComputeUniformData(command_buffer, 0, &CommonUBO{
@@ -1355,26 +1379,6 @@ const VoxelizePass = struct {
         sdl.popGPUDebugGroup(command_buffer);
 
         sdl.pushGPUDebugGroup(command_buffer, "voxelizing");
-
-        const target_update_pass = try sdl.beginGPUComputePass(command_buffer, &.{}, &.{
-            .{ .buffer = pass.voxel_targets[pass.ix_new_slot] },
-        });
-        sdl.bindGPUComputePipeline(target_update_pass, pass.target_update_pipeline);
-        sdl.bindGPUComputeStorageBuffers(target_update_pass, 0, &.{
-            pass.voxel_targets[pass.ix_old_slot],
-        });
-        sdl.pushGPUComputeUniformData(command_buffer, 0, &CommonUBO{
-            .cascade_size = cascade_size,
-            .cascade_mask = cascade_mask,
-            .n_cascades = n_cascades,
-            .min_voxel_size = min_voxel_size,
-            .anchors = pass.anchors,
-        }, @sizeOf(CommonUBO));
-        sdl.pushGPUComputeUniformData(command_buffer, 1, &UpdateUBO{
-            .anchor_moves = pass.anchor_moves,
-        }, @sizeOf(UpdateUBO));
-        sdl.dispatchGPUCompute(target_update_pass, (len_cascades + 63) / 64, 1, 1);
-        sdl.endGPUComputePass(target_update_pass);
 
         const voxelization_pass = try sdl.beginGPUComputePass(command_buffer, &.{}, &.{
             .{ .buffer = pass.voxel_targets[pass.ix_new_slot] },
@@ -1423,6 +1427,7 @@ const VoxelizePass = struct {
         }, @sizeOf(CommonUBO));
         sdl.pushGPUComputeUniformData(command_buffer, 1, &UpdateUBO{
             .anchor_moves = pass.anchor_moves,
+            .target_cascades = time_slices[pass.ix_time_slice],
         }, @sizeOf(UpdateUBO));
         sdl.dispatchGPUCompute(cascade_update_pass, (len_cascades + 63) / 64, 1, 1);
         sdl.endGPUComputePass(cascade_update_pass);

@@ -22,11 +22,19 @@ layout(std140, set = 2, binding = 0) uniform CommonUBO {
 
 layout(std140, set = 2, binding = 1) uniform UpdateUBO {
     vec4 anchor_moves[MAX_CASCADES];
+    uvec2 target_cascades;
 };
+
+#include "include/voxel_utils.glsl"
 
 void main() {
     uint global_id = gl_GlobalInvocationID.x;
     if (global_id >= n_cascades * cascade_size[3]) return;
     
-    new_voxel_targets[global_id] = old_voxel_targets[global_id];
+    uint cascade = indexToCascade(global_id);
+    if (cascade == target_cascades[0] || cascade == target_cascades[1]) {
+        new_voxel_targets[global_id] = 0u;        
+    } else {
+        new_voxel_targets[global_id] = old_voxel_targets[global_id];
+    }
 }

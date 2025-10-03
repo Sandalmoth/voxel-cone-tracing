@@ -25,6 +25,7 @@ layout(std140, set = 2, binding = 0) uniform CommonUBO {
 
 layout(std140, set = 2, binding = 1) uniform UpdateUBO {
     vec4 anchor_moves[MAX_CASCADES];
+    uvec2 target_cascades;
 };
 
 #include "include/voxel_utils.glsl"

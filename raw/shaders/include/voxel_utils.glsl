@@ -108,3 +108,51 @@ vec4 unpackDiffuseOpacity(uint packed) {
     return vec4(r, g, b, a);
 }
 
+struct IntersectionInfo {
+    vec3 n;
+    vec3 c;
+    vec2 ne0xy;
+    vec2 ne1xy;
+    vec2 ne2xy;
+    vec2 ne0yz;
+    vec2 ne1yz;
+    vec2 ne2yz;
+    vec2 ne0zx;
+    vec2 ne1zx;
+    vec2 ne2zx;
+    float de0xy;
+    float de1xy;
+    float de2xy;
+    float de0yz;
+    float de1yz;
+    float de2yz;
+    float de0zx;
+    float de1zx;
+    float de2zx;
+};
+
+bool intersectVoxelTriangle(
+    vec3 low, vec3 ext, vec3 p0, vec3 p1, vec3 p2,
+    IntersectionInfo info
+    // vec3 n, vec3 c,
+    // vec2 ne0xy, vec2 ne1xy, vec2 ne2xy, float de0xy, float de1xy, float de2xy,
+    // vec2 ne0yz, vec2 ne1yz, vec2 ne2yz, float de0yz, float de1yz, float de2yz,
+    // vec2 ne0zx, vec2 ne1zx, vec2 ne2zx, float de0zx, float de1zx, float de2zx
+) {
+    // https://omnigoat.github.io/2015/03/09/box-triangle-intersection/
+    float d1 = dot(info.n, low + info.c - p0);
+    float d2 = dot(info.n, low + ext - info.c - p0);
+    if (d1 * d2 > 0.0) return false;
+
+    if (dot(info.ne0xy, low.xy) + info.de0xy < 0.0) return false;
+    if (dot(info.ne1xy, low.xy) + info.de1xy < 0.0) return false;
+    if (dot(info.ne2xy, low.xy) + info.de2xy < 0.0) return false;
+    if (dot(info.ne0yz, low.yz) + info.de0yz < 0.0) return false;
+    if (dot(info.ne1yz, low.yz) + info.de1yz < 0.0) return false;
+    if (dot(info.ne2yz, low.yz) + info.de2yz < 0.0) return false;
+    if (dot(info.ne0zx, low.zx) + info.de0zx < 0.0) return false;
+    if (dot(info.ne1zx, low.zx) + info.de1zx < 0.0) return false;
+    if (dot(info.ne2zx, low.zx) + info.de2zx < 0.0) return false;
+
+    return true;
+}
