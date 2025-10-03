@@ -27,6 +27,18 @@ layout(std140, set = 2, binding = 1) uniform UpdateUBO {
 
 #include "include/voxel_utils.glsl"
 
+int floorDiv2(int x) {
+    return x >= 0 ? x / 2 : (x - 1) / 2;
+}
+
+ivec3 floorDiv2(ivec3 v) {
+    return ivec3(
+        floorDiv2(v.x),
+        floorDiv2(v.y),
+        floorDiv2(v.z)
+    );
+}
+
 void main() {
     uint global_id = gl_GlobalInvocationID.x;
     if (global_id >= n_cascades * cascade_size[3]) return;
@@ -35,6 +47,25 @@ void main() {
     if (cascade == target_cascades[0] || cascade == target_cascades[1]) {
         new_voxel_targets[global_id] = 0u;        
     } else {
-        new_voxel_targets[global_id] = old_voxel_targets[global_id];
+        ivec3 voxel_pos = indexToPos(global_id);
+        vec3 anchor_move = anchor_moves[cascade].xyz / voxelSize(cascade);
+        ivec3 reprojected_pos = voxel_pos + ivec3(round(anchor_move));
+        uint reprojected_cascade = cascade;
+        while (reprojected_pos.x < -int(cascade_size.x) / 2 ||
+               reprojected_pos.x >= int(cascade_size.x) / 2 ||
+               reprojected_pos.y < -int(cascade_size.y) / 2 ||
+               reprojected_pos.y >= int(cascade_size.y) / 2 ||
+               reprojected_pos.z < -int(cascade_size.z) / 2 ||
+               reprojected_pos.z >= int(cascade_size.z) / 2) {
+            reprojected_pos = floorDiv2(reprojected_pos);
+            reprojected_cascade += 1;
+        }
+
+        if (reprojected_cascade < n_cascades) {
+            uint reprojected_index = indexFromCascadePos(reprojected_cascade, reprojected_pos);
+            new_voxel_targets[global_id] = old_voxel_targets[reprojected_index];
+        } else {
+            new_voxel_targets[global_id] = 0u;
+        }
     }
 }

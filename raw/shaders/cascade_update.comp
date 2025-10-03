@@ -30,11 +30,44 @@ layout(std140, set = 2, binding = 1) uniform UpdateUBO {
 
 #include "include/voxel_utils.glsl"
 
+int floorDiv2(int x) {
+    return x >= 0 ? x / 2 : (x - 1) / 2;
+}
+
+ivec3 floorDiv2(ivec3 v) {
+    return ivec3(
+        floorDiv2(v.x),
+        floorDiv2(v.y),
+        floorDiv2(v.z)
+    );
+}
+
 void main() {
     uint global_id = gl_GlobalInvocationID.x;
     if (global_id >= n_cascades * cascade_size[3]) return;
+
+    uint cascade = indexToCascade(global_id);
+    ivec3 voxel_pos = indexToPos(global_id);
+    vec3 anchor_move = anchor_moves[cascade].xyz / voxelSize(cascade);
+    ivec3 reprojected_pos = voxel_pos + ivec3(round(anchor_move));
+    uint reprojected_cascade = cascade;
+    while (reprojected_pos.x < -int(cascade_size.x) / 2 ||
+           reprojected_pos.x >= int(cascade_size.x) / 2 ||
+           reprojected_pos.y < -int(cascade_size.y) / 2 ||
+           reprojected_pos.y >= int(cascade_size.y) / 2 ||
+           reprojected_pos.z < -int(cascade_size.z) / 2 ||
+           reprojected_pos.z >= int(cascade_size.z) / 2) {
+        reprojected_pos = floorDiv2(reprojected_pos);
+        reprojected_cascade += 1;
+    }
+    vec4 old_voxel_color;
+    if (reprojected_cascade < n_cascades) {
+        uint reprojected_index = indexFromCascadePos(reprojected_cascade, reprojected_pos);
+        vec4 old_voxel_color = unpackUnorm4x8(old_voxel_cascades[reprojected_index]);
+    } else {
+        old_voxel_color = vec4(0.0);
+    }
     
-    vec4 old_voxel_color = unpackUnorm4x8(old_voxel_cascades[global_id]);
     vec4 new_voxel_color = unpackDiffuseOpacity(new_voxel_targets[global_id]);
     vec4 voxel_color = mix(old_voxel_color, new_voxel_color, 0.5);
     new_voxel_cascades[global_id] = packUnorm4x8(voxel_color);
