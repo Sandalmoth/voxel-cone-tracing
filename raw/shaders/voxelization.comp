@@ -69,7 +69,7 @@ void main() {
 
     float voxel_size = voxelSize(target_cascade);
     vec3 low = voxel_size * vec3(voxel_pos);
-    vec3 ext = vec3(voxel_size, voxel_size, voxel_size);
+    float ext = voxel_size;
 
     for (uint batch = 0u; batch < n_triangles; batch += BATCH_SIZE) {
         // each thread loads one triangle and precomputes all the collision testing data
@@ -86,13 +86,13 @@ void main() {
             {
                 vec3 n = normalize(cross(p1 - p0, p2 - p0));
                 vec3 c = vec3(
-                    (n.x > 0.0) ? ext.x : 0.0,
-                    (n.y > 0.0) ? ext.y : 0.0,
-                    (n.z > 0.0) ? ext.z : 0.0
+                    (n.x > 0.0) ? ext : 0.0,
+                    (n.y > 0.0) ? ext : 0.0,
+                    (n.z > 0.0) ? ext : 0.0
                 );
-                xym = sign(n.z);
-                yzm = sign(n.x);
-                zxm = sign(n.y);
+                xym = (n.z >= 0.0) ? 1.0 : -1.0;
+                yzm = (n.x >= 0.0) ? 1.0 : -1.0;
+                zxm = (n.y >= 0.0) ? 1.0 : -1.0;
                 intersection_info[local_index].n = n;
                 intersection_info[local_index].c = c;
             }
@@ -101,7 +101,7 @@ void main() {
                 // vec2 e = p1.xy - p0.xy;
                 vec2 ne0xy = vec2(-e0.y, e0.x) * xym;
                 // vec2 ne0xy = vec2(-e.y, e.x) * xym;
-                intersection_info[local_index].de0xy = -dot(ne0xy, p0.xy) + max(0.0, ext.x * ne0xy.x) + max(0.0, ext.y * ne0xy.y);
+                intersection_info[local_index].de0xy = -dot(ne0xy, p0.xy) + max(0.0, ext * ne0xy.x) + max(0.0, ext * ne0xy.y);
                 intersection_info[local_index].ne0xy = ne0xy;
             }
             {
@@ -109,7 +109,7 @@ void main() {
                 // vec2 e = p2.xy - p1.xy;
                 vec2 ne1xy = vec2(-e1.y, e1.x) * xym;
                 // vec2 ne1xy = vec2(-e.y, e.x) * xym;
-                intersection_info[local_index].de1xy = -dot(ne1xy, p1.xy) + max(0.0, ext.x * ne1xy.x) + max(0.0, ext.y * ne1xy.y);
+                intersection_info[local_index].de1xy = -dot(ne1xy, p1.xy) + max(0.0, ext * ne1xy.x) + max(0.0, ext * ne1xy.y);
                 intersection_info[local_index].ne1xy = ne1xy;
             }
             {
@@ -117,7 +117,7 @@ void main() {
                 // vec2 e = p0.xy - p2.xy;
                 vec2 ne2xy = vec2(-e2.y, e2.x) * xym;
                 // vec2 ne2xy = vec2(-e.y, e.x) * xym;
-                intersection_info[local_index].de2xy = -dot(ne2xy, p2.xy) + max(0.0, ext.x * ne2xy.x) + max(0.0, ext.y * ne2xy.y);
+                intersection_info[local_index].de2xy = -dot(ne2xy, p2.xy) + max(0.0, ext * ne2xy.x) + max(0.0, ext * ne2xy.y);
                 intersection_info[local_index].ne2xy = ne2xy;
             }
             {
@@ -125,7 +125,7 @@ void main() {
                 // vec2 e = p1.yz - p0.yz;
                 vec2 ne0yz = vec2(-e0.z, e0.y) * yzm;
                 // vec2 ne0yz = vec2(-e.y, e.x) * yzm;
-                intersection_info[local_index].de0yz = -dot(ne0yz, p0.yz) + max(0.0, ext.y * ne0yz.x) + max(0.0, ext.z * ne0yz.y);
+                intersection_info[local_index].de0yz = -dot(ne0yz, p0.yz) + max(0.0, ext * ne0yz.x) + max(0.0, ext * ne0yz.y);
                 intersection_info[local_index].ne0yz = ne0yz;
             }
             {
@@ -133,7 +133,7 @@ void main() {
                 // vec2 e = p2.yz - p1.yz;
                 vec2 ne1yz = vec2(-e1.z, e1.y) * yzm;
                 // vec2 ne1yz = vec2(-e.y, e.x) * yzm;
-                intersection_info[local_index].de1yz = -dot(ne1yz, p1.yz) + max(0.0, ext.y * ne1yz.x) + max(0.0, ext.z * ne1yz.y);
+                intersection_info[local_index].de1yz = -dot(ne1yz, p1.yz) + max(0.0, ext * ne1yz.x) + max(0.0, ext * ne1yz.y);
                 intersection_info[local_index].ne1yz = ne1yz;
             }
             {
@@ -141,7 +141,7 @@ void main() {
                 // vec2 e = p0.yz - p2.yz;
                 vec2 ne2yz = vec2(-e2.z, e2.y) * yzm;
                 // vec2 ne2yz = vec2(-e.y, e.x) * yzm;
-                intersection_info[local_index].de2yz = -dot(ne2yz, p2.yz) + max(0.0, ext.y * ne2yz.x) + max(0.0, ext.z * ne2yz.y);
+                intersection_info[local_index].de2yz = -dot(ne2yz, p2.yz) + max(0.0, ext * ne2yz.x) + max(0.0, ext * ne2yz.y);
                 intersection_info[local_index].ne2yz = ne2yz;
             }
             {
@@ -149,7 +149,7 @@ void main() {
                 // vec2 e = p1.zx - p0.zx;
                 vec2 ne0zx = vec2(-e0.x, e0.z) * zxm;
                 // vec2 ne0zx = vec2(-e.y, e.x) * zxm;
-                intersection_info[local_index].de0zx = -dot(ne0zx, p0.zx) + max(0.0, ext.z * ne0zx.x) + max(0.0, ext.x * ne0zx.y);
+                intersection_info[local_index].de0zx = -dot(ne0zx, p0.zx) + max(0.0, ext * ne0zx.x) + max(0.0, ext * ne0zx.y);
                 intersection_info[local_index].ne0zx = ne0zx;
             }
             {
@@ -157,7 +157,7 @@ void main() {
                 // vec2 e = p2.zx - p1.zx;
                 vec2 ne1zx = vec2(-e1.x, e1.z) * zxm;
                 // vec2 ne1zx = vec2(-e.y, e.x) * zxm;
-                intersection_info[local_index].de1zx = -dot(ne1zx, p1.zx) + max(0.0, ext.z * ne1zx.x) + max(0.0, ext.x * ne1zx.y);
+                intersection_info[local_index].de1zx = -dot(ne1zx, p1.zx) + max(0.0, ext * ne1zx.x) + max(0.0, ext * ne1zx.y);
                 intersection_info[local_index].ne1zx = ne1zx;
             }
             {
@@ -165,7 +165,7 @@ void main() {
                 // vec2 e = p0.zx - p2.zx;
                 vec2 ne2zx = vec2(-e2.x, e2.z) * zxm;
                 // vec2 ne2zx = vec2(-e.y, e.x) * zxm;
-                intersection_info[local_index].de2zx = -dot(ne2zx, p2.zx) + max(0.0, ext.z * ne2zx.x) + max(0.0, ext.x * ne2zx.y);
+                intersection_info[local_index].de2zx = -dot(ne2zx, p2.zx) + max(0.0, ext * ne2zx.x) + max(0.0, ext * ne2zx.y);
                 intersection_info[local_index].ne2zx = ne2zx;
             }
         }
@@ -178,9 +178,7 @@ void main() {
                 low, ext, triangles[i].p0, triangles[i].p1, triangles[i].p2, intersection_info[i]
             )) continue;
 
-            // for now, if a bin has content, mark all the voxels in it
             voxel_color += vec4(triangles[i].diffuse, 1.0);
-            // voxel_color += vec4(1.0);
             n_intersections += 1.0;
         }
         barrier();

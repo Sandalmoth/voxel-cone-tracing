@@ -132,7 +132,7 @@ struct IntersectionInfo {
 };
 
 bool intersectVoxelTriangle(
-    vec3 low, vec3 ext, vec3 p0, vec3 p1, vec3 p2,
+    vec3 low, float ext, vec3 p0, vec3 p1, vec3 p2,
     IntersectionInfo info
     // vec3 n, vec3 c,
     // vec2 ne0xy, vec2 ne1xy, vec2 ne2xy, float de0xy, float de1xy, float de2xy,
@@ -140,9 +140,24 @@ bool intersectVoxelTriangle(
     // vec2 ne0zx, vec2 ne1zx, vec2 ne2zx, float de0zx, float de1zx, float de2zx
 ) {
     // https://omnigoat.github.io/2015/03/09/box-triangle-intersection/
-    float d1 = dot(info.n, low + info.c - p0);
-    float d2 = dot(info.n, low + ext - info.c - p0);
-    if (d1 * d2 > 0.0) return false;
+
+    {
+        vec3 mins = min(p0, min(p1, p2));
+        vec3 maxs = max(p0, max(p1, p2)); 
+        if ((mins.x > (low + ext).x) || (maxs.x < low.x) ||
+            (mins.y > (low + ext).y) || (maxs.y < low.y) ||
+            (mins.z > (low + ext).z) || (maxs.z < low.z)) return false;
+    }
+    // {
+    //     float d1 = dot(info.n, low + info.c - p0);
+    //     float d2 = dot(info.n, low + ext - info.c - p0);
+    //     if (d1 * d2 > 0.0) return false;
+    // }
+    {
+        float d1 = dot(info.n, info.c - p0);
+        float d2 = dot(info.n, ext - info.c - p0);
+        if ((dot(info.n, low) + d1) * (dot(info.n, low) + d2) > 0.0) return false;
+    }
 
     if (dot(info.ne0xy, low.xy) + info.de0xy < 0.0) return false;
     if (dot(info.ne1xy, low.xy) + info.de1xy < 0.0) return false;

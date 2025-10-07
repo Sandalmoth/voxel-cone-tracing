@@ -106,6 +106,8 @@ void main() {
     // this is increases the cost of the binning if we have many small triangles
     // so should be combined with an LOD system to avoid voxelizing very fine geometry
     // but it is absolutely necessary to avoid overloading the voxelization pass
+    // a further optimization might be to do voxelization with intersection testing here as well
+    // for triangles that are bigger than 2 voxels, but smaller than some threshold
     float voxel_size = voxelSize(target_cascade);
     ivec3 cascade_size_half = ivec3(cascade_size / 2u);
     ivec3 voxel_lower_bound = max(ivec3(floor(lower_bound / voxel_size)), -cascade_size_half);
@@ -117,7 +119,10 @@ void main() {
                     for (int z = voxel_lower_bound.z; z <= voxel_upper_bound.z; ++z) {
                         ivec3 voxel_pos = ivec3(x, y, z);
                         uint voxel_index = indexFromCascadePos(target_cascade, voxel_pos);
-                        atomicOr(voxel_targets[voxel_index], packDiffuseOpacity(vec4(diffuse.rgb, 0.5)));
+                        atomicOr(
+                            voxel_targets[voxel_index],
+                            packDiffuseOpacity(vec4(diffuse.rgb, 0.5))
+                        );
                     }
                 }
             }
@@ -129,7 +134,7 @@ void main() {
     float bin_size = voxelSize(target_cascade) * 4;
     ivec3 bin_cascade_size_half = ivec3(cascade_size / 8u);
 
-    // NOTE even better would be to test for collisions also at this step
+    // we could test for bin intersection here as well instead of binning to everythign in the bbox
     ivec3 bin_lower_bound = max(ivec3(floor(lower_bound / bin_size)), -bin_cascade_size_half);
     ivec3 bin_upper_bound = min(ivec3(floor(upper_bound / bin_size)), bin_cascade_size_half - 1);
     for (int x = bin_lower_bound.x; x <= bin_upper_bound.x; ++x) {
