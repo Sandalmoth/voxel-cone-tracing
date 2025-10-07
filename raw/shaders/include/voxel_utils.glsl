@@ -139,8 +139,8 @@ bool intersectVoxelTriangle(
     // vec2 ne0yz, vec2 ne1yz, vec2 ne2yz, float de0yz, float de1yz, float de2yz,
     // vec2 ne0zx, vec2 ne1zx, vec2 ne2zx, float de0zx, float de1zx, float de2zx
 ) {
+    // https://doi.org/10.1145/1882261.1866201
     // https://omnigoat.github.io/2015/03/09/box-triangle-intersection/
-
     {
         vec3 mins = min(p0, min(p1, p2));
         vec3 maxs = max(p0, max(p1, p2)); 
@@ -148,15 +148,10 @@ bool intersectVoxelTriangle(
             (mins.y > (low + ext).y) || (maxs.y < low.y) ||
             (mins.z > (low + ext).z) || (maxs.z < low.z)) return false;
     }
-    // {
-    //     float d1 = dot(info.n, low + info.c - p0);
-    //     float d2 = dot(info.n, low + ext - info.c - p0);
-    //     if (d1 * d2 > 0.0) return false;
-    // }
     {
-        float d1 = dot(info.n, info.c - p0);
-        float d2 = dot(info.n, ext - info.c - p0);
-        if ((dot(info.n, low) + d1) * (dot(info.n, low) + d2) > 0.0) return false;
+        float d1 = dot(info.n, low + info.c - p0);
+        float d2 = dot(info.n, low + ext - info.c - p0);
+        if (d1 * d2 > 0.0) return false;
     }
 
     if (dot(info.ne0xy, low.xy) + info.de0xy < 0.0) return false;
