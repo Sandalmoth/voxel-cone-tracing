@@ -1149,7 +1149,7 @@ const VoxelizePass = struct {
                 .num_samplers = 0,
                 .num_readonly_storage_textures = 0,
                 .num_readonly_storage_buffers = 1,
-                .num_readwrite_storage_textures = 0,
+                .num_readwrite_storage_textures = 2,
                 .num_readwrite_storage_buffers = 1,
                 .num_uniform_buffers = 2,
                 .threadcount_x = 64,
@@ -1591,7 +1591,10 @@ const VoxelizePass = struct {
         for (ubo.bresenham) |p| std.debug.print("{any}\n", .{p});
         std.debug.print("{}\n", .{ubo});
 
-        const inject_skylight_pass = try sdl.beginGPUComputePass(command_buffer, &.{}, &.{
+        const inject_skylight_pass = try sdl.beginGPUComputePass(command_buffer, &.{
+            .{ .texture = pass.energy_cascades, .cycle = true },
+            .{ .texture = pass.color_cascades, .cycle = true },
+        }, &.{
             .{ .buffer = pass.skylight_visibility_cascades, .cycle = true },
         });
         sdl.bindGPUComputePipeline(inject_skylight_pass, pass.inject_skylight_pipeline);
@@ -1619,7 +1622,7 @@ const VoxelizePass = struct {
 
         ubo.mode = 1;
         sdl.pushGPUComputeUniformData(command_buffer, 1, &ubo, @sizeOf(InjectUBO));
-        sdl.dispatchGPUCompute(inject_skylight_pass, (n_roots + 63) / 64, 1, 1);
+        sdl.dispatchGPUCompute(inject_skylight_pass, (len_cascades + 63) / 64, 1, 1);
 
         sdl.endGPUComputePass(inject_skylight_pass);
 

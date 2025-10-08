@@ -8,7 +8,9 @@ layout(std430, set = 0, binding = 0) readonly buffer VoxelCascades {
     uint voxel_cascades[];
 };
 
-layout(std430, set = 1, binding = 0) buffer SkylightVisibility {
+layout(rgba16f, set = 1, binding = 0) uniform image3D u_energy_targets;
+layout(rgba8, set = 1, binding = 1) uniform image3D u_color_targets;
+layout(std430, set = 1, binding = 2) buffer SkylightVisibility {
     float skylight_visibility[];
 };
 
@@ -19,7 +21,6 @@ layout(std140, set = 2, binding = 0) uniform CommonUBO {
     float min_voxel_size;
     vec4 anchors[MAX_CASCADES];
 };
-
 layout(std140, set = 2, binding = 1) uniform InjectUBO {
     ivec4 bresenham[64];
     ivec4 origin;
@@ -76,6 +77,25 @@ void main() {
 
     if (mode == 1u) {
         // compute energy and color
+        
+        uint cascade = indexToCascade(global_id);
+        ivec3 pos = indexToPos(global_id);
+        float opacity = skylight_visibility[global_id];
+
+        vec4 energy = vec4(0, 0, 0, 1.0 - opacity);
+        vec4 color = vec4(0.5, 0.5, 0.5, 1.0);
+
+        imageStore(
+            u_energy_targets,
+            pos + ivec3(cascade_size.xyz / 2) + ivec3(cascade * cascade_size[0], 0, 0),
+            energy
+        );
+        imageStore(
+            u_color_targets,
+            pos + ivec3(cascade_size.xyz / 2) + ivec3(cascade * cascade_size[0], 0, 0),
+            color
+        );
+
         return;
     }
 }
