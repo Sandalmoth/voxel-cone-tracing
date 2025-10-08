@@ -938,8 +938,12 @@ const VoxelizePass = struct {
         origin: [4]i32 align(16),
         step_a: [4]i32 align(16),
         step_b: [4]i32 align(16),
-        n_a: i32,
-        n_b: i32,
+        light_direction: [4]f32 align(16),
+        light_intensity: [4]f32 align(16),
+        n_a: u32,
+        n_b: u32,
+        mode: u32,
+        cascade: u32,
     };
 
     // these could be runtime values to allow for e.g. graphics settings
@@ -1006,7 +1010,7 @@ const VoxelizePass = struct {
 
     inject_skylight_pipeline: *sdl.GPUComputePipeline,
 
-    skylight_visibility_cascades: *sdl.GPUTexture,
+    skylight_visibility_cascades: *sdl.GPUBuffer,
 
     energy_cascades: *sdl.GPUTexture,
     color_cascades: *sdl.GPUTexture,
@@ -1144,9 +1148,9 @@ const VoxelizePass = struct {
                 .format = sdl.c.SDL_GPU_SHADERFORMAT_SPIRV,
                 .num_samplers = 0,
                 .num_readonly_storage_textures = 0,
-                .num_readonly_storage_buffers = 0,
+                .num_readonly_storage_buffers = 1,
                 .num_readwrite_storage_textures = 0,
-                .num_readwrite_storage_buffers = 0,
+                .num_readwrite_storage_buffers = 1,
                 .num_uniform_buffers = 2,
                 .threadcount_x = 64,
                 .threadcount_y = 1,
@@ -1204,18 +1208,12 @@ const VoxelizePass = struct {
         });
         errdefer sdl.releaseGPUBuffer(device, triangle_bins);
 
-        const skylight_visibility_cascades = try sdl.createGPUTexture(device, &.{
-            .type = sdl.c.SDL_GPU_TEXTURETYPE_3D,
-            .format = sdl.c.SDL_GPU_TEXTUREFORMAT_R8_UNORM,
-            .usage = sdl.c.SDL_GPU_TEXTUREUSAGE_COMPUTE_STORAGE_READ |
-                sdl.c.SDL_GPU_TEXTUREUSAGE_COMPUTE_STORAGE_WRITE,
-            .width = cascade_size[0] * n_cascades,
-            .height = cascade_size[1],
-            .layer_count_or_depth = cascade_size[2],
-            .num_levels = 1,
-            .sample_count = sdl.c.SDL_GPU_SAMPLECOUNT_1,
+        const skylight_visibility_cascades = try sdl.createGPUBuffer(device, &.{
+            .usage = sdl.c.SDL_GPU_BUFFERUSAGE_COMPUTE_STORAGE_READ |
+                sdl.c.SDL_GPU_BUFFERUSAGE_COMPUTE_STORAGE_WRITE,
+            .size = len_cascades * @sizeOf(f32),
         });
-        errdefer sdl.releaseGPUTexture(device, skylight_visibility_cascades);
+        errdefer sdl.releaseGPUBuffer(device, skylight_visibility_cascades);
 
         const energy_cascades = try sdl.createGPUTexture(device, &.{
             .type = sdl.c.SDL_GPU_TEXTURETYPE_3D,
@@ -1265,7 +1263,7 @@ const VoxelizePass = struct {
     fn deinit(pass: *VoxelizePass) void {
         sdl.releaseGPUTexture(pass.device, pass.color_cascades);
         sdl.releaseGPUTexture(pass.device, pass.energy_cascades);
-        sdl.releaseGPUTexture(pass.device, pass.skylight_visibility_cascades);
+        sdl.releaseGPUBuffer(pass.device, pass.skylight_visibility_cascades);
         sdl.releaseGPUBuffer(pass.device, pass.triangle_bins);
         sdl.releaseGPUBuffer(pass.device, pass.triangle_bin_offsets);
         sdl.releaseGPUBuffer(pass.device, pass.triangle_bin_counters);
@@ -1502,8 +1500,6 @@ const VoxelizePass = struct {
         skylight_direction: [3]f32,
         skylight_intensity: [3]f32,
     ) !void {
-        _ = skylight_intensity;
-
         sdl.pushGPUDebugGroup(command_buffer, "inject");
 
         const major_axis: u32 = blk2: {
@@ -1520,6 +1516,11 @@ const VoxelizePass = struct {
         // compute the voxelized line the light traverses through a cascade
         // NOTE some hardcoded dimensions here, should depend on cascade sizes
         var ubo: InjectUBO = undefined;
+        for (0..3) |i| {
+            ubo.light_direction[i] = skylight_direction[i];
+            ubo.light_intensity[i] = skylight_intensity[i];
+        }
+
         ubo.bresenham = blk: {
             var bresenham: [64][4]i32 = undefined;
 
@@ -1583,17 +1584,20 @@ const VoxelizePass = struct {
         ubo.step_b[axis_a] = 0;
         ubo.step_b[axis_b] = if (skylight_direction[axis_b] < 0) 1 else -1;
 
-        ubo.n_a = 64 + @as(i32, @intCast(@abs(ubo.bresenham[63][axis_a])));
-        ubo.n_b = 64 + @as(i32, @intCast(@abs(ubo.bresenham[63][axis_b])));
-        const n_roots: u32 = @intCast(ubo.n_a * ubo.n_b);
+        ubo.n_a = 64 + @abs(ubo.bresenham[63][axis_a]);
+        ubo.n_b = 64 + @abs(ubo.bresenham[63][axis_b]);
+        const n_roots: u32 = ubo.n_a * ubo.n_b;
 
         for (ubo.bresenham) |p| std.debug.print("{any}\n", .{p});
         std.debug.print("{}\n", .{ubo});
 
         const inject_skylight_pass = try sdl.beginGPUComputePass(command_buffer, &.{}, &.{
-            .{ .buffer = pass.voxel_cascades[pass.ix_new_slot] },
+            .{ .buffer = pass.skylight_visibility_cascades, .cycle = true },
         });
         sdl.bindGPUComputePipeline(inject_skylight_pass, pass.inject_skylight_pipeline);
+        sdl.bindGPUComputeStorageBuffers(inject_skylight_pass, 0, &.{
+            pass.voxel_cascades[pass.ix_new_slot],
+        });
         sdl.pushGPUComputeUniformData(command_buffer, 0, &CommonUBO{
             .cascade_size = cascade_size,
             .cascade_mask = cascade_mask,
@@ -1601,8 +1605,22 @@ const VoxelizePass = struct {
             .min_voxel_size = min_voxel_size,
             .anchors = pass.anchors,
         }, @sizeOf(CommonUBO));
+        ubo.mode = 0;
+        // NOTE this is a simplification
+        // to get maximally up-to-date visibility we should recompute all cascades each frame
+        // however, that is a serial dependency and fairly inefficient (~500 us instead of ~60)
+        // we could possibly compromise by having a 1-frame delay on the exterior light
+        // and recompute all cascades simultaneously based on the previous frames visibility
+        for (time_slices[pass.ix_time_slice]) |target_cascade| {
+            ubo.cascade = @intCast(target_cascade);
+            sdl.pushGPUComputeUniformData(command_buffer, 1, &ubo, @sizeOf(InjectUBO));
+            sdl.dispatchGPUCompute(inject_skylight_pass, (n_roots + 63) / 64, 1, 1);
+        }
+
+        ubo.mode = 1;
         sdl.pushGPUComputeUniformData(command_buffer, 1, &ubo, @sizeOf(InjectUBO));
         sdl.dispatchGPUCompute(inject_skylight_pass, (n_roots + 63) / 64, 1, 1);
+
         sdl.endGPUComputePass(inject_skylight_pass);
 
         sdl.popGPUDebugGroup(command_buffer);
