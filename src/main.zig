@@ -1614,7 +1614,8 @@ const VoxelizePass = struct {
         // however, that is a serial dependency and fairly inefficient (~500 us instead of ~60)
         // we could possibly compromise by having a 1-frame delay on the exterior light
         // and recompute all cascades simultaneously based on the previous frames visibility
-        for (time_slices[pass.ix_time_slice]) |target_cascade| {
+        // for (time_slices[pass.ix_time_slice]) |target_cascade| {
+        for ([8]u32{ 7, 6, 5, 4, 3, 2, 1, 0 }) |target_cascade| {
             ubo.cascade = @intCast(target_cascade);
             sdl.pushGPUComputeUniformData(command_buffer, 1, &ubo, @sizeOf(InjectUBO));
             sdl.dispatchGPUCompute(inject_skylight_pass, (n_roots + 63) / 64, 1, 1);
