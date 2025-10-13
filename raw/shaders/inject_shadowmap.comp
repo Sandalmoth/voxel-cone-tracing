@@ -1,0 +1,15 @@
+#version 460
+
+#include "include/defines.glsl"
+
+layout(local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
+
+layout(std140, set = 2, binding = 0) uniform CommonUBO {
+    uvec4 cascade_size; // xyz
+    uvec4 cascade_mask;
+    uint n_cascades;
+    float min_voxel_size;
+    vec4 anchors[MAX_CASCADES];
+};
+
+void main() {}

@@ -12,6 +12,9 @@ glslc --target-env=vulkan1.0 raw/shaders/cascade_update.comp -o data/shaders/cas
 
 glslc --target-env=vulkan1.0 raw/shaders/inject_skylight.comp -o data/shaders/inject_skylight.comp.spv
 
+glslc --target-env=vulkan1.0 raw/shaders/assign_shadowmap.comp -o data/shaders/assign_shadowmap.comp.spv
+glslc --target-env=vulkan1.0 raw/shaders/inject_shadowmap.comp -o data/shaders/inject_shadowmap.comp.spv
+
 # glslc --target-env=vulkan1.0 raw/shaders/clear.comp -o data/shaders/clear.comp.spv
 # glslc --target-env=vulkan1.0 raw/shaders/voxelize.comp -o data/shaders/voxelize.comp.spv
 # glslc --target-env=vulkan1.0 raw/shaders/average.comp -o data/shaders/average.comp.spv
