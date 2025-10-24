@@ -187,9 +187,16 @@ pub fn main() !void {
         const command_buffer = try sdl.acquireGPUCommandBuffer(device);
 
         const camera_matrix = camera.vp(alpha);
+        const light_x: f32 = @floatCast(-@cos(time));
+        const light_y: f32 = @floatCast(0.5 * @cos(time / 1.1618));
         const light_matrix = zm.mul(
             zm.lookAtRh(
-                zm.f32x4(-1.0, 2.0, 0.5, 1.0),
+                zm.f32x4(
+                    light_x,
+                    2.0,
+                    light_y,
+                    1.0,
+                ),
                 zm.f32x4s(0.0),
                 zm.f32x4(0.0, 1.0, 0.0, 0.0),
             ),
@@ -212,7 +219,11 @@ pub fn main() !void {
             try voxelize_pass.endBinning(command_buffer);
         }
         {
-            try voxelize_pass.inject(command_buffer, .{ 1.0, -2.0, -0.5 }, .{ 1.0, 1.0, 1.0 });
+            try voxelize_pass.inject(
+                command_buffer,
+                .{ -light_x, -2.0, -light_y },
+                .{ 1.0, 1.0, 1.0 },
+            );
         }
         {
             try draw_pass.beginShadowmap(command_buffer);
@@ -932,18 +943,11 @@ const VoxelizePass = struct {
         bin_group_offset: u32,
         target_cascade: u32,
     };
-    const InjectUBO = extern struct {
-        bresenham: [64][4]i32 align(16),
-        // define the face to start tracing from
-        origin: [4]i32 align(16),
-        step_a: [4]i32 align(16),
-        step_b: [4]i32 align(16),
+    const AssignUBO = extern struct {
+        inverse_vp_matrix: [4][4]f32 align(16),
         light_direction: [4]f32 align(16),
         light_intensity: [4]f32 align(16),
-        n_a: u32,
-        n_b: u32,
         mode: u32,
-        cascade: u32,
     };
 
     // these could be runtime values to allow for e.g. graphics settings
@@ -1013,6 +1017,7 @@ const VoxelizePass = struct {
 
     assign_shadowmap_pipeline: *sdl.GPUComputePipeline,
     inject_shadowmap_pipeline: *sdl.GPUComputePipeline,
+    sampler: *sdl.GPUSampler, // storage textures don't really work, so we need this to texelfetch
 
     light_bin_counters: *sdl.GPUBuffer,
     light_bin_offsets: *sdl.GPUBuffer,
@@ -1289,6 +1294,8 @@ const VoxelizePass = struct {
         });
         errdefer sdl.releaseGPUTexture(device, color_cascades);
 
+        const sampler = try sdl.createGPUSampler(device, &.{});
+
         return .{
             .device = device,
             .prefix_sum_pass = prefix_sum_pass,
@@ -1306,13 +1313,14 @@ const VoxelizePass = struct {
             .light_bin_counters = light_bin_counters,
             .light_bin_offsets = light_bin_offsets,
             .light_bins = light_bins,
-
             .energy_cascades = energy_cascades,
             .color_cascades = color_cascades,
+            .sampler = sampler,
         };
     }
 
     fn deinit(pass: *VoxelizePass) void {
+        sdl.releaseGPUSampler(pass.device, pass.sampler);
         sdl.releaseGPUTexture(pass.device, pass.color_cascades);
         sdl.releaseGPUTexture(pass.device, pass.energy_cascades);
         sdl.releaseGPUBuffer(pass.device, pass.light_bins);
