@@ -73,6 +73,7 @@ void main() {
     float alpha = 1.0 - pow(0.5, 1.0 / (half_life * float(1 << cascade / 2)));
     
     vec4 voxel_color = mix(old_voxel_color, new_voxel_color, alpha);
+    if (voxel_color.a < 0.01) voxel_color.a = 0.0;
     
     // float mixed_opacity = mix(old_voxel_color.a, new_voxel_color.a, alpha);
     // if (mixed_opacity < 0.01) mixed_opacity = 0.0;
