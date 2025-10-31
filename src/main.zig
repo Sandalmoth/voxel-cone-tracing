@@ -169,10 +169,10 @@ pub fn main() !void {
             if (input.peek(.toggle_debug_view).pressed) debug_mode = !debug_mode;
             if (input.peek(.trigger_capture).pressed) try trigger();
             if (input.peek(.prev_debug_view).pressed) {
-                debug_pass.debug_view = (debug_pass.debug_view + 3) % 4;
+                debug_pass.debug_view = (debug_pass.debug_view + 2) % 3;
             }
             if (input.peek(.next_debug_view).pressed) {
-                debug_pass.debug_view = (debug_pass.debug_view + 1) % 4;
+                debug_pass.debug_view = (debug_pass.debug_view + 1) % 3;
             }
 
             for (scene.motions.items) |*motion| motion.update(tick);
@@ -187,8 +187,8 @@ pub fn main() !void {
         const command_buffer = try sdl.acquireGPUCommandBuffer(device);
 
         const camera_matrix = camera.vp(alpha);
-        const light_x: f32 = @floatCast(-@cos(time));
-        const light_y: f32 = @floatCast(0.5 * @cos(time / 1.1618));
+        const light_x: f32 = @floatCast(-@cos(0.5 * time));
+        const light_y: f32 = @floatCast(0.5 * @cos(0.5 * time / 1.618));
         const light_matrix = zm.mul(
             zm.lookAtRh(
                 zm.f32x4(

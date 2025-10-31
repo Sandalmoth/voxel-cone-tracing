@@ -76,4 +76,18 @@ void main() {
         pos + ivec3(cascade_size.xyz / 2) + ivec3(cascade * cascade_size[0], 0, 0),
         color
     );
+
+    // DEBUG
+    if (count > 0) {
+        imageStore(
+            u_energy_targets,
+            pos + ivec3(cascade_size.xyz / 2) + ivec3(cascade * cascade_size[0], 0, 0),
+            vec4(0.0, 0.0, 0.0, 1.0)
+        );
+        imageStore(
+            u_color_targets,
+            pos + ivec3(cascade_size.xyz / 2) + ivec3(cascade * cascade_size[0], 0, 0),
+            vec4(1.0, 1.0, 1.0, 1.0)
+        );
+    }
 }
