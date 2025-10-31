@@ -16,8 +16,8 @@ pub const tick: f32 = 1.0 / @as(f32, @floatFromInt(ticks_per_second));
 pub const tick_ns: u64 = 1_000_000_000 / ticks_per_second;
 pub const max_tick_ns: u64 = 250_000_000;
 
-const window_width = 1920;
-const window_height = 1080;
+const window_width = 960;
+const window_height = 540;
 
 const shadowmap_width = 1024;
 const shadowmap_height = 1024;
@@ -219,13 +219,6 @@ pub fn main() !void {
             try voxelize_pass.endBinning(command_buffer);
         }
         {
-            try voxelize_pass.inject(
-                command_buffer,
-                .{ -light_x, -2.0, -light_y },
-                .{ 1.0, 1.0, 1.0 },
-            );
-        }
-        {
             try draw_pass.beginShadowmap(command_buffer);
             for (scene.objects.items) |object| draw_pass.drawObjectShadowmap(
                 command_buffer,
@@ -234,6 +227,15 @@ pub fn main() !void {
                 alpha,
             );
             draw_pass.endShadowmap(command_buffer);
+        }
+        {
+            try voxelize_pass.inject(
+                command_buffer,
+                .{ -light_x, -2.0, -light_y },
+                .{ 1.0, 1.0, 1.0 },
+                light_matrix,
+                draw_pass.shadowmap_target,
+            );
         }
         // try voxelize_pass.inject(
         //     command_buffer,
@@ -945,8 +947,8 @@ const VoxelizePass = struct {
     };
     const AssignUBO = extern struct {
         inverse_vp_matrix: [4][4]f32 align(16),
-        light_direction: [4]f32 align(16),
-        light_intensity: [4]f32 align(16),
+        light_direction: [3]f32 align(16),
+        light_intensity: [3]f32 align(16),
         mode: u32,
     };
 
@@ -1562,11 +1564,39 @@ const VoxelizePass = struct {
         command_buffer: *sdl.GPUCommandBuffer,
         skylight_direction: [3]f32,
         skylight_intensity: [3]f32,
+        vp_matrix: zm.Mat,
+        shadowmap: *sdl.GPUTexture,
     ) !void {
-        _ = pass;
-        _ = skylight_direction;
-        _ = skylight_intensity;
         sdl.pushGPUDebugGroup(command_buffer, "inject");
+
+        const assign_shadowmap_pass = try sdl.beginGPUComputePass(command_buffer, &.{}, &.{
+            .{ .buffer = pass.light_bin_counters, .cycle = true },
+            .{ .buffer = pass.light_bin_offsets, .cycle = true },
+            .{ .buffer = pass.light_bins, .cycle = true },
+        });
+        sdl.bindGPUComputePipeline(assign_shadowmap_pass, pass.assign_shadowmap_pipeline);
+        sdl.bindGPUComputeSamplers(assign_shadowmap_pass, 0, &.{
+            .{ .texture = shadowmap, .sampler = pass.sampler },
+        });
+        sdl.pushGPUComputeUniformData(command_buffer, 0, &CommonUBO{
+            .cascade_size = cascade_size,
+            .cascade_mask = cascade_mask,
+            .n_cascades = n_cascades,
+            .min_voxel_size = min_voxel_size,
+            .anchors = pass.anchors,
+        }, @sizeOf(CommonUBO));
+        sdl.pushGPUComputeUniformData(command_buffer, 1, &AssignUBO{
+            .light_direction = skylight_direction,
+            .light_intensity = skylight_intensity,
+            .inverse_vp_matrix = zm.inverse(vp_matrix),
+            .mode = 0,
+        }, @sizeOf(AssignUBO));
+        sdl.endGPUComputePass(assign_shadowmap_pass);
+
+        const inject_shadowmap_pass = try sdl.beginGPUComputePass(command_buffer, &.{}, &.{});
+        sdl.bindGPUComputePipeline(inject_shadowmap_pass, pass.inject_shadowmap_pipeline);
+        sdl.endGPUComputePass(inject_shadowmap_pass);
+
         sdl.popGPUDebugGroup(command_buffer);
     }
 

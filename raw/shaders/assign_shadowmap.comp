@@ -44,7 +44,7 @@ vec3 worldPos(vec2 uv, float depth) {
         depth,
         1.0
     );
-    vec4 world_pos = inverse_light_matrix * ndc;
+    vec4 world_pos = inverse_vp_matrix * ndc;
     world_pos /= world_pos.w;
     return world_pos.xyz;
 }
@@ -67,8 +67,29 @@ void main() {
     vec3 world10 = worldPos(uv10, depth10);
     vec3 world11 = worldPos(uv11, depth11);
     
-    vec3 world = 0.25 * (world00 + world01 + world10 + world11);
-    vec3 dx = world10 + world11 - world00 - world01;
-    vec3 dy = world01 + world11 - world00 - world10;
-    vec3 normal = normalize(cross(dy, dx));
+    if (mode == 0) {
+        ivec3 cascade_size_half = ivec3(cascade_size.xyz / 2);
+        for (int i = 0; i < n_cascades; ++i) {
+            float voxel_size = voxelSize(i);
+            ivec3 voxel_pos = ivec3(floor((world - anchors[i].xyz) / voxel_size));
+            if (voxel_pos.x < -cascade_size_half.x || voxel_pos.x >= cascade_size_half.x ||
+                voxel_pos.y < -cascade_size_half.y || voxel_pos.y >= cascade_size_half.y ||
+                voxel_pos.z < -cascade_size_half.z || voxel_pos.z >= cascade_size_half.z) continue;
+            uint index = indexFromCascadePos(i, voxel_pos);
+            uint slot = atomicAdd(bin_counters[index], 1);
+            bins[bin_offsets[index] + slot] = Bin(
+                normal,
+                // light_intensity
+                light_intensity * max(0.0, dot(light_dir, normal))
+            );
+            // break; // if we do this we have to mipmap
+        }
+        
+    } else if (mode == 1) {
+        vec3 world = 0.25 * (world00 + world01 + world10 + world11);
+        vec3 dx = world10 + world11 - world00 - world01;
+        vec3 dy = world01 + world11 - world00 - world10;
+        vec3 normal = normalize(cross(dy, dx));
+    }
+    
 }
