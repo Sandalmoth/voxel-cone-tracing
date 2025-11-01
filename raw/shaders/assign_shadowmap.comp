@@ -52,7 +52,17 @@ vec3 worldPos(vec2 uv, float depth) {
 void main() {
     ivec2 shadowmap_size = textureSize(u_shadowmap, 0);    
     ivec2 global_id = ivec2(gl_GlobalInvocationID.xy);
-    if (global_id.x > 2 * shadowmap_size.x || global_id.y > 2 * shadowmap_size.y) return;
+
+    if (mode == 0u) {
+        if (global_id.y > 0) return;
+        if (global_id.x < cascade_size[3]) {
+            bin_counters[global_id.x] = 0;
+            bin_offsets[global_id.x] = 0;
+        }
+        return;
+    }
+
+    if (2 * global_id.x > shadowmap_size.x || 2 * global_id.y > shadowmap_size.y) return;
 
     float depth00 = texelFetch(u_shadowmap, 2 * global_id + ivec2(0, 0), 0).r;
     float depth01 = texelFetch(u_shadowmap, 2 * global_id + ivec2(0, 1), 0).r;
@@ -68,7 +78,7 @@ void main() {
     vec3 world11 = worldPos(uv11, depth11);
     vec3 world = 0.25 * (world00 + world01 + world10 + world11);
     
-    if (mode == 0) {
+    if (mode == 1u) {
         ivec3 cascade_size_half = ivec3(cascade_size.xyz / 2);
         for (int i = 0; i < n_cascades; ++i) {
             float voxel_size = voxelSize(i);
@@ -80,7 +90,7 @@ void main() {
             atomicAdd(bin_offsets[index], 1);
         }
         
-    } else if (mode == 1) {
+    } else if (mode == 2u) {
         // recomputing this is kinda expensive?
         ivec3 cascade_size_half = ivec3(cascade_size.xyz / 2);
         for (int i = 0; i < n_cascades; ++i) {

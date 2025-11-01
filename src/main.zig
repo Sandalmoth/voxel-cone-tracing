@@ -1586,11 +1586,25 @@ const VoxelizePass = struct {
                 .min_voxel_size = min_voxel_size,
                 .anchors = pass.anchors,
             }, @sizeOf(CommonUBO));
+            // clear the counters/offsets
             sdl.pushGPUComputeUniformData(command_buffer, 1, &AssignUBO{
                 .light_direction = skylight_direction,
                 .light_intensity = skylight_intensity,
                 .inverse_vp_matrix = zm.inverse(vp_matrix),
                 .mode = 0,
+            }, @sizeOf(AssignUBO));
+            sdl.dispatchGPUCompute(
+                assign_shadowmap_pass,
+                (len_cascades + 7) / 8,
+                1, // OPTIMIZE wasteful use of threads
+                1,
+            );
+            // count lights per voxel
+            sdl.pushGPUComputeUniformData(command_buffer, 1, &AssignUBO{
+                .light_direction = skylight_direction,
+                .light_intensity = skylight_intensity,
+                .inverse_vp_matrix = zm.inverse(vp_matrix),
+                .mode = 1,
             }, @sizeOf(AssignUBO));
             sdl.dispatchGPUCompute(
                 assign_shadowmap_pass,
@@ -1628,7 +1642,7 @@ const VoxelizePass = struct {
                 .light_direction = skylight_direction,
                 .light_intensity = skylight_intensity,
                 .inverse_vp_matrix = zm.inverse(vp_matrix),
-                .mode = 1,
+                .mode = 2,
             }, @sizeOf(AssignUBO));
             sdl.dispatchGPUCompute(
                 assign_shadowmap_pass,
