@@ -56,46 +56,46 @@ pub fn acquireGPUCommandBuffer(device: *GPUDevice) !*GPUCommandBuffer {
         log.err("SDL_AcquireGPUCommandBuffer: {s}", .{getError()});
         return error.Sdl;
     };
-    // BUG BUG BUG
-    // this is a workaround for an error in SDL where a value is left uninitialized
-    // TODO TODO TODO
-    // remove when it gets fixed upstream
-    const CommandBufferCommonHeader = extern struct {
-        device: *anyopaque,
-        render_pass: extern struct {
-            command_buffer: *anyopaque,
-            in_progress: bool,
-            color_targets: [4]*anyopaque,
-            num_color_targets: u32,
-            depth_stencil_target: *anyopaque,
-            graphics_pipeline: *anyopaque,
-            vertex_sampler_bound: [16]bool,
-            vertex_storage_texture_bound: [8]bool,
-            vertex_storage_buffer_bound: [8]bool,
-            fragment_sampler_bound: [16]bool,
-            fragment_storage_texture_bound: [8]bool,
-            fragment_storage_buffer_bound: [8]bool,
-        },
-        computepass: extern struct {
-            command_buffer: *anyopaque,
-            in_progress: bool,
-            compute_pipeline: *anyopaque,
-            sampler_bound: [16]bool,
-            read_only_storage_texture_bound: [8]bool,
-            read_only_storage_buffer_bound: [8]bool,
-            read_write_storage_texture_bound: [8]bool,
-            read_write_storage_buffer_bound: [8]bool,
-        },
-        copy_pass: extern struct {
-            command_buffer: *anyopaque,
-            in_progress: bool,
-        },
-        swapchain_texture_acquired: bool,
-        submitted: bool,
-        ignore_render_pass_texture_validation: bool,
-    };
-    @as(*CommandBufferCommonHeader, @alignCast(@ptrCast(command_buffer)))
-        .ignore_render_pass_texture_validation = false;
+    // // BUG BUG BUG
+    // // this is a workaround for an error in SDL where a value is left uninitialized
+    // // TODO TODO TODO
+    // // remove when it gets fixed upstream
+    // const CommandBufferCommonHeader = extern struct {
+    //     device: *anyopaque,
+    //     render_pass: extern struct {
+    //         command_buffer: *anyopaque,
+    //         in_progress: bool,
+    //         color_targets: [4]*anyopaque,
+    //         num_color_targets: u32,
+    //         depth_stencil_target: *anyopaque,
+    //         graphics_pipeline: *anyopaque,
+    //         vertex_sampler_bound: [16]bool,
+    //         vertex_storage_texture_bound: [8]bool,
+    //         vertex_storage_buffer_bound: [8]bool,
+    //         fragment_sampler_bound: [16]bool,
+    //         fragment_storage_texture_bound: [8]bool,
+    //         fragment_storage_buffer_bound: [8]bool,
+    //     },
+    //     computepass: extern struct {
+    //         command_buffer: *anyopaque,
+    //         in_progress: bool,
+    //         compute_pipeline: *anyopaque,
+    //         sampler_bound: [16]bool,
+    //         read_only_storage_texture_bound: [8]bool,
+    //         read_only_storage_buffer_bound: [8]bool,
+    //         read_write_storage_texture_bound: [8]bool,
+    //         read_write_storage_buffer_bound: [8]bool,
+    //     },
+    //     copy_pass: extern struct {
+    //         command_buffer: *anyopaque,
+    //         in_progress: bool,
+    //     },
+    //     swapchain_texture_acquired: bool,
+    //     submitted: bool,
+    //     ignore_render_pass_texture_validation: bool,
+    // };
+    // @as(*CommandBufferCommonHeader, @alignCast(@ptrCast(command_buffer)))
+    //     .ignore_render_pass_texture_validation = false;
     return command_buffer;
 }
 
