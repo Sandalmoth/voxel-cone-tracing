@@ -105,7 +105,7 @@ void main() {
             uint slot = atomicAdd(bin_counters[index], 1);
             bins[bin_offsets[index] + slot] = Light(
                 normal,
-                light_intensity.rgb * max(0.0, dot(light_direction.xyz, normal))
+                light_intensity.rgb * max(0.0, dot(-light_direction.xyz, normal))
             );
         }
     }

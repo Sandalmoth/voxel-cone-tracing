@@ -49,6 +49,7 @@ void main() {
     vec4 color = unpackUnorm4x8(voxel_cascades[global_id]);
 
     vec4 energy = vec4(0.0, 0.0, 0.0, 0.0);
+    float total_intensity = 0;
 
     uint count = bin_counters[global_id];
     uint offset = bin_offsets[global_id];
@@ -57,8 +58,9 @@ void main() {
         Light bin = bins[i + offset];
         // NOTE the normalization here actually needs to depend on the shadomap resolution/extent
         // energy += vec4(0.0, 0.0, 0.0, bin.light_intensity / pow(10 * voxel_size, 2.0));
-        float it = 0.33 * (bin.intensity.x + bin.intensity.y + bin.intensity.z);
+        float it = 0.33 * (bin.intensity.r + bin.intensity.g + bin.intensity.b);
         float intensity = it / pow(6.0 * voxel_size, 2.0);
+        total_intensity += intensity;
         energy += intensity * vec4(sqrt_3_over_4pi * bin.normal, inv_sqrt_4pi);
     }
     // one means of dealing with overinjected voxels is to just normalize like so
@@ -76,18 +78,4 @@ void main() {
         pos + ivec3(cascade_size.xyz / 2) + ivec3(cascade * cascade_size[0], 0, 0),
         color
     );
-
-    // DEBUG
-    if (count > 0) {
-        imageStore(
-            u_energy_targets,
-            pos + ivec3(cascade_size.xyz / 2) + ivec3(cascade * cascade_size[0], 0, 0),
-            vec4(0.0, 0.0, 0.0, 1.0)
-        );
-        imageStore(
-            u_color_targets,
-            pos + ivec3(cascade_size.xyz / 2) + ivec3(cascade * cascade_size[0], 0, 0),
-            vec4(1.0, 1.0, 1.0, 1.0)
-        );
-    }
 }

@@ -19,8 +19,8 @@ pub const max_tick_ns: u64 = 250_000_000;
 const window_width = 1920;
 const window_height = 1080;
 
-const shadowmap_width = 1024;
-const shadowmap_height = 1024;
+const shadowmap_width = 2048;
+const shadowmap_height = 2048;
 
 var read_buffer: [1024]u8 align(64) = undefined;
 
@@ -237,7 +237,7 @@ pub fn main() !void {
                 device,
                 command_buffer,
                 .{ -light_x, -2.0, -light_y },
-                .{ 1.0, 1.0, 1.0 },
+                .{ 0.5, 0.5, 0.5 },
                 light_matrix,
                 draw_pass.shadowmap_target,
             );

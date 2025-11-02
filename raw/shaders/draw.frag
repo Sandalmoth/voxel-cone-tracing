@@ -60,9 +60,12 @@ void main() {
 
     rad += u_material_data.emissive.rgb;
 
-    const float gi_factor = 5.0;
+    const float gi_factor = 1.0;
     const float ao_power = 1.0;
     vec4 gi = texelFetch(u_gi, ivec2(gl_FragCoord.xy), 0);
+    gi.r = max(0, gi.r);
+    gi.g = max(0, gi.g);
+    gi.b = max(0, gi.b);
     rad += u_material_data.diffuse.rgb * pow(gi.a, ao_power) *
           (gi_factor * gi.rgb + vec3(5e-2));
    
