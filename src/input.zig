@@ -31,6 +31,7 @@ const GameInput = enum {
     prev_debug_view,
     toggle_voxels_follow_camera,
     trigger_capture,
+    trigger_debug,
     next_scene,
     prev_scene,
 };

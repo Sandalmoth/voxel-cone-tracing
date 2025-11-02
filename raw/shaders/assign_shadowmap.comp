@@ -54,15 +54,14 @@ void main() {
     ivec2 global_id = ivec2(gl_GlobalInvocationID.xy);
 
     if (mode == 0u) {
-        if (global_id.y > 0) return;
-        if (global_id.x < cascade_size[3]) {
-            bin_counters[global_id.x] = 0;
-            bin_offsets[global_id.x] = 0;
-        }
+        if (global_id.x >= cascade_size[3]) return;
+        if (global_id.y >= n_cascades) return;
+        bin_counters[global_id.x + global_id.y * cascade_size[3]] = 0;
+        bin_offsets[global_id.x + global_id.y * cascade_size[3]] = 0;
         return;
     }
 
-    if (2 * global_id.x > shadowmap_size.x || 2 * global_id.y > shadowmap_size.y) return;
+    if (2 * global_id.x >= shadowmap_size.x || 2 * global_id.y >= shadowmap_size.y) return;
 
     float depth00 = texelFetch(u_shadowmap, 2 * global_id + ivec2(0, 0), 0).r;
     float depth01 = texelFetch(u_shadowmap, 2 * global_id + ivec2(0, 1), 0).r;

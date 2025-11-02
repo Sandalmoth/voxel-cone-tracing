@@ -24,6 +24,8 @@ const shadowmap_height = 1024;
 
 var read_buffer: [1024]u8 align(64) = undefined;
 
+var extra_debug_trigger = false;
+
 pub fn main() !void {
     sdl.setMainReady();
 
@@ -89,6 +91,7 @@ pub fn main() !void {
     try input.map.put(.{ .keyboard = sdl.c.SDL_SCANCODE_Q }, .prev_debug_view);
     try input.map.put(.{ .keyboard = sdl.c.SDL_SCANCODE_E }, .next_debug_view);
     try input.map.put(.{ .keyboard = sdl.c.SDL_SCANCODE_F1 }, .trigger_capture);
+    try input.map.put(.{ .keyboard = sdl.c.SDL_SCANCODE_F2 }, .trigger_debug);
     try input.map.put(.{ .keyboard = sdl.c.SDL_SCANCODE_0 }, .next_scene);
     try input.map.put(.{ .keyboard = sdl.c.SDL_SCANCODE_9 }, .prev_scene);
     defer input.deinit();
@@ -168,6 +171,7 @@ pub fn main() !void {
             camera.update(&input);
             if (input.peek(.toggle_debug_view).pressed) debug_mode = !debug_mode;
             if (input.peek(.trigger_capture).pressed) try trigger();
+            if (input.peek(.trigger_debug).pressed) extra_debug_trigger = !extra_debug_trigger;
             if (input.peek(.prev_debug_view).pressed) {
                 debug_pass.debug_view = (debug_pass.debug_view + 2) % 3;
             }
@@ -230,6 +234,7 @@ pub fn main() !void {
         }
         {
             try voxelize_pass.inject(
+                device,
                 command_buffer,
                 .{ -light_x, -2.0, -light_y },
                 .{ 1.0, 1.0, 1.0 },
@@ -946,14 +951,14 @@ const VoxelizePass = struct {
         target_cascade: u32,
     };
     const AssignUBO = extern struct {
-        inverse_vp_matrix: [4][4]f32 align(16),
+        inverse_vp_matrix: [16]f32 align(16),
         light_direction: [3]f32 align(16),
         light_intensity: [3]f32 align(16),
         mode: u32,
     };
 
     // these could be runtime values to allow for e.g. graphics settings
-    const min_voxel_size = 0.1618033988749894;
+    const min_voxel_size = 0.0618033988749894;
     const n_cascades = 8;
     const cascade_size: [4]u32 = .{ 64, 64, 64, 64 * 64 * 64 }; // must be power of two
     const len_cascades = n_cascades * cascade_size[0] * cascade_size[1] * cascade_size[2];
@@ -1252,14 +1257,14 @@ const VoxelizePass = struct {
         const light_bin_counters = try sdl.createGPUBuffer(device, &.{
             .usage = sdl.c.SDL_GPU_BUFFERUSAGE_COMPUTE_STORAGE_READ |
                 sdl.c.SDL_GPU_BUFFERUSAGE_COMPUTE_STORAGE_WRITE,
-            .size = 2 * cascade_size[3] / 64 * @sizeOf(u32),
+            .size = len_cascades * @sizeOf(u32),
         });
         errdefer sdl.releaseGPUBuffer(device, light_bin_counters);
 
         const light_bin_offsets = try sdl.createGPUBuffer(device, &.{
             .usage = sdl.c.SDL_GPU_BUFFERUSAGE_COMPUTE_STORAGE_READ |
                 sdl.c.SDL_GPU_BUFFERUSAGE_COMPUTE_STORAGE_WRITE,
-            .size = 2 * cascade_size[3] / 64 * @sizeOf(u32),
+            .size = len_cascades * @sizeOf(u32),
         });
         errdefer sdl.releaseGPUBuffer(device, light_bin_offsets);
 
@@ -1561,6 +1566,7 @@ const VoxelizePass = struct {
 
     fn inject(
         pass: *VoxelizePass,
+        device: *sdl.GPUDevice,
         command_buffer: *sdl.GPUCommandBuffer,
         skylight_direction: [3]f32,
         skylight_intensity: [3]f32,
@@ -1590,20 +1596,20 @@ const VoxelizePass = struct {
             sdl.pushGPUComputeUniformData(command_buffer, 1, &AssignUBO{
                 .light_direction = skylight_direction,
                 .light_intensity = skylight_intensity,
-                .inverse_vp_matrix = zm.inverse(vp_matrix),
+                .inverse_vp_matrix = zm.matToArr(zm.inverse(vp_matrix)),
                 .mode = 0,
             }, @sizeOf(AssignUBO));
             sdl.dispatchGPUCompute(
                 assign_shadowmap_pass,
-                (len_cascades + 7) / 8,
-                1, // OPTIMIZE wasteful use of threads
+                (cascade_size[3] + 7) / 8,
+                (n_cascades + 7) / 8,
                 1,
             );
             // count lights per voxel
             sdl.pushGPUComputeUniformData(command_buffer, 1, &AssignUBO{
                 .light_direction = skylight_direction,
                 .light_intensity = skylight_intensity,
-                .inverse_vp_matrix = zm.inverse(vp_matrix),
+                .inverse_vp_matrix = zm.matToArr(zm.inverse(vp_matrix)),
                 .mode = 1,
             }, @sizeOf(AssignUBO));
             sdl.dispatchGPUCompute(
@@ -1618,7 +1624,7 @@ const VoxelizePass = struct {
         try pass.prefix_sum_pass.run(
             command_buffer,
             pass.light_bin_offsets,
-            2 * cascade_size[3] / 64,
+            len_cascades,
         );
 
         {
@@ -1641,7 +1647,7 @@ const VoxelizePass = struct {
             sdl.pushGPUComputeUniformData(command_buffer, 1, &AssignUBO{
                 .light_direction = skylight_direction,
                 .light_intensity = skylight_intensity,
-                .inverse_vp_matrix = zm.inverse(vp_matrix),
+                .inverse_vp_matrix = zm.matToArr(zm.inverse(vp_matrix)),
                 .mode = 2,
             }, @sizeOf(AssignUBO));
             sdl.dispatchGPUCompute(
@@ -1651,6 +1657,48 @@ const VoxelizePass = struct {
                 1,
             );
             sdl.endGPUComputePass(assign_shadowmap_pass);
+        }
+
+        if (extra_debug_trigger) {
+            // DEBUG
+            const transfer_buffer = try sdl.createGPUTransferBuffer(device, &.{
+                .usage = sdl.c.SDL_GPU_TRANSFERBUFFERUSAGE_DOWNLOAD,
+                .size = 64 * 1024 * 1024,
+            });
+            defer sdl.releaseGPUTransferBuffer(device, transfer_buffer);
+            const copy_pass = try sdl.beginGPUCopyPass(command_buffer);
+            sdl.downloadFromGPUBuffer(
+                copy_pass,
+                &.{
+                    .buffer = pass.light_bin_offsets,
+                    .offset = 0,
+                    .size = @sizeOf(u32) * len_cascades,
+                },
+                &.{ .transfer_buffer = transfer_buffer, .offset = 0 },
+            );
+            sdl.downloadFromGPUBuffer(
+                copy_pass,
+                &.{
+                    .buffer = pass.light_bin_counters,
+                    .offset = 0,
+                    .size = @sizeOf(u32) * len_cascades,
+                },
+                &.{ .transfer_buffer = transfer_buffer, .offset = len_cascades * @sizeOf(u32) },
+            );
+            sdl.endGPUCopyPass(copy_pass);
+            const fence = try sdl.submitGPUCommandBufferAndAcquireFence(command_buffer);
+            try sdl.waitForGPUFences(device, true, &.{fence});
+            const data: [*]u32 = @ptrCast(@alignCast(
+                try sdl.mapGPUTransferBuffer(device, transfer_buffer, true),
+            ));
+            const offsets = data[0..len_cascades];
+            const counts = data[len_cascades .. 2 * len_cascades];
+            std.debug.print("debug result is: ", .{});
+            for (0..len_cascades) |i| {
+                if (offsets[i] == 0 and counts[i] == 0) continue;
+                std.debug.print("({} {} {}) ", .{ i, offsets[i], counts[i] });
+            }
+            std.debug.print("\n", .{});
         }
 
         const inject_shadowmap_pass = try sdl.beginGPUComputePass(command_buffer, &.{
