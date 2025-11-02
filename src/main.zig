@@ -1034,7 +1034,11 @@ const VoxelizePass = struct {
     color_cascades: *sdl.GPUTexture,
 
     fn init(gpa: std.mem.Allocator, device: *sdl.GPUDevice) !VoxelizePass {
-        var prefix_sum_pass: PrefixSumPass = try .init(gpa, device, 2 * cascade_size[3] / 64);
+        var prefix_sum_pass: PrefixSumPass = try .init(
+            gpa,
+            device,
+            @max(2 * cascade_size[3] / 64, len_cascades),
+        );
         errdefer prefix_sum_pass.deinit();
 
         const triangle_binning_pipeline = blk: {
