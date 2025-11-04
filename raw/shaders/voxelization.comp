@@ -7,12 +7,11 @@
 layout(local_size_x = 4, local_size_y = 4, local_size_z = 4) in;
 
 struct Triangle {
-    // TODO pack to minimize memory usage
-    vec3 p0;
-    vec3 p1;
-    vec3 p2;
-    vec3 diffuse;
-    float emissive_power;
+    uint p0[2];
+    uint p1[2];
+    uint p2[2];
+    uint diffuse;
+    uint emissive_power;
 };
 
 layout(std430, set = 0, binding = 0) readonly buffer BinCounters {
