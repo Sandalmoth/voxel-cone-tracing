@@ -1,0 +1,28 @@
+#version 460
+
+#include "include/defines.glsl"
+
+layout(local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
+
+layout(std430, set = 1, binding = 0) buffer BinCounters {
+    uint bin_counters[];
+};
+layout(std430, set = 1, binding = 1) buffer BinOffsets {
+    uint bin_offsets[];
+};
+
+layout(std140, set = 2, binding = 0) uniform CommonUBO {
+    uvec4 cascade_size; // x, y, z, x*y*z
+    uvec4 cascade_mask;
+    uint n_cascades;
+    float min_voxel_size;
+    vec4 anchors[MAX_CASCADES];
+};
+
+void main() {
+    uint global_id = gl_GlobalInvocationID.x;
+    if (global_id < 2 * cascade_size[3] / 64) {
+        bin_counters[global_id] = 0;
+        bin_offsets[global_id] = 0;
+    }
+}

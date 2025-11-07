@@ -166,3 +166,30 @@ bool intersectVoxelTriangle(
 
     return true;
 }
+
+uint pack9995(vec3 c) {
+    const float maxRGB = max(max(c.r, c.g), c.b);
+    if (maxRGB < 1e-6)
+        return 0u;
+    float expShared = ceil(log2(maxRGB));
+    float mantScale = exp2(expShared - 9.0); // 2^(E-9)
+    ivec3 mantissa = ivec3(round(clamp(c / mantScale, 0.0, 511.0)));
+    uint expBits = uint(expShared + 15.0);
+    expBits = clamp(expBits, 0u, 31u);
+    uint packed = (expBits << 27)
+                | ((uint(mantissa.b) & 0x1FFu) << 18)
+                | ((uint(mantissa.g) & 0x1FFu) << 9)
+                | (uint(mantissa.r) & 0x1FFu);
+    return packed;
+}
+
+vec3 unpack9995(uint packed) {
+    uint expBits = (packed >> 27u) & 0x1Fu;
+    uint br = (packed >> 18u) & 0x1FFu;
+    uint bg = (packed >> 9u)  & 0x1FFu;
+    uint rr =  packed         & 0x1FFu;
+    float expShared = float(expBits) - 15.0;
+    float scale = exp2(expShared - 24.0);
+
+    return vec3(float(rr), float(bg), float(br)) * scale;
+}

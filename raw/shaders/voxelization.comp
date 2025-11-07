@@ -11,7 +11,7 @@ struct Triangle {
     uint p1[2];
     uint p2[2];
     uint diffuse;
-    uint emissive_power;
+    uint emissive;
 };
 
 layout(std430, set = 0, binding = 0) readonly buffer BinCounters {
@@ -75,15 +75,30 @@ void main() {
         uint batch_size = min(n_triangles - batch, BATCH_SIZE);
         if (local_index < batch_size) {
             triangles[local_index] = bins[offset + batch + local_index];
-
-            vec3 p0 = triangles[local_index].p0;
-            vec3 p1 = triangles[local_index].p1;
-            vec3 p2 = triangles[local_index].p2;
+            // TODO unpack
+            vec3 p0 = vec3(
+                unpackHalf2x16(triangles[local_index].p0[0]),
+                unpackHalf2x16(triangles[local_index].p0[1]).x
+            );
+            vec3 p1 = vec3(
+                unpackHalf2x16(triangles[local_index].p1[0]),
+                unpackHalf2x16(triangles[local_index].p1[1]).x
+            );
+            vec3 p2 = vec3(
+                unpackHalf2x16(triangles[local_index].p2[0]),
+                unpackHalf2x16(triangles[local_index].p2[1]).x
+            );
             float xym;
             float yzm;
             float zxm;
             {
+                // todo benchmark? probably irrelevant?
                 vec3 n = normalize(cross(p1 - p0, p2 - p0));
+                // vec3 n = vec3(
+                //     unpackHalf2x16(triangles[local_index].p0[1]).y,
+                //     unpackHalf2x16(triangles[local_index].p1[1]).y,
+                //     unpackHalf2x16(triangles[local_index].p2[1]).y
+                // );
                 vec3 c = vec3(
                     (n.x > 0.0) ? ext : 0.0,
                     (n.y > 0.0) ? ext : 0.0,
@@ -173,11 +188,28 @@ void main() {
         // then each thread tests its voxel against all the triangles in the batch
         for (uint i = 0u; i < batch_size; ++i) {
             // triangle intersection test
+            // i don't love the double unpack...
+            vec3 p0 = vec3(
+                unpackHalf2x16(triangles[i].p0[0]),
+                unpackHalf2x16(triangles[i].p0[1]).x
+            );
+            vec3 p1 = vec3(
+                unpackHalf2x16(triangles[i].p1[0]),
+                unpackHalf2x16(triangles[i].p1[1]).x
+            );
+            vec3 p2 = vec3(
+                unpackHalf2x16(triangles[i].p2[0]),
+                unpackHalf2x16(triangles[i].p2[1]).x
+            );
+
+            // if (!intersectVoxelTriangle(
+            //     low, ext, triangles[i].p0, triangles[i].p1, triangles[i].p2, intersection_info[i]
+            // )) continue;
             if (!intersectVoxelTriangle(
-                low, ext, triangles[i].p0, triangles[i].p1, triangles[i].p2, intersection_info[i]
+                low, ext, p0, p1, p2, intersection_info[i]
             )) continue;
 
-            voxel_color += vec4(triangles[i].diffuse, 1.0);
+            voxel_color += vec4(unpackUnorm4x8(triangles[i].diffuse).rgb, 1.0);
             n_intersections += 1.0;
         }
         barrier();
