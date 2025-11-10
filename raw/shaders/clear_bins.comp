@@ -4,11 +4,23 @@
 
 layout(local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
 
+struct Triangle {
+    uint p0[2];
+    uint p1[2];
+    uint p2[2];
+    uint diffuse;
+    uint emissive;
+};
+
 layout(std430, set = 1, binding = 0) buffer BinCounters {
     uint bin_counters[];
 };
 layout(std430, set = 1, binding = 1) buffer BinOffsets {
     uint bin_offsets[];
+};
+layout(std430, set = 1, binding = 2) buffer Buffer {
+    uint n_buffered_triangles[2];
+    Triangle buf[];
 };
 
 layout(std140, set = 2, binding = 0) uniform CommonUBO {
@@ -24,5 +36,9 @@ void main() {
     if (global_id < 2 * cascade_size[3] / 64) {
         bin_counters[global_id] = 0;
         bin_offsets[global_id] = 0;
+    }
+    if (global_id == 0) {
+        n_buffered_triangles[0] = 0;
+        n_buffered_triangles[1] = 0;
     }
 }

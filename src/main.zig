@@ -1070,7 +1070,7 @@ const VoxelizePass = struct {
                 .num_readonly_storage_textures = 0,
                 .num_readonly_storage_buffers = 0,
                 .num_readwrite_storage_textures = 0,
-                .num_readwrite_storage_buffers = 2,
+                .num_readwrite_storage_buffers = 3,
                 .num_uniform_buffers = 1,
                 .threadcount_x = 64,
                 .threadcount_y = 1,
@@ -1205,27 +1205,6 @@ const VoxelizePass = struct {
         });
         errdefer sdl.releaseGPUBuffer(device, triangle_bins);
 
-        const light_bin_counters = try sdl.createGPUBuffer(device, &.{
-            .usage = sdl.c.SDL_GPU_BUFFERUSAGE_COMPUTE_STORAGE_READ |
-                sdl.c.SDL_GPU_BUFFERUSAGE_COMPUTE_STORAGE_WRITE,
-            .size = len_cascades * @sizeOf(u32),
-        });
-        errdefer sdl.releaseGPUBuffer(device, light_bin_counters);
-
-        const light_bin_offsets = try sdl.createGPUBuffer(device, &.{
-            .usage = sdl.c.SDL_GPU_BUFFERUSAGE_COMPUTE_STORAGE_READ |
-                sdl.c.SDL_GPU_BUFFERUSAGE_COMPUTE_STORAGE_WRITE,
-            .size = len_cascades * @sizeOf(u32),
-        });
-        errdefer sdl.releaseGPUBuffer(device, light_bin_offsets);
-
-        const light_bins = try sdl.createGPUBuffer(device, &.{
-            .usage = sdl.c.SDL_GPU_BUFFERUSAGE_COMPUTE_STORAGE_READ |
-                sdl.c.SDL_GPU_BUFFERUSAGE_COMPUTE_STORAGE_WRITE,
-            .size = 1024 * 1024 * 1024, // this needs quite a lot of memory huh
-        });
-        errdefer sdl.releaseGPUBuffer(device, light_bins);
-
         const energy_cascades = try sdl.createGPUTexture(device, &.{
             .type = sdl.c.SDL_GPU_TEXTURETYPE_3D,
             .format = sdl.c.SDL_GPU_TEXTUREFORMAT_R16G16B16A16_FLOAT, // spherical harmonic xyz+dc
@@ -1336,20 +1315,21 @@ const VoxelizePass = struct {
         sdl.dispatchGPUCompute(target_update_pass, (len_cascades + 63) / 64, 1, 1);
         sdl.endGPUComputePass(target_update_pass);
 
-        // const clear_bins_pass = try sdl.beginGPUComputePass(command_buffer, &.{}, &.{
-        //     .{ .buffer = pass.triangle_bin_counters, .cycle = true },
-        //     .{ .buffer = pass.triangle_bin_offsets, .cycle = true },
-        // });
-        // sdl.bindGPUComputePipeline(clear_bins_pass, pass.clear_bins_pipeline);
-        // sdl.pushGPUComputeUniformData(command_buffer, 0, &CommonUBO{
-        //     .cascade_size = cascade_size,
-        //     .cascade_mask = cascade_mask,
-        //     .n_cascades = n_cascades,
-        //     .min_voxel_size = min_voxel_size,
-        //     .anchors = pass.anchors,
-        // }, @sizeOf(CommonUBO));
-        // sdl.dispatchGPUCompute(clear_bins_pass, (2 * cascade_size[3] / 64 + 63) / 64, 1, 1);
-        // sdl.endGPUComputePass(clear_bins_pass);
+        const clear_bins_pass = try sdl.beginGPUComputePass(command_buffer, &.{}, &.{
+            .{ .buffer = pass.triangle_bin_counters, .cycle = true },
+            .{ .buffer = pass.triangle_bin_offsets, .cycle = true },
+            .{ .buffer = pass.triangle_buffer, .cycle = true },
+        });
+        sdl.bindGPUComputePipeline(clear_bins_pass, pass.clear_bins_pipeline);
+        sdl.pushGPUComputeUniformData(command_buffer, 0, &CommonUBO{
+            .cascade_size = cascade_size,
+            .cascade_mask = cascade_mask,
+            .n_cascades = n_cascades,
+            .min_voxel_size = min_voxel_size,
+            .anchors = pass.anchors,
+        }, @sizeOf(CommonUBO));
+        sdl.dispatchGPUCompute(clear_bins_pass, (2 * cascade_size[3] / 64 + 63) / 64, 1, 1);
+        sdl.endGPUComputePass(clear_bins_pass);
 
         pass.active_pass = try sdl.beginGPUComputePass(
             command_buffer,
@@ -1357,7 +1337,7 @@ const VoxelizePass = struct {
             &.{
                 .{ .buffer = pass.triangle_bin_counters },
                 .{ .buffer = pass.triangle_bin_offsets },
-                .{ .buffer = pass.triangle_buffer, .cycle = true },
+                .{ .buffer = pass.triangle_buffer },
                 .{ .buffer = pass.voxel_targets[pass.ix_new_slot] },
             },
         );
@@ -1415,64 +1395,72 @@ const VoxelizePass = struct {
         sdl.endGPUComputePass(pass.active_pass.?);
         pass.active_pass = null;
 
-        // const triangle_binning_b_pass = try sdl.beginGPUComputePass(command_buffer, &.{}, &.{
-        //     .{ .buffer = pass.triangle_bin_counters },
-        //     .{ .buffer = pass.triangle_bin_offsets },
-        //     .{ .buffer = pass.triangle_bins, .cycle = true },
-        // });
-        // sdl.bindGPUComputePipeline(triangle_binning_b_pass, pass.triangle_binning_b_pipeline);
-        // sdl.bindGPUComputeStorageBuffers(triangle_binning_b_pass, 0, &.{pass.triangle_buffer});
-        // sdl.pushGPUComputeUniformData(command_buffer, 0, &CommonUBO{
-        //     .cascade_size = cascade_size,
-        //     .cascade_mask = cascade_mask,
-        //     .n_cascades = n_cascades,
-        //     .min_voxel_size = min_voxel_size,
-        //     .anchors = pass.anchors,
-        // }, @sizeOf(CommonUBO));
-        // for (time_slices[pass.ix_time_slice], 0..) |target_cascade, i| {
-        //     sdl.pushGPUComputeUniformData(command_buffer, 1, &BinningBUBO{
-        //         .target_cascade = target_cascade,
-        //         .bin_group_offset = @intCast(i * cascade_size[3] / 64),
-        //         .buffer_group_index = @intCast(i),
-        //         .buffer_group_offset = @intCast(i * max_buffered_triangles),
-        //     }, @sizeOf(BinningBUBO));
-        //     sdl.dispatchGPUCompute(triangle_binning_b_pass, (pass.n_triangles + 63) / 64, 1, 1);
-        // }
-        // sdl.endGPUComputePass(triangle_binning_b_pass);
+        try pass.prefix_sum_pass.run(
+            command_buffer,
+            pass.triangle_bin_offsets,
+            2 * cascade_size[3] / 64,
+        );
+
+        const triangle_binning_b_pass = try sdl.beginGPUComputePass(command_buffer, &.{}, &.{
+            .{ .buffer = pass.triangle_bin_counters },
+            .{ .buffer = pass.triangle_bin_offsets },
+            .{ .buffer = pass.triangle_bins, .cycle = true },
+        });
+        sdl.bindGPUComputePipeline(triangle_binning_b_pass, pass.triangle_binning_b_pipeline);
+        sdl.bindGPUComputeStorageBuffers(triangle_binning_b_pass, 0, &.{pass.triangle_buffer});
+        sdl.pushGPUComputeUniformData(command_buffer, 0, &CommonUBO{
+            .cascade_size = cascade_size,
+            .cascade_mask = cascade_mask,
+            .n_cascades = n_cascades,
+            .min_voxel_size = min_voxel_size,
+            .anchors = pass.anchors,
+        }, @sizeOf(CommonUBO));
+        for (time_slices[pass.ix_time_slice], 0..) |target_cascade, i| {
+            sdl.pushGPUComputeUniformData(command_buffer, 1, &BinningBUBO{
+                .target_cascade = target_cascade,
+                .bin_group_offset = @intCast(i * cascade_size[3] / 64),
+                .buffer_group_index = @intCast(i),
+                .buffer_group_offset = @intCast(i * max_buffered_triangles),
+            }, @sizeOf(BinningBUBO));
+            // ideally this would be an indirect setup
+            // since the actual n_triangles is only known gpu side
+            sdl.dispatchGPUCompute(triangle_binning_b_pass, (pass.n_triangles + 63) / 64, 1, 1);
+        }
+        sdl.endGPUComputePass(triangle_binning_b_pass);
 
         sdl.popGPUDebugGroup(command_buffer);
 
         sdl.pushGPUDebugGroup(command_buffer, "voxelizing");
 
-        // const voxelization_pass = try sdl.beginGPUComputePass(command_buffer, &.{}, &.{
-        //     .{ .buffer = pass.voxel_targets[pass.ix_new_slot] },
-        // });
-        // sdl.bindGPUComputePipeline(voxelization_pass, pass.voxelization_pipeline);
-        // sdl.bindGPUComputeStorageBuffers(voxelization_pass, 0, &.{
-        //     pass.triangle_bin_counters,
-        //     pass.triangle_bin_offsets,
-        //     pass.triangle_bins,
-        // });
-        // sdl.pushGPUComputeUniformData(command_buffer, 0, &CommonUBO{
-        //     .cascade_size = cascade_size,
-        //     .cascade_mask = cascade_mask,
-        //     .n_cascades = n_cascades,
-        //     .min_voxel_size = min_voxel_size,
-        //     .anchors = pass.anchors,
-        // }, @sizeOf(CommonUBO));
-        // for (time_slices[pass.ix_time_slice], 0..) |target_cascade, i| {
-        //     sdl.pushGPUComputeUniformData(command_buffer, 1, &VoxelizeUBO{
-        //         .bin_group_offset = @intCast(i * cascade_size[3] / 64),
-        //         .target_cascade = target_cascade,
-        //     }, @sizeOf(VoxelizeUBO));
-        //     sdl.dispatchGPUCompute(
-        //         voxelization_pass,
-        //         cascade_size[0] / 4,
-        //         cascade_size[1] / 4,
-        //         cascade_size[2] / 4,
-        //     );
-        // }
-        // sdl.endGPUComputePass(voxelization_pass);
+        const voxelization_pass = try sdl.beginGPUComputePass(command_buffer, &.{}, &.{
+            .{ .buffer = pass.voxel_targets[pass.ix_new_slot] },
+        });
+        sdl.bindGPUComputePipeline(voxelization_pass, pass.voxelization_pipeline);
+        sdl.bindGPUComputeStorageBuffers(voxelization_pass, 0, &.{
+            pass.triangle_bin_counters,
+            pass.triangle_bin_offsets,
+            pass.triangle_bins,
+        });
+        sdl.pushGPUComputeUniformData(command_buffer, 0, &CommonUBO{
+            .cascade_size = cascade_size,
+            .cascade_mask = cascade_mask,
+            .n_cascades = n_cascades,
+            .min_voxel_size = min_voxel_size,
+            .anchors = pass.anchors,
+        }, @sizeOf(CommonUBO));
+        for (time_slices[pass.ix_time_slice], 0..) |target_cascade, i| {
+            sdl.pushGPUComputeUniformData(command_buffer, 1, &VoxelizeUBO{
+                .bin_group_offset = @intCast(i * cascade_size[3] / 64),
+                .target_cascade = target_cascade,
+            }, @sizeOf(VoxelizeUBO));
+            sdl.dispatchGPUCompute(
+                voxelization_pass,
+                cascade_size[0] / 4,
+                cascade_size[1] / 4,
+                cascade_size[2] / 4,
+            );
+        }
+        sdl.endGPUComputePass(voxelization_pass);
         sdl.popGPUDebugGroup(command_buffer);
     }
 
