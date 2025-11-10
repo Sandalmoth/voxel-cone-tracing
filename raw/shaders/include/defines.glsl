@@ -1,1 +1,1 @@
-#define MAX_CASCADES 16
+#define MAX_CASCADES 8

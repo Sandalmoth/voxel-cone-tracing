@@ -46,8 +46,6 @@ void main() {
     uint cascade = indexToCascade(global_id);
     if (cascade == target_cascades[0] || cascade == target_cascades[1]) {
         new_voxel_targets[global_id] = 0u;
-        // new_voxel_targets[2 * global_id] = 0u;        
-        // new_voxel_targets[2 * global_id + 1] = 0u;        
     } else {
         ivec3 voxel_pos = indexToPos(global_id);
         vec3 anchor_move = anchor_moves[cascade].xyz / voxelSize(cascade);
@@ -67,12 +65,8 @@ void main() {
             uint reprojected_index = indexFromCascadePos(reprojected_cascade, reprojected_pos);
             // TODO divide alpha by 2
             new_voxel_targets[global_id] = old_voxel_targets[reprojected_index];
-            // new_voxel_targets[2 * global_id] = old_voxel_targets[2 * reprojected_index];
-            // new_voxel_targets[2 * global_id + 1] = old_voxel_targets[2 * reprojected_index + 1];
         } else {
             new_voxel_targets[global_id] = 0u;
-            // new_voxel_targets[2 * global_id] = 0u;
-            // new_voxel_targets[2 * global_id + 1] = 0u;
         }
     }
 }

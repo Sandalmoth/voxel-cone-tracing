@@ -11,7 +11,7 @@ struct Vertex {
 
 struct Triangle {
     // NOTE could pack even more aggresively
-    // unclear if unpacking vs conpusing the normal is worth it
+    // unclear if unpacking vs conputing the normal is worth it
     uint p0[2];
     uint p1[2];
     uint p2[2];
@@ -36,7 +36,6 @@ layout(std430, set = 1, binding = 2) buffer Buffer {
     uint n_buffered_triangles[2];
     Triangle buf[];
 };
-
 layout(std430, set = 1, binding = 3) buffer VoxelTargets {
     uint voxel_targets[];
 };

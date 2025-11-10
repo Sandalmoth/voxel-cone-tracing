@@ -13,22 +13,19 @@ struct Triangle {
     uint emissive_power;
 };
 
+layout(std430, set = 0, binding = 0) readonly buffer Buffer {
+    uint n_buffered_triangles;
+    Triangle buf[];
+};
+
 layout(std430, set = 1, binding = 0) buffer BinCounters {
     uint bin_counters[];
 };
 layout(std430, set = 1, binding = 1) buffer BinOffsets {
     uint bin_offsets[];
 };
-layout(std430, set = 1, binding = 2) buffer Buffer {
-    uint n_buffered_triangles;
-    Triangle buf[];
-};
-layout(std430, set = 1, binding = 3) buffer Bins {
+layout(std430, set = 1, binding = 2) buffer Bins {
     Triangle bins[];
-};
-
-layout(std430, set = 1, binding = 3) buffer VoxelTargets {
-    uint voxel_targets[];
 };
 
 layout(std140, set = 2, binding = 0) uniform CommonUBO {
