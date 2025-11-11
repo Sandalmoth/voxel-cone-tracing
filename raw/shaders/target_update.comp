@@ -61,12 +61,17 @@ void main() {
             reprojected_cascade += 1;
         }
 
-        if (reprojected_cascade < n_cascades) {
+        if (reprojected_cascade >= n_cascades) {
+            new_voxel_targets[global_id] = 0u;
+        } else if (reprojected_cascade == cascade) {
             uint reprojected_index = indexFromCascadePos(reprojected_cascade, reprojected_pos);
-            // TODO divide alpha by 2
             new_voxel_targets[global_id] = old_voxel_targets[reprojected_index];
         } else {
-            new_voxel_targets[global_id] = 0u;
+            uint reprojected_index = indexFromCascadePos(reprojected_cascade, reprojected_pos);
+            uint packed = old_voxel_targets[reprojected_index];
+            float opacity = unpackOpacity(packed);
+            new_voxel_targets[global_id] = setPackedOpacity(packed, 0.5 * opacity);
+            
         }
     }
 }

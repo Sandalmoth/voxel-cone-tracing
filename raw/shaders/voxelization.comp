@@ -60,8 +60,7 @@ void main() {
     ivec3 voxel_pos = ivec3(group_id) * 4 + ivec3(local_id) - ivec3(cascade_size.xyz / 2u);
     uint ix_voxel = indexFromCascadePos(target_cascade, voxel_pos);
 
-    float n_intersections = 0.0;
-    vec4 voxel_color = vec4(0.0);
+    uint packed = 0;
     
     uint n_triangles = bin_counters[group_index + bin_group_offset];
     uint offset = bin_offsets[group_index + bin_group_offset];
@@ -218,13 +217,10 @@ void main() {
                 low, ext, p0, p1, p2, intersection_info[i]
             )) continue;
 
-            voxel_color += vec4(unpackUnorm4x8(triangles[i].diffuse).rgb, 1.0);
-            n_intersections += 1.0;
+            packed |= triangles[i].diffuse;
         }
         barrier();
     }
 
-    if (n_intersections > 0.0) {
-        voxel_targets[ix_voxel] |= packDiffuseOpacity(voxel_color / n_intersections);
-    }
+    voxel_targets[ix_voxel] |= packed;
 }

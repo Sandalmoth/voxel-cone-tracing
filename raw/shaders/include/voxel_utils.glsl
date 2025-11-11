@@ -154,8 +154,8 @@ vec3 unpackDiffuse(uint packed) {
     uint b_neg_bits = (packed >> 16u) & 0x3u;
     float r_pos = dequantizeFromBitmask(r_pos_bits, 2);
     float r_neg = dequantizeFromBitmask(r_neg_bits, 2);
-    float g_pos = dequantizeFromBitmask(g_pos_bits, 3);
-    float g_neg = dequantizeFromBitmask(g_neg_bits, 3);
+    float g_pos = dequantizeFromBitmask(g_pos_bits, 4);
+    float g_neg = dequantizeFromBitmask(g_neg_bits, 4);
     float b_pos = dequantizeFromBitmask(b_pos_bits, 2);
     float b_neg = dequantizeFromBitmask(b_neg_bits, 2);
     float r = 0.5 + 0.5 * (r_pos - r_neg);
@@ -176,7 +176,7 @@ vec3 unpackNormal(uint packed) {
 
 float unpackOpacity(uint packed) {
     uint alpha_bits =  packed         & 0xFu;
-    float a = dequantizeFromBitmask(alpha_bits, 2);
+    float a = dequantizeFromBitmask(alpha_bits, 4);
     return a;
 }
 

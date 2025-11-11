@@ -95,6 +95,8 @@ void main() {
     vec3 lower_bound = min(min(p0, p1), p2);
     vec3 upper_bound = max(max(p0, p1), p2);
 
+    uint packed = packDiffuseNormalOpacity(diffuse.rgb, normal, 1.0);
+
     // directly voxelize small triangles
     // this is increases the cost of the binning if we have many small triangles
     // so should be combined with an LOD system to avoid voxelizing very fine geometry
@@ -111,10 +113,8 @@ void main() {
                 for (int z = voxel_lower_bound.z; z <= voxel_upper_bound.z; ++z) {
                     ivec3 voxel_pos = ivec3(x, y, z);
                     uint voxel_index = indexFromCascadePos(target_cascade, voxel_pos);
-                    atomicOr(
-                        voxel_targets[voxel_index],
-                        packDiffuseOpacity(vec4(diffuse.rgb, 0.5))
-                    );
+                    packed = setPackedOpacity(packed, 0.5);
+                    atomicOr(voxel_targets[voxel_index], packed);
                 }
             }
         }
@@ -143,8 +143,8 @@ void main() {
     tri.p1[1] = packHalf2x16(vec2(p1.z, normal.x));
     tri.p2[0] = packHalf2x16(p2.xy);
     tri.p2[1] = packHalf2x16(vec2(p2.z, normal.x));
-    tri.diffuse = packUnorm4x8(diffuse);
-    tri.emissive = pack9995(emissive.rgb); // we should actually do the voxel target packing here
+    tri.diffuse = packed;
+    tri.emissive = 0; // we should actually do the voxel target packing here
     uint ix = atomicAdd(n_buffered_triangles[buffer_group_index], 1); // contention risk?
     buf[ix + buffer_group_offset] = tri;
 }
