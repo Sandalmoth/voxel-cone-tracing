@@ -54,11 +54,11 @@ const Model = struct {
 
         const command_buffer = try sdl.acquireGPUCommandBuffer(device);
 
-        const bytes: [*]u8 = @alignCast(@ptrCast(
+        const bytes: [*]u8 = @ptrCast(@alignCast(
             try sdl.mapGPUTransferBuffer(device, transfer_buffer, true),
         ));
-        @memcpy(@as([*]Vertex, @alignCast(@ptrCast(bytes))), vertices);
-        @memcpy(@as([*]u32, @alignCast(@ptrCast(bytes + sizeof_vertices))), indices);
+        @memcpy(@as([*]Vertex, @ptrCast(@alignCast(bytes))), vertices);
+        @memcpy(@as([*]u32, @ptrCast(@alignCast(bytes + sizeof_vertices))), indices);
         sdl.unmapGPUTransferBuffer(device, transfer_buffer);
 
         const copy_pass = try sdl.beginGPUCopyPass(command_buffer);
@@ -190,7 +190,7 @@ pub fn init(gpa: std.mem.Allocator, device: *sdl.GPUDevice) !Scene {
 
     const command_buffer = try sdl.acquireGPUCommandBuffer(device);
 
-    const bytes: [*]u8 = @alignCast(@ptrCast(
+    const bytes: [*]u8 = @ptrCast(@alignCast(
         try sdl.mapGPUTransferBuffer(device, transfer_buffer, true),
     ));
     @memcpy(bytes, data_vertices[@sizeOf(u32)..]);

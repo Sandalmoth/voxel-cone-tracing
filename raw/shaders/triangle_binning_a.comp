@@ -121,6 +121,21 @@ void main() {
         return;
     }
 
+    // count number of triangles per bin and store to sort into bins later
+    float bin_size = voxelSize(target_cascade) * 4;
+    ivec3 bin_cascade_size_half = ivec3(cascade_size / 8u);
+    ivec3 bin_lower_bound = max(ivec3(floor(lower_bound / bin_size)), -bin_cascade_size_half);
+    ivec3 bin_upper_bound = min(ivec3(floor(upper_bound / bin_size)), bin_cascade_size_half - 1);
+    for (int x = bin_lower_bound.x; x <= bin_upper_bound.x; ++x) {
+        for (int y = bin_lower_bound.y; y <= bin_upper_bound.y; ++y) {
+            for (int z = bin_lower_bound.z; z <= bin_upper_bound.z; ++z) {
+                ivec3 bin_pos = ivec3(x, y, z);
+                uint bin_index = binIndex(bin_pos);
+                atomicAdd(bin_offsets[bin_index + bin_group_offset], 1);
+            }
+        }
+    }
+
     Triangle tri;
     tri.p0[0] = packHalf2x16(p0.xy);
     tri.p0[1] = packHalf2x16(vec2(p0.z, normal.x));

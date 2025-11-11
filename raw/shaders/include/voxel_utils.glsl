@@ -108,6 +108,78 @@ vec4 unpackDiffuseOpacity(uint packed) {
     return vec4(r, g, b, a);
 }
 
+uint packDiffuseNormalOpacity(vec3 diffuse, vec3 normal, float opacity) {
+    float r_pos = max(0, 2.0 * (diffuse.r - 0.5));
+    float r_neg = max(0, 2.0 * (0.5 - diffuse.r));
+    float g_pos = max(0, 2.0 * (diffuse.g - 0.5));
+    float g_neg = max(0, 2.0 * (0.5 - diffuse.g));
+    float b_pos = max(0, 2.0 * (diffuse.b - 0.5));
+    float b_neg = max(0, 2.0 * (0.5 - diffuse.b));
+
+    uint r_pos_bits = quantizeToBitmask(r_pos, 2);
+    uint r_neg_bits = quantizeToBitmask(r_neg, 2);
+    uint g_pos_bits = quantizeToBitmask(g_pos, 4);
+    uint g_neg_bits = quantizeToBitmask(g_neg, 4);
+    uint b_pos_bits = quantizeToBitmask(b_pos, 2);
+    uint b_neg_bits = quantizeToBitmask(b_neg, 2);
+    uint xnorm_bits = quantizeToBitmask(normal.x, 4);
+    uint ynorm_bits = quantizeToBitmask(normal.y, 4);
+    uint znorm_bits = quantizeToBitmask(normal.z, 4);
+    uint alpha_bits = quantizeToBitmask(opacity, 4);
+
+    return (r_pos_bits << 30u) |
+           (r_neg_bits << 28u) |
+           (g_pos_bits << 24u) |
+           (g_neg_bits << 20u) |
+           (b_pos_bits << 18u) |
+           (b_neg_bits << 16u) |
+           (xnorm_bits << 12u) |
+           (ynorm_bits <<  8u) |
+           (znorm_bits <<  4u) |
+           (alpha_bits       );
+}
+
+uint setPackedOpacity(uint packed, float opacity) {
+    packed &= ~0xF;
+    uint alpha_bits = quantizeToBitmask(opacity, 4);
+    return packed | alpha_bits;
+}
+
+vec3 unpackDiffuse(uint packed) {
+    uint r_pos_bits = (packed >> 30u) & 0x3u;
+    uint r_neg_bits = (packed >> 28u) & 0x3u;
+    uint g_pos_bits = (packed >> 24u) & 0xFu;
+    uint g_neg_bits = (packed >> 20u) & 0xFu;
+    uint b_pos_bits = (packed >> 18u) & 0x3u;
+    uint b_neg_bits = (packed >> 16u) & 0x3u;
+    float r_pos = dequantizeFromBitmask(r_pos_bits, 2);
+    float r_neg = dequantizeFromBitmask(r_neg_bits, 2);
+    float g_pos = dequantizeFromBitmask(g_pos_bits, 3);
+    float g_neg = dequantizeFromBitmask(g_neg_bits, 3);
+    float b_pos = dequantizeFromBitmask(b_pos_bits, 2);
+    float b_neg = dequantizeFromBitmask(b_neg_bits, 2);
+    float r = 0.5 + 0.5 * (r_pos - r_neg);
+    float g = 0.5 + 0.5 * (g_pos - g_neg);
+    float b = 0.5 + 0.5 * (b_pos - b_neg);
+    return vec3(r, g, b);
+}
+
+vec3 unpackNormal(uint packed) {
+    uint xnorm_bits = (packed >> 12u) & 0xFu;
+    uint ynorm_bits = (packed >>  8u) & 0xFu;
+    uint znorm_bits = (packed >>  4u) & 0xFu;
+    float x = dequantizeFromBitmask(xnorm_bits, 4);
+    float y = dequantizeFromBitmask(ynorm_bits, 4);
+    float z = dequantizeFromBitmask(znorm_bits, 4);
+    return vec3(x, y, z);
+}
+
+float unpackOpacity(uint packed) {
+    uint alpha_bits =  packed         & 0xFu;
+    float a = dequantizeFromBitmask(alpha_bits, 2);
+    return a;
+}
+
 struct IntersectionInfo {
     vec3 n;
     vec3 c;
