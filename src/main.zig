@@ -245,21 +245,23 @@ pub fn main() !void {
         //     voxelize_pass.energy_cascades,
         //     voxelize_pass.color_cascades,
         // );
-        // {
-        //     try draw_pass.begin(
-        //         command_buffer,
-        //         tracing_pass.upsampled_gi_target,
-        //         tracing_pass.upsampled_specular_target,
-        //     );
-        //     for (scene.objects.items) |object| draw_pass.drawObject(
-        //         command_buffer,
-        //         object,
-        //         camera_matrix,
-        //         light_matrix,
-        //         alpha,
-        //     );
-        //     draw_pass.end(command_buffer);
-        // }
+        {
+            try draw_pass.begin(
+                command_buffer,
+                .{ light_x, 2.0, light_y },
+                voxelize_pass.anchors,
+                voxelize_pass.energy_cascades,
+                voxelize_pass.color_cascades,
+            );
+            for (scene.objects.items) |object| draw_pass.drawObject(
+                command_buffer,
+                object,
+                camera_matrix,
+                light_matrix,
+                alpha,
+            );
+            draw_pass.end(command_buffer);
+        }
         if (debug_mode) try debug_pass.run(
             command_buffer,
             voxelize_pass.anchors,
@@ -1880,7 +1882,11 @@ const DrawPass = struct {
         model_matrix: [16]f32 align(16),
         light_space_matrix: [16]f32 align(16),
     };
-    const FragmentUBO = extern struct {
+    const FragmentAUBO = extern struct {
+        anchors: [MAX_ANCHORS][4]f32 align(16),
+        light_direction: [3]f32 align(16),
+    };
+    const FragmentBUBO = extern struct {
         diffuse: [4]f32 align(16),
         emissive: [4]f32 align(16),
         roughness: f32,
@@ -1944,7 +1950,7 @@ const DrawPass = struct {
                 .num_samplers = 3,
                 .num_storage_textures = 0,
                 .num_storage_buffers = 0,
-                .num_uniform_buffers = 1,
+                .num_uniform_buffers = 2,
             });
         };
         defer sdl.releaseGPUShader(device, fragment_shader);
@@ -2323,8 +2329,10 @@ const DrawPass = struct {
     fn begin(
         pass: *DrawPass,
         command_buffer: *sdl.GPUCommandBuffer,
-        gi_target: *sdl.GPUTexture,
-        specular_target: *sdl.GPUTexture,
+        light_direction: [3]f32,
+        cascade_anchors: [MAX_ANCHORS][4]f32,
+        energy_cascades: *sdl.GPUTexture,
+        color_cascades: *sdl.GPUTexture,
     ) !void {
         std.debug.assert(pass.active_pass == null);
         sdl.pushGPUDebugGroup(command_buffer, "draw");
@@ -2349,9 +2357,13 @@ const DrawPass = struct {
         sdl.bindGPUGraphicsPipeline(pass.active_pass.?, pass.pipeline);
         sdl.bindGPUFragmentSamplers(pass.active_pass.?, 0, &.{
             .{ .texture = pass.shadowmap_target, .sampler = pass.sampler },
-            .{ .texture = gi_target, .sampler = pass.sampler },
-            .{ .texture = specular_target, .sampler = pass.sampler },
+            .{ .texture = energy_cascades, .sampler = pass.sampler },
+            .{ .texture = color_cascades, .sampler = pass.sampler },
         });
+        sdl.pushGPUFragmentUniformData(command_buffer, 0, &FragmentAUBO{
+            .light_direction = light_direction,
+            .anchors = cascade_anchors,
+        }, @sizeOf(FragmentAUBO));
     }
 
     fn drawObject(
@@ -2384,11 +2396,11 @@ const DrawPass = struct {
             .model_matrix = zm.matToArr(model),
             .light_space_matrix = zm.matToArr(light_space_matrix),
         }, @sizeOf(VertexUBO));
-        sdl.pushGPUFragmentUniformData(command_buffer, 0, &FragmentUBO{
+        sdl.pushGPUFragmentUniformData(command_buffer, 1, &FragmentBUBO{
             .diffuse = object.diffuse,
             .emissive = object.emissive,
             .roughness = object.roughness,
-        }, @sizeOf(FragmentUBO));
+        }, @sizeOf(FragmentBUBO));
         sdl.drawGPUIndexedPrimitives(
             pass.active_pass.?,
             object.model.n_indices,

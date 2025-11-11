@@ -1,6 +1,6 @@
 #version 460
 
-#define MIN_VOXEL_SIZE 0.244140625
+#include "include/defines.glsl"
 
 layout(location = 0) in vec3 v_position;
 layout(location = 1) in vec3 v_normal;
@@ -9,10 +9,14 @@ layout(location = 2) in vec4 v_position_light_space;
 layout(location = 0) out vec4 o_color;
 
 layout(set = 2, binding = 0) uniform sampler2D u_shadowmap;
-layout(set = 2, binding = 1) uniform sampler2D u_gi;
-layout(set = 2, binding = 2) uniform sampler2D u_specular;
+layout(set = 2, binding = 1) uniform sampler3D u_energy_cascades;
+layout(set = 2, binding = 2) uniform sampler3D u_color_cascades;
 
-layout(set = 3, binding = 0) uniform MaterialData {
+layout(set = 3, binding = 0) uniform CascadeData {
+    vec4 anchors[MAX_CASCADES];
+    vec4 light_direction;
+};
+layout(set = 3, binding = 1) uniform MaterialData {
     vec4 diffuse;
     vec4 emissive;
     float roughness;
@@ -46,8 +50,8 @@ float computeShadow() {
 
 
 void main() {
-    // TODO dynamic
-    vec3 light_dir = normalize(vec3(-1.0, 2.0, 0.5));
+    // vec3 light_dir = normalize(vec3(-1.0, 2.0, 0.5));
+    vec3 light_dir = normalize(light_direction.xyz);
     float light_intensity = 0.5;
 
     float shadow = computeShadow();
@@ -62,12 +66,13 @@ void main() {
 
     const float gi_factor = 1.0;
     const float ao_power = 1.0;
-    vec4 gi = texelFetch(u_gi, ivec2(gl_FragCoord.xy), 0);
-    gi.r = max(0, gi.r);
-    gi.g = max(0, gi.g);
-    gi.b = max(0, gi.b);
-    rad += u_material_data.diffuse.rgb * pow(gi.a, ao_power) *
-          (gi_factor * gi.rgb + vec3(5e-2));
+    const vec3 ambient = vec3(5e-2);
+    // vec4 gi = texelFetch(u_gi, ivec2(gl_FragCoord.xy), 0);
+    // gi.r = max(0, gi.r);
+    // gi.g = max(0, gi.g);
+    // gi.b = max(0, gi.b);
+    // rad += u_material_data.diffuse.rgb * pow(gi.a, ao_power) *
+    //       (gi_factor * gi.rgb + vec3(5e-2));
    
     o_color = vec4(rad, 1.0);
 }
