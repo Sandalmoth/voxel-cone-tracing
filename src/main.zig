@@ -250,8 +250,8 @@ pub fn main() !void {
                 command_buffer,
                 .{ light_x, 2.0, light_y },
                 voxelize_pass.anchors,
-                voxelize_pass.energy_cascades,
-                voxelize_pass.color_cascades,
+                voxelize_pass.energy_cascades[voxelize_pass.ix_new_slot],
+                voxelize_pass.color_cascades[voxelize_pass.ix_new_slot],
             );
             for (scene.objects.items) |object| draw_pass.drawObject(
                 command_buffer,
@@ -266,8 +266,8 @@ pub fn main() !void {
             command_buffer,
             voxelize_pass.anchors,
             voxelize_pass.voxel_targets[voxelize_pass.ix_new_slot],
-            voxelize_pass.energy_cascades,
-            voxelize_pass.color_cascades,
+            voxelize_pass.energy_cascades[voxelize_pass.ix_new_slot],
+            voxelize_pass.color_cascades[voxelize_pass.ix_new_slot],
             camera.v(alpha),
             camera.p(alpha),
         );
@@ -993,6 +993,7 @@ const VoxelizePass = struct {
     triangle_binning_a_pipeline: *sdl.GPUComputePipeline,
     triangle_binning_b_pipeline: *sdl.GPUComputePipeline,
     voxelization_pipeline: *sdl.GPUComputePipeline,
+    blend_color_pipeline: *sdl.GPUComputePipeline,
 
     voxel_targets: [2]*sdl.GPUBuffer, // rgba + normal + emissive packed in [2]u32
 
@@ -1014,8 +1015,8 @@ const VoxelizePass = struct {
     // double scratch that shadowmap is hardly better and then we limit ourselves a lot
     // let's do voxel ray tracing but add temporal stabilization to the lit cascades
 
-    energy_cascades: *sdl.GPUTexture,
-    color_cascades: *sdl.GPUTexture,
+    energy_cascades: [2]*sdl.GPUTexture,
+    color_cascades: [2]*sdl.GPUTexture,
 
     fn init(gpa: std.mem.Allocator, device: *sdl.GPUDevice) !VoxelizePass {
         var prefix_sum_pass: PrefixSumPass = try .init(
@@ -1165,6 +1166,34 @@ const VoxelizePass = struct {
         };
         errdefer sdl.releaseGPUComputePipeline(device, voxelization_pipeline);
 
+        const blend_color_pipeline = blk: {
+            const file = try std.fs.cwd().openFile(
+                "data/shaders/blend_color.comp.spv",
+                .{ .mode = .read_only },
+            );
+            defer file.close();
+            var reader = file.reader(&read_buffer);
+            const bytes = try reader.interface.allocRemaining(gpa, .unlimited);
+            defer gpa.free(bytes);
+
+            break :blk try sdl.createGPUComputePipeline(device, &.{
+                .code_size = bytes.len,
+                .code = bytes.ptr,
+                .entrypoint = "main",
+                .format = sdl.c.SDL_GPU_SHADERFORMAT_SPIRV,
+                .num_samplers = 0,
+                .num_readonly_storage_textures = 0,
+                .num_readonly_storage_buffers = 1,
+                .num_readwrite_storage_textures = 2,
+                .num_readwrite_storage_buffers = 0,
+                .num_uniform_buffers = 2,
+                .threadcount_x = 64,
+                .threadcount_y = 1,
+                .threadcount_z = 1,
+            });
+        };
+        errdefer sdl.releaseGPUComputePipeline(device, blend_color_pipeline);
+
         var voxel_targets: [2]*sdl.GPUBuffer = undefined;
         voxel_targets[0] = try sdl.createGPUBuffer(device, &.{
             .usage = sdl.c.SDL_GPU_BUFFERUSAGE_COMPUTE_STORAGE_READ |
@@ -1207,7 +1236,8 @@ const VoxelizePass = struct {
         });
         errdefer sdl.releaseGPUBuffer(device, triangle_bins);
 
-        const energy_cascades = try sdl.createGPUTexture(device, &.{
+        var energy_cascades: [2]*sdl.GPUTexture = undefined;
+        energy_cascades[0] = try sdl.createGPUTexture(device, &.{
             .type = sdl.c.SDL_GPU_TEXTURETYPE_3D,
             .format = sdl.c.SDL_GPU_TEXTUREFORMAT_R16G16B16A16_FLOAT, // spherical harmonic xyz+dc
             .usage = sdl.c.SDL_GPU_TEXTUREUSAGE_COMPUTE_STORAGE_SIMULTANEOUS_READ_WRITE |
@@ -1218,9 +1248,22 @@ const VoxelizePass = struct {
             .num_levels = 1,
             .sample_count = sdl.c.SDL_GPU_SAMPLECOUNT_1,
         });
-        errdefer sdl.releaseGPUTexture(device, energy_cascades);
+        errdefer sdl.releaseGPUTexture(device, energy_cascades[0]);
+        energy_cascades[1] = try sdl.createGPUTexture(device, &.{
+            .type = sdl.c.SDL_GPU_TEXTURETYPE_3D,
+            .format = sdl.c.SDL_GPU_TEXTUREFORMAT_R16G16B16A16_FLOAT, // spherical harmonic xyz+dc
+            .usage = sdl.c.SDL_GPU_TEXTUREUSAGE_COMPUTE_STORAGE_SIMULTANEOUS_READ_WRITE |
+                sdl.c.SDL_GPU_TEXTUREUSAGE_SAMPLER,
+            .width = cascade_size[0] * n_cascades,
+            .height = cascade_size[1],
+            .layer_count_or_depth = cascade_size[2],
+            .num_levels = 1,
+            .sample_count = sdl.c.SDL_GPU_SAMPLECOUNT_1,
+        });
+        errdefer sdl.releaseGPUTexture(device, energy_cascades[1]);
 
-        const color_cascades = try sdl.createGPUTexture(device, &.{
+        var color_cascades: [2]*sdl.GPUTexture = undefined;
+        color_cascades[0] = try sdl.createGPUTexture(device, &.{
             .type = sdl.c.SDL_GPU_TEXTURETYPE_3D,
             .format = sdl.c.SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM, // rgb + opacity
             .usage = sdl.c.SDL_GPU_TEXTUREUSAGE_COMPUTE_STORAGE_SIMULTANEOUS_READ_WRITE |
@@ -1231,7 +1274,22 @@ const VoxelizePass = struct {
             .num_levels = 1,
             .sample_count = sdl.c.SDL_GPU_SAMPLECOUNT_1,
         });
-        errdefer sdl.releaseGPUTexture(device, color_cascades);
+        errdefer sdl.releaseGPUTexture(device, color_cascades[0]);
+        color_cascades[1] = try sdl.createGPUTexture(device, &.{
+            .type = sdl.c.SDL_GPU_TEXTURETYPE_3D,
+            .format = sdl.c.SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM, // rgb + opacity
+            .usage = sdl.c.SDL_GPU_TEXTUREUSAGE_COMPUTE_STORAGE_SIMULTANEOUS_READ_WRITE |
+                sdl.c.SDL_GPU_TEXTUREUSAGE_SAMPLER,
+            .width = cascade_size[0] * n_cascades,
+            .height = cascade_size[1],
+            .layer_count_or_depth = cascade_size[2],
+            .num_levels = 1,
+            .sample_count = sdl.c.SDL_GPU_SAMPLECOUNT_1,
+        });
+        errdefer sdl.releaseGPUTexture(device, color_cascades[1]);
+
+        // FIXME energy/color cascades should be cleared to 0
+        // since if they happend to have any NaN those will propagate
 
         return .{
             .device = device,
@@ -1241,6 +1299,7 @@ const VoxelizePass = struct {
             .triangle_binning_a_pipeline = triangle_binning_a_pipeline,
             .triangle_binning_b_pipeline = triangle_binning_b_pipeline,
             .voxelization_pipeline = voxelization_pipeline,
+            .blend_color_pipeline = blend_color_pipeline,
             .voxel_targets = voxel_targets,
             .triangle_bin_counters = triangle_bin_counters,
             .triangle_bin_offsets = triangle_bin_offsets,
@@ -1252,15 +1311,16 @@ const VoxelizePass = struct {
     }
 
     fn deinit(pass: *VoxelizePass) void {
-        sdl.releaseGPUTexture(pass.device, pass.color_cascades);
-        sdl.releaseGPUTexture(pass.device, pass.energy_cascades);
         sdl.releaseGPUBuffer(pass.device, pass.triangle_bins);
         sdl.releaseGPUBuffer(pass.device, pass.triangle_buffer);
         sdl.releaseGPUBuffer(pass.device, pass.triangle_bin_offsets);
         sdl.releaseGPUBuffer(pass.device, pass.triangle_bin_counters);
         for (0..2) |i| {
+            sdl.releaseGPUTexture(pass.device, pass.color_cascades[i]);
+            sdl.releaseGPUTexture(pass.device, pass.energy_cascades[i]);
             sdl.releaseGPUBuffer(pass.device, pass.voxel_targets[i]);
         }
+        sdl.releaseGPUComputePipeline(pass.device, pass.blend_color_pipeline);
         sdl.releaseGPUComputePipeline(pass.device, pass.voxelization_pipeline);
         sdl.releaseGPUComputePipeline(pass.device, pass.triangle_binning_b_pipeline);
         sdl.releaseGPUComputePipeline(pass.device, pass.triangle_binning_a_pipeline);
@@ -1463,6 +1523,32 @@ const VoxelizePass = struct {
             );
         }
         sdl.endGPUComputePass(voxelization_pass);
+
+        sdl.popGPUDebugGroup(command_buffer);
+        sdl.pushGPUDebugGroup(command_buffer, "blending");
+
+        const blend_color_pass = try sdl.beginGPUComputePass(command_buffer, &.{
+            .{ .texture = pass.color_cascades[pass.ix_old_slot] }, // could be a sampler
+            .{ .texture = pass.color_cascades[pass.ix_new_slot], .cycle = true },
+        }, &.{});
+        sdl.bindGPUComputePipeline(blend_color_pass, pass.blend_color_pipeline);
+        sdl.bindGPUComputeStorageBuffers(blend_color_pass, 0, &.{
+            pass.voxel_targets[pass.ix_new_slot],
+        });
+        sdl.pushGPUComputeUniformData(command_buffer, 0, &CommonUBO{
+            .cascade_size = cascade_size,
+            .cascade_mask = cascade_mask,
+            .n_cascades = n_cascades,
+            .min_voxel_size = min_voxel_size,
+            .anchors = pass.anchors,
+        }, @sizeOf(CommonUBO));
+        sdl.pushGPUComputeUniformData(command_buffer, 1, &UpdateUBO{
+            .anchor_moves = pass.anchor_moves,
+            .target_cascades = time_slices[pass.ix_time_slice],
+        }, @sizeOf(UpdateUBO));
+        sdl.dispatchGPUCompute(blend_color_pass, (len_cascades + 63) / 64, 1, 1);
+        sdl.endGPUComputePass(blend_color_pass);
+
         sdl.popGPUDebugGroup(command_buffer);
     }
 

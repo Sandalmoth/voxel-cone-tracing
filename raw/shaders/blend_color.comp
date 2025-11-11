@@ -1,0 +1,92 @@
+#version 460
+
+#include "include/defines.glsl"
+
+layout(local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
+
+layout(std430, set = 0, binding = 0) readonly buffer VoxelTargets {
+    uint voxel_targets[];
+};
+
+layout(rgba8, set = 1, binding = 0) uniform image3D u_old_color_cascades;
+layout(rgba8, set = 1, binding = 1) uniform image3D u_new_color_cascades;
+
+layout(std140, set = 2, binding = 0) uniform CommonUBO {
+    uvec4 cascade_size; // xyz
+    uvec4 cascade_mask;
+    uint n_cascades;
+    float min_voxel_size;
+    vec4 anchors[MAX_CASCADES];
+};
+
+layout(std140, set = 2, binding = 1) uniform UpdateUBO {
+    vec4 anchor_moves[MAX_CASCADES];
+    uvec2 target_cascades; // not used here but whatever
+};
+
+float blend_rates[MAX_CASCADES] = {
+    6.145e-01, 6.145e-01,
+    3.542e-01, 3.542e-01,
+    1.902e-01, 1.902e-01,
+    1.902e-01, 1.902e-01
+};
+
+#include "include/voxel_utils.glsl"
+
+int floorDiv2(int x) {
+    return x >= 0 ? x / 2 : (x - 1) / 2;
+}
+
+ivec3 floorDiv2(ivec3 v) {
+    return ivec3(
+        floorDiv2(v.x),
+        floorDiv2(v.y),
+        floorDiv2(v.z)
+    );
+}
+
+void main() {
+    uint global_id = gl_GlobalInvocationID.x;
+    if (global_id >= n_cascades * cascade_size[3]) return;
+    
+    uint cascade = indexToCascade(global_id);
+    ivec3 voxel_pos = indexToPos(global_id);
+    vec3 anchor_move = anchor_moves[cascade].xyz / voxelSize(cascade);
+    ivec3 reprojected_pos = voxel_pos + ivec3(round(anchor_move));
+    uint reprojected_cascade = cascade;
+    while (reprojected_pos.x < -int(cascade_size.x) / 2 ||
+           reprojected_pos.x >= int(cascade_size.x) / 2 ||
+           reprojected_pos.y < -int(cascade_size.y) / 2 ||
+           reprojected_pos.y >= int(cascade_size.y) / 2 ||
+           reprojected_pos.z < -int(cascade_size.z) / 2 ||
+           reprojected_pos.z >= int(cascade_size.z) / 2) {
+        reprojected_pos = floorDiv2(reprojected_pos);
+        reprojected_cascade += 1;
+    }
+
+    vec4 current = imageLoad(
+        u_old_color_cascades,
+        reprojected_pos + ivec3(cascade_size.xyz / 2) + ivec3(cascade * cascade_size[0], 0, 0)
+    );
+    ivec3 rpos = voxel_pos +
+        ivec3(cascade_size.xyz / 2) +
+        ivec3(reprojected_cascade * cascade_size[0], 0, 0);
+    if (reprojected_cascade >= n_cascades) {
+        // no data, blend towards middle grey 0 opacity
+        imageStore(
+            u_new_color_cascades,
+            rpos,
+            mix(current, vec4(0.5, 0.5, 0.5, 0.0), blend_rates[cascade])
+        );
+    } else if (reprojected_cascade == cascade) {
+        // blend towards color/opacity in target
+        uint packed = voxel_targets[global_id];
+        float opacity = unpackOpacity(packed);
+        vec3 diffuse = unpackDiffuse(packed);
+        imageStore(
+            u_new_color_cascades,
+            rpos,
+            mix(current, vec4(diffuse, opacity), blend_rates[cascade])
+        );
+    }
+}

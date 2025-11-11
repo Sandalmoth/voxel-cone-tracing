@@ -11,6 +11,8 @@ glslc --target-env=vulkan1.0 raw/shaders/triangle_binning_a.comp -o data/shaders
 glslc --target-env=vulkan1.0 raw/shaders/triangle_binning_b.comp -o data/shaders/triangle_binning_b.comp.spv
 glslc --target-env=vulkan1.0 raw/shaders/voxelization.comp -o data/shaders/voxelization.comp.spv
 
+glslc --target-env=vulkan1.0 raw/shaders/blend_color.comp -o data/shaders/blend_color.comp.spv
+
 glslc --target-env=vulkan1.0 raw/shaders/prefix.comp -o data/shaders/prefix.comp.spv
 
 glslc --target-env=vulkan1.0 raw/shaders/debug.comp -o data/shaders/debug.comp.spv
