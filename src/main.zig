@@ -1969,6 +1969,10 @@ const DrawPass = struct {
         light_space_matrix: [16]f32 align(16),
     };
     const FragmentAUBO = extern struct {
+        cascade_size: [4]u32 align(16),
+        cascade_mask: [4]u32 align(16),
+        n_cascades: u32 align(16),
+        min_voxel_size: f32,
         anchors: [MAX_ANCHORS][4]f32 align(16),
         light_direction: [3]f32 align(16),
     };
@@ -2447,6 +2451,10 @@ const DrawPass = struct {
             .{ .texture = color_cascades, .sampler = pass.sampler },
         });
         sdl.pushGPUFragmentUniformData(command_buffer, 0, &FragmentAUBO{
+            .cascade_size = VoxelizePass.cascade_size,
+            .cascade_mask = VoxelizePass.cascade_mask,
+            .n_cascades = VoxelizePass.n_cascades,
+            .min_voxel_size = VoxelizePass.min_voxel_size,
             .light_direction = light_direction,
             .anchors = cascade_anchors,
         }, @sizeOf(FragmentAUBO));
