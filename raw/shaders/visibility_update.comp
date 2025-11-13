@@ -45,7 +45,7 @@ void main() {
     
     uint cascade = indexToCascade(global_id);
     if (cascade == target_cascades[0] || cascade == target_cascades[1]) {
-        new_vis_targets[global_id] = 0u;
+        // we're overwriting it later anyway
     } else {
         ivec3 voxel_pos = indexToPos(global_id);
         vec3 anchor_move = anchor_moves[cascade].xyz / voxelSize(cascade);
@@ -62,7 +62,7 @@ void main() {
         }
 
         if (reprojected_cascade >= n_cascades) {
-            new_vis_targets[global_id] = 0u;
+            new_vis_targets[global_id] = packUnorm4x8(vec4(1.0, 0.0, 0.0, 0.0));
         } else {
             uint reprojected_index = indexFromCascadePos(reprojected_cascade, reprojected_pos);
             new_vis_targets[global_id] = old_vis_targets[reprojected_index];

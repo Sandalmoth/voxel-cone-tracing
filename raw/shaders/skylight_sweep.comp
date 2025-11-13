@@ -63,7 +63,7 @@ void main() {
         uint ix_voxel = indexFromCascadePos(target_cascade, voxel_pos);
         float opacity = unpackOpacity(voxel_targets[ix_voxel]);
         visibility *= 1 - opacity;
-        visibility_targets[ix_voxel] = visibility;
+        visibility_targets[ix_voxel] = packUnorm4x8(vec4(visibility, 0.0, 0.0, 0.0));
     }
 }
 

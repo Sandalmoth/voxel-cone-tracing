@@ -171,7 +171,7 @@ vec3 unpackNormal(uint packed) {
     float x = dequantizeFromBitmask(xnorm_bits, 4);
     float y = dequantizeFromBitmask(ynorm_bits, 4);
     float z = dequantizeFromBitmask(znorm_bits, 4);
-    return vec3(x, y, z);
+    return normalize(vec3(x, y, z));
 }
 
 float unpackOpacity(uint packed) {

@@ -65,25 +65,27 @@ void main() {
         reprojected_cascade += 1;
     }
 
-    vec4 current = imageLoad(
-        u_old_color_cascades,
-        reprojected_pos + ivec3(cascade_size.xyz / 2) + ivec3(cascade * cascade_size[0], 0, 0)
-    );
-    ivec3 rpos = voxel_pos +
-        ivec3(cascade_size.xyz / 2) +
-        ivec3(reprojected_cascade * cascade_size[0], 0, 0);
+    ivec3 image_pos = voxel_pos + 
+                      ivec3(cascade_size.xyz / 2) +
+                      ivec3(cascade * cascade_size[0], 0, 0);
+    ivec3 reprojected_image_pos = reprojected_pos + 
+                                  ivec3(cascade_size.xyz / 2) +
+                                  ivec3(reprojected_cascade * cascade_size[0], 0, 0);
+
+    uint packed = voxel_targets[global_id];
+    float opacity = unpackOpacity(packed);
+    vec3 diffuse = unpackDiffuse(packed);
+
     if (reprojected_cascade >= n_cascades) {
-        // no data, blend towards middle grey 0 opacity
-        vec4 mixed = mix(current, vec4(0.5, 0.5, 0.5, 0.0), blend_rates[cascade]);
-        mixed.a = (mixed.a < 0.01) ? 0.0 : mixed.a;
-        imageStore(u_new_color_cascades, rpos, mixed);
-    } else if (reprojected_cascade == cascade) {
-        // blend towards color/opacity in target
-        uint packed = voxel_targets[global_id];
-        float opacity = unpackOpacity(packed);
-        vec3 diffuse = unpackDiffuse(packed);
-        vec4 mixed = mix(current, vec4(diffuse, opacity), blend_rates[cascade]);
-        mixed.a = (mixed.a < 0.01) ? 0.0 : mixed.a;
-        imageStore(u_new_color_cascades, rpos, mixed);
+        // no prior data exists, assume transparent middle grey
+        vec4 mixed = mix(vec4(0.5, 0.5, 0.5, 0.0), vec4(diffuse, opacity), blend_rates[cascade]);
+        if (mixed.a < 0.01) mixed.a = 0.0;
+        imageStore(u_new_color_cascades, image_pos, mixed);
+    } else {
+        // blend prior and new color
+        vec4 old = imageLoad(u_old_color_cascades, reprojected_image_pos);
+        vec4 mixed = mix(old, vec4(diffuse, opacity), blend_rates[cascade]);
+        if (mixed.a < 0.01) mixed.a = 0.0;
+        imageStore(u_new_color_cascades, image_pos, mixed);
     }
 }

@@ -461,323 +461,6 @@ const PrefixSumPass = struct {
     }
 };
 
-const TracingPass = struct {
-    device: *sdl.GPUDevice,
-
-    downsample_pipeline: *sdl.GPUComputePipeline,
-    tracing_pipeline: *sdl.GPUComputePipeline,
-    upsample_pipeline: *sdl.GPUComputePipeline,
-
-    downsampled_depth: *sdl.GPUTexture,
-    downsampled_normals: *sdl.GPUTexture,
-    gi_target: *sdl.GPUTexture,
-    specular_target: *sdl.GPUTexture,
-    upsampled_gi_target: *sdl.GPUTexture,
-    upsampled_specular_target: *sdl.GPUTexture,
-
-    sampler: *sdl.GPUSampler,
-
-    fn init(gpa: std.mem.Allocator, device: *sdl.GPUDevice) !TracingPass {
-        const downsample_pipeline = blk: {
-            const file = try std.fs.cwd().openFile(
-                "data/shaders/downsample.comp.spv",
-                .{ .mode = .read_only },
-            );
-            defer file.close();
-            var reader = file.reader(&read_buffer);
-            const bytes = try reader.interface.allocRemaining(gpa, .unlimited);
-            defer gpa.free(bytes);
-
-            break :blk try sdl.createGPUComputePipeline(device, &.{
-                .code_size = bytes.len,
-                .code = bytes.ptr,
-                .entrypoint = "main",
-                .format = sdl.c.SDL_GPU_SHADERFORMAT_SPIRV,
-                .num_samplers = 1,
-                .num_readonly_storage_textures = 0,
-                .num_readonly_storage_buffers = 0,
-                .num_readwrite_storage_textures = 2,
-                .num_readwrite_storage_buffers = 0,
-                .num_uniform_buffers = 1,
-                .threadcount_x = 8,
-                .threadcount_y = 8,
-                .threadcount_z = 1,
-            });
-        };
-        errdefer sdl.releaseGPUComputePipeline(device, downsample_pipeline);
-
-        const tracing_pipeline = blk: {
-            const file = try std.fs.cwd().openFile(
-                "data/shaders/tracing.comp.spv",
-                .{ .mode = .read_only },
-            );
-            defer file.close();
-            var reader = file.reader(&read_buffer);
-            const bytes = try reader.interface.allocRemaining(gpa, .unlimited);
-            defer gpa.free(bytes);
-
-            break :blk try sdl.createGPUComputePipeline(device, &.{
-                .code_size = bytes.len,
-                .code = bytes.ptr,
-                .entrypoint = "main",
-                .format = sdl.c.SDL_GPU_SHADERFORMAT_SPIRV,
-                .num_samplers = 4,
-                .num_readonly_storage_textures = 0,
-                .num_readonly_storage_buffers = 0,
-                .num_readwrite_storage_textures = 2,
-                .num_readwrite_storage_buffers = 0,
-                .num_uniform_buffers = 2,
-                .threadcount_x = 8,
-                .threadcount_y = 8,
-                .threadcount_z = 1,
-            });
-        };
-        errdefer sdl.releaseGPUComputePipeline(device, tracing_pipeline);
-
-        const upsample_pipeline = blk: {
-            const file = try std.fs.cwd().openFile(
-                "data/shaders/upsample.comp.spv",
-                .{ .mode = .read_only },
-            );
-            defer file.close();
-            var reader = file.reader(&read_buffer);
-            const bytes = try reader.interface.allocRemaining(gpa, .unlimited);
-            defer gpa.free(bytes);
-
-            break :blk try sdl.createGPUComputePipeline(device, &.{
-                .code_size = bytes.len,
-                .code = bytes.ptr,
-                .entrypoint = "main",
-                .format = sdl.c.SDL_GPU_SHADERFORMAT_SPIRV,
-                .num_samplers = 4,
-                .num_readonly_storage_textures = 0,
-                .num_readonly_storage_buffers = 0,
-                .num_readwrite_storage_textures = 2,
-                .num_readwrite_storage_buffers = 0,
-                .num_uniform_buffers = 0,
-                .threadcount_x = 8,
-                .threadcount_y = 8,
-                .threadcount_z = 1,
-            });
-        };
-        errdefer sdl.releaseGPUComputePipeline(device, upsample_pipeline);
-
-        const downsampled_depth = try sdl.createGPUTexture(device, &.{
-            .type = sdl.c.SDL_GPU_TEXTURETYPE_2D,
-            .format = sdl.c.SDL_GPU_TEXTUREFORMAT_R32_FLOAT,
-            .usage = sdl.c.SDL_GPU_TEXTUREUSAGE_COMPUTE_STORAGE_SIMULTANEOUS_READ_WRITE |
-                sdl.c.SDL_GPU_TEXTUREUSAGE_SAMPLER,
-            .width = window_width / 2,
-            .height = window_height / 2,
-            .layer_count_or_depth = 1,
-            .num_levels = 1,
-            .sample_count = sdl.c.SDL_GPU_SAMPLECOUNT_1,
-        });
-        errdefer sdl.releaseGPUTexture(device, downsampled_depth);
-
-        const downsampled_normals = try sdl.createGPUTexture(device, &.{
-            .type = sdl.c.SDL_GPU_TEXTURETYPE_2D,
-            .format = sdl.c.SDL_GPU_TEXTUREFORMAT_R16G16_FLOAT,
-            .usage = sdl.c.SDL_GPU_TEXTUREUSAGE_COMPUTE_STORAGE_SIMULTANEOUS_READ_WRITE |
-                sdl.c.SDL_GPU_TEXTUREUSAGE_SAMPLER,
-            .width = window_width / 2,
-            .height = window_height / 2,
-            .layer_count_or_depth = 1,
-            .num_levels = 1,
-            .sample_count = sdl.c.SDL_GPU_SAMPLECOUNT_1,
-        });
-        errdefer sdl.releaseGPUTexture(device, downsampled_normals);
-
-        const gi_target = try sdl.createGPUTexture(device, &.{
-            .type = sdl.c.SDL_GPU_TEXTURETYPE_2D,
-            .format = sdl.c.SDL_GPU_TEXTUREFORMAT_R16G16B16A16_FLOAT,
-            .usage = sdl.c.SDL_GPU_TEXTUREUSAGE_COMPUTE_STORAGE_SIMULTANEOUS_READ_WRITE |
-                sdl.c.SDL_GPU_TEXTUREUSAGE_SAMPLER,
-            .width = window_width / 2,
-            .height = window_height / 2,
-            .layer_count_or_depth = 1,
-            .num_levels = 1,
-            .sample_count = sdl.c.SDL_GPU_SAMPLECOUNT_1,
-        });
-        errdefer sdl.releaseGPUTexture(device, gi_target);
-
-        const specular_target = try sdl.createGPUTexture(device, &.{
-            .type = sdl.c.SDL_GPU_TEXTURETYPE_2D,
-            .format = sdl.c.SDL_GPU_TEXTUREFORMAT_R16G16B16A16_FLOAT,
-            .usage = sdl.c.SDL_GPU_TEXTUREUSAGE_COMPUTE_STORAGE_SIMULTANEOUS_READ_WRITE |
-                sdl.c.SDL_GPU_TEXTUREUSAGE_SAMPLER,
-            .width = window_width / 2,
-            .height = window_height / 2,
-            .layer_count_or_depth = 1,
-            .num_levels = 1,
-            .sample_count = sdl.c.SDL_GPU_SAMPLECOUNT_1,
-        });
-        errdefer sdl.releaseGPUTexture(device, specular_target);
-
-        const upsampled_gi_target = try sdl.createGPUTexture(device, &.{
-            .type = sdl.c.SDL_GPU_TEXTURETYPE_2D,
-            .format = sdl.c.SDL_GPU_TEXTUREFORMAT_R16G16B16A16_FLOAT,
-            .usage = sdl.c.SDL_GPU_TEXTUREUSAGE_COMPUTE_STORAGE_SIMULTANEOUS_READ_WRITE |
-                sdl.c.SDL_GPU_TEXTUREUSAGE_SAMPLER,
-            .width = window_width,
-            .height = window_height,
-            .layer_count_or_depth = 1,
-            .num_levels = 1,
-            .sample_count = sdl.c.SDL_GPU_SAMPLECOUNT_1,
-        });
-        errdefer sdl.releaseGPUTexture(device, upsampled_gi_target);
-
-        const upsampled_specular_target = try sdl.createGPUTexture(device, &.{
-            .type = sdl.c.SDL_GPU_TEXTURETYPE_2D,
-            .format = sdl.c.SDL_GPU_TEXTUREFORMAT_R16G16B16A16_FLOAT,
-            .usage = sdl.c.SDL_GPU_TEXTUREUSAGE_COMPUTE_STORAGE_SIMULTANEOUS_READ_WRITE |
-                sdl.c.SDL_GPU_TEXTUREUSAGE_SAMPLER,
-            .width = window_width,
-            .height = window_height,
-            .layer_count_or_depth = 1,
-            .num_levels = 1,
-            .sample_count = sdl.c.SDL_GPU_SAMPLECOUNT_1,
-        });
-        errdefer sdl.releaseGPUTexture(device, upsampled_specular_target);
-
-        const sampler = try sdl.createGPUSampler(device, &.{
-            .min_filter = sdl.c.SDL_GPU_FILTER_LINEAR,
-            .mag_filter = sdl.c.SDL_GPU_FILTER_LINEAR,
-            .address_mode_u = sdl.c.SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE,
-            .address_mode_v = sdl.c.SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE,
-            .address_mode_w = sdl.c.SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE,
-        });
-        errdefer sdl.releaseGPUSampler(device, sampler);
-
-        return .{
-            .device = device,
-            .downsample_pipeline = downsample_pipeline,
-            .tracing_pipeline = tracing_pipeline,
-            .upsample_pipeline = upsample_pipeline,
-            .downsampled_depth = downsampled_depth,
-            .downsampled_normals = downsampled_normals,
-            .gi_target = gi_target,
-            .specular_target = specular_target,
-            .upsampled_gi_target = upsampled_gi_target,
-            .upsampled_specular_target = upsampled_specular_target,
-            .sampler = sampler,
-        };
-    }
-
-    fn deinit(pass: *TracingPass) void {
-        sdl.releaseGPUSampler(pass.device, pass.sampler);
-        sdl.releaseGPUTexture(pass.device, pass.upsampled_specular_target);
-        sdl.releaseGPUTexture(pass.device, pass.upsampled_gi_target);
-        sdl.releaseGPUTexture(pass.device, pass.specular_target);
-        sdl.releaseGPUTexture(pass.device, pass.gi_target);
-        sdl.releaseGPUTexture(pass.device, pass.downsampled_depth);
-        sdl.releaseGPUTexture(pass.device, pass.downsampled_normals);
-        sdl.releaseGPUComputePipeline(pass.device, pass.upsample_pipeline);
-        sdl.releaseGPUComputePipeline(pass.device, pass.tracing_pipeline);
-        sdl.releaseGPUComputePipeline(pass.device, pass.downsample_pipeline);
-        pass.* = undefined;
-    }
-
-    fn run(
-        pass: *TracingPass,
-        command_buffer: *sdl.GPUCommandBuffer,
-        depth_buffer: *sdl.GPUTexture,
-        inverse_camera_vp: zm.Mat,
-        cascade_anchors: [MAX_ANCHORS][4]f32,
-        energy_cascades: *sdl.GPUTexture,
-        color_cascades: *sdl.GPUTexture,
-    ) !void {
-        sdl.pushGPUDebugGroup(command_buffer, "tracing");
-
-        const downsample_pass = try sdl.beginGPUComputePass(
-            command_buffer,
-            &.{
-                .{ .texture = pass.downsampled_depth, .cycle = true },
-                .{ .texture = pass.downsampled_normals, .cycle = true },
-            },
-            &.{},
-        );
-        sdl.bindGPUComputePipeline(downsample_pass, pass.downsample_pipeline);
-        sdl.bindGPUComputeSamplers(downsample_pass, 0, &.{
-            .{ .texture = depth_buffer, .sampler = pass.sampler },
-        });
-        sdl.pushGPUComputeUniformData(
-            command_buffer,
-            0,
-            &zm.matToArr(inverse_camera_vp),
-            @sizeOf([16]f32),
-        );
-        sdl.dispatchGPUCompute(
-            downsample_pass,
-            (window_width / 2 + 7) / 8,
-            (window_height / 2 + 7) / 8,
-            1,
-        );
-        sdl.endGPUComputePass(downsample_pass);
-
-        const tracing_pass = try sdl.beginGPUComputePass(
-            command_buffer,
-            &.{
-                .{ .texture = pass.gi_target, .cycle = true },
-                .{ .texture = pass.specular_target, .cycle = true },
-            },
-            &.{},
-        );
-        sdl.bindGPUComputePipeline(tracing_pass, pass.tracing_pipeline);
-        sdl.bindGPUComputeSamplers(tracing_pass, 0, &.{
-            .{ .texture = pass.downsampled_depth, .sampler = pass.sampler },
-            .{ .texture = pass.downsampled_normals, .sampler = pass.sampler },
-            .{ .texture = energy_cascades, .sampler = pass.sampler },
-            .{ .texture = color_cascades, .sampler = pass.sampler },
-        });
-        sdl.pushGPUComputeUniformData(command_buffer, 0, &VoxelizePass.CommonUBO{
-            .cascade_size = VoxelizePass.cascade_size,
-            .cascade_mask = VoxelizePass.cascade_mask,
-            .n_cascades = VoxelizePass.n_cascades,
-            .min_voxel_size = VoxelizePass.min_voxel_size,
-            .anchors = cascade_anchors,
-        }, @sizeOf(VoxelizePass.CommonUBO));
-        sdl.pushGPUComputeUniformData(
-            command_buffer,
-            1,
-            &zm.matToArr(inverse_camera_vp),
-            @sizeOf([16]f32),
-        );
-        sdl.dispatchGPUCompute(
-            tracing_pass,
-            (window_width / 2 + 7) / 8,
-            (window_height / 2 + 7) / 8,
-            1,
-        );
-        sdl.endGPUComputePass(tracing_pass);
-
-        const upsample_pass = try sdl.beginGPUComputePass(
-            command_buffer,
-            &.{
-                .{ .texture = pass.upsampled_gi_target, .cycle = true },
-                .{ .texture = pass.upsampled_specular_target, .cycle = true },
-            },
-            &.{},
-        );
-        sdl.bindGPUComputePipeline(upsample_pass, pass.upsample_pipeline);
-        sdl.bindGPUComputeSamplers(upsample_pass, 0, &.{
-            .{ .texture = depth_buffer, .sampler = pass.sampler },
-            .{ .texture = pass.downsampled_depth, .sampler = pass.sampler },
-            .{ .texture = pass.gi_target, .sampler = pass.sampler },
-            .{ .texture = pass.specular_target, .sampler = pass.sampler },
-        });
-        sdl.dispatchGPUCompute(
-            upsample_pass,
-            (window_width + 7) / 8,
-            (window_height + 7) / 8,
-            1,
-        );
-        sdl.endGPUComputePass(upsample_pass);
-
-        sdl.popGPUDebugGroup(command_buffer);
-    }
-};
-
 const DebugPass = struct {
     const DebugUBO = extern struct {
         inverse_view_matrix: [16]f32 align(16),
@@ -1286,7 +969,7 @@ const VoxelizePass = struct {
                 .format = sdl.c.SDL_GPU_SHADERFORMAT_SPIRV,
                 .num_samplers = 0,
                 .num_readonly_storage_textures = 0,
-                .num_readonly_storage_buffers = 1,
+                .num_readonly_storage_buffers = 2,
                 .num_readwrite_storage_textures = 2,
                 .num_readwrite_storage_buffers = 0,
                 .num_uniform_buffers = 2,
@@ -1809,6 +1492,29 @@ const VoxelizePass = struct {
             sdl.dispatchGPUCompute(skylight_sweep_pass, (n_roots + 63) / 64, 1, 1);
         }
         sdl.endGPUComputePass(skylight_sweep_pass);
+
+        const blend_energy_pass = try sdl.beginGPUComputePass(command_buffer, &.{
+            .{ .texture = pass.energy_cascades[pass.ix_old_slot] }, // could be a sampler
+            .{ .texture = pass.energy_cascades[pass.ix_new_slot], .cycle = true },
+        }, &.{});
+        sdl.bindGPUComputePipeline(blend_energy_pass, pass.blend_energy_pipeline);
+        sdl.bindGPUComputeStorageBuffers(blend_energy_pass, 0, &.{
+            pass.voxel_targets[pass.ix_new_slot],
+            pass.visibility_targets[pass.ix_new_slot],
+        });
+        sdl.pushGPUComputeUniformData(command_buffer, 0, &CommonUBO{
+            .cascade_size = cascade_size,
+            .cascade_mask = cascade_mask,
+            .n_cascades = n_cascades,
+            .min_voxel_size = min_voxel_size,
+            .anchors = pass.anchors,
+        }, @sizeOf(CommonUBO));
+        sdl.pushGPUComputeUniformData(command_buffer, 1, &UpdateUBO{
+            .anchor_moves = pass.anchor_moves,
+            .target_cascades = time_slices[pass.ix_time_slice],
+        }, @sizeOf(UpdateUBO));
+        sdl.dispatchGPUCompute(blend_energy_pass, (len_cascades + 63) / 64, 1, 1);
+        sdl.endGPUComputePass(blend_energy_pass);
 
         sdl.popGPUDebugGroup(command_buffer);
     }
