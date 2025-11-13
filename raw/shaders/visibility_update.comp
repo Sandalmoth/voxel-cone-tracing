@@ -1,0 +1,71 @@
+#version 460
+
+#include "include/defines.glsl"
+
+layout(local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
+
+layout(std430, set = 0, binding = 0) readonly buffer OldVisTargets {
+    uint old_vis_targets[];
+};
+
+layout(std430, set = 1, binding = 0) buffer NewVisTargets {
+    uint new_vis_targets[];
+};
+
+layout(std140, set = 2, binding = 0) uniform CommonUBO {
+    uvec4 cascade_size; // xyz
+    uvec4 cascade_mask;
+    uint n_cascades;
+    float min_voxel_size;
+    vec4 anchors[MAX_CASCADES];
+};
+
+layout(std140, set = 2, binding = 1) uniform UpdateUBO {
+    vec4 anchor_moves[MAX_CASCADES];
+    uvec2 target_cascades;
+};
+
+#include "include/voxel_utils.glsl"
+
+int floorDiv2(int x) {
+    return x >= 0 ? x / 2 : (x - 1) / 2;
+}
+
+ivec3 floorDiv2(ivec3 v) {
+    return ivec3(
+        floorDiv2(v.x),
+        floorDiv2(v.y),
+        floorDiv2(v.z)
+    );
+}
+
+void main() {
+    uint global_id = gl_GlobalInvocationID.x;
+    if (global_id >= n_cascades * cascade_size[3]) return;
+    
+    uint cascade = indexToCascade(global_id);
+    if (cascade == target_cascades[0] || cascade == target_cascades[1]) {
+        new_vis_targets[global_id] = 0u;
+    } else {
+        ivec3 voxel_pos = indexToPos(global_id);
+        vec3 anchor_move = anchor_moves[cascade].xyz / voxelSize(cascade);
+        ivec3 reprojected_pos = voxel_pos + ivec3(round(anchor_move));
+        uint reprojected_cascade = cascade;
+        while (reprojected_pos.x < -int(cascade_size.x) / 2 ||
+               reprojected_pos.x >= int(cascade_size.x) / 2 ||
+               reprojected_pos.y < -int(cascade_size.y) / 2 ||
+               reprojected_pos.y >= int(cascade_size.y) / 2 ||
+               reprojected_pos.z < -int(cascade_size.z) / 2 ||
+               reprojected_pos.z >= int(cascade_size.z) / 2) {
+            reprojected_pos = floorDiv2(reprojected_pos);
+            reprojected_cascade += 1;
+        }
+
+        if (reprojected_cascade >= n_cascades) {
+            new_vis_targets[global_id] = 0u;
+        } else {
+            uint reprojected_index = indexFromCascadePos(reprojected_cascade, reprojected_pos);
+            new_vis_targets[global_id] = old_vis_targets[reprojected_index];
+        }
+    }
+}

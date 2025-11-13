@@ -1,0 +1,69 @@
+#version 460
+
+#include "include/defines.glsl"
+
+layout(local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
+
+layout(std430, set = 0, binding = 0) readonly buffer VoxelCascades {
+    uint voxel_targets[];
+};
+
+layout(std430, set = 1, binding = 0) buffer SkylightVisibility {
+    float visibility_targets[];
+};
+
+layout(std140, set = 2, binding = 0) uniform CommonUBO {
+    uvec4 cascade_size; // xyz
+    uvec4 cascade_mask;
+    uint n_cascades;
+    float min_voxel_size;
+    vec4 anchors[MAX_CASCADES];
+};
+layout(std140, set = 2, binding = 1) uniform InjectUBO {
+    ivec4 bresenham[64];
+    ivec4 origin;
+    ivec4 step_a;
+    ivec4 step_b;
+    vec4 light_direction;
+    uint n_a;
+    uint n_b;
+    uint target_cascade;
+};
+
+#include "include/voxel_utils.glsl"
+
+void main() {
+    uint global_id = gl_GlobalInvocationID.x;
+    
+    int a = int(global_id % n_a);
+    int b = int(global_id / n_a);
+    ivec3 root = (origin + a * step_a + b * step_b).xyz;
+
+    float visibility = 1.0;
+    bool first_entry = target_cascade + 1 < n_cascades;
+    for (uint i = 0u; i < 64; ++i) {
+        ivec3 voxel_pos = root + bresenham[i].xyz;
+
+        if (any(lessThan(voxel_pos, ivec3(-32))) ||
+            any(greaterThan(voxel_pos, ivec3(31)))) continue;
+
+        // is there some nicer construction to do this once at the start?
+        // this seems like it would cause a lot of extra divergence
+        // i guess we could precompute the outer voxel on the cpu when doing the bresenham path
+        // or we could do a dda like intersection test to find where it enters
+        if (first_entry) {
+            // if we are inside another cascade, inherit the starting value
+            // TODO think about the precise indexing
+            ivec3 outer_voxel_pos = voxel_pos / 2;
+            uint ix_outer_voxel = indexFromCascadePos(target_cascade + 1, outer_voxel_pos);
+            visibility = visibility_targets[ix_outer_voxel];
+            first_entry = false;
+        }
+        
+        uint ix_voxel = indexFromCascadePos(target_cascade, voxel_pos);
+        float opacity = unpackOpacity(voxel_targets[ix_voxel]);
+        visibility *= 1 - opacity;
+        visibility_targets[ix_voxel] = visibility;
+    }
+}
+

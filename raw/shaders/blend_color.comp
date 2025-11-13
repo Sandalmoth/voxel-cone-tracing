@@ -24,6 +24,7 @@ layout(std140, set = 2, binding = 1) uniform UpdateUBO {
     uvec2 target_cascades; // not used here but whatever
 };
 
+// rates were numerically determined to minimize RMSD for the EMA compared to a linear blend
 float blend_rates[MAX_CASCADES] = {
     6.145e-01, 6.145e-01,
     3.542e-01, 3.542e-01,

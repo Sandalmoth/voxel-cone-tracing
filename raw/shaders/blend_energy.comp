@@ -1,0 +1,60 @@
+#version 460
+
+layout(local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
+
+layout(std430, set = 0, binding = 0) readonly buffer VoxelTargets {
+    uint voxel_targets[];
+};
+layout(std430, set = 0, binding = 1) readonly buffer VisibilityTargets {
+    uint visibility_targets[];
+};
+
+layout(rgba16f, set = 1, binding = 0) uniform image3D u_old_energy_cascades;
+layout(rgba16f, set = 1, binding = 1) uniform image3D u_new_energy_cascades;
+
+layout(std140, set = 2, binding = 0) uniform CommonUBO {
+    uvec4 cascade_size; // xyz
+    uvec4 cascade_mask;
+    uint n_cascades;
+    float min_voxel_size;
+    vec4 anchors[MAX_CASCADES];
+};
+
+layout(std140, set = 2, binding = 1) uniform UpdateUBO {
+    vec4 anchor_moves[MAX_CASCADES];
+    uvec2 target_cascades; // not used here but whatever
+};
+
+void main() {
+    uint global_id = gl_GlobalInvocationID.x;
+    if (global_id >= n_cascades * cascade_size[3]) return;
+
+    uint cascade = indexToCascade(global_id);
+    ivec3 voxel_pos = indexToPos(global_id);
+    vec3 anchor_move = anchor_moves[cascade].xyz / voxelSize(cascade);
+    ivec3 reprojected_pos = voxel_pos + ivec3(round(anchor_move));
+    uint reprojected_cascade = cascade;
+    while (reprojected_pos.x < -int(cascade_size.x) / 2 ||
+           reprojected_pos.x >= int(cascade_size.x) / 2 ||
+           reprojected_pos.y < -int(cascade_size.y) / 2 ||
+           reprojected_pos.y >= int(cascade_size.y) / 2 ||
+           reprojected_pos.z < -int(cascade_size.z) / 2 ||
+           reprojected_pos.z >= int(cascade_size.z) / 2) {
+        reprojected_pos = floorDiv2(reprojected_pos);
+        reprojected_cascade += 1;
+    }
+
+    ivec3 pos = indexToPos(global_id);
+    uint packed = voxel_targets[global_id];
+    float visibility = visibility_targets[global_id];
+
+    // NOTE seems redundant now but for a colored light this makes sense
+    vec4 energy = vec4(0, 0, 0, 0);//visibility);
+    vec4 color = raw;
+
+    imageStore(
+        u_energy_targets,
+        pos + ivec3(cascade_size.xyz / 2) + ivec3(cascade * cascade_size[0], 0, 0),
+        energy
+    );
+}
