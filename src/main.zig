@@ -719,10 +719,12 @@ const VoxelizePass = struct {
     // let's do voxel ray tracing but add temporal stabilization to the lit cascades
 
     visibility_update_pipeline: *sdl.GPUComputePipeline,
+    mipmap_visibility_pipeline: *sdl.GPUComputePipeline,
     skylight_sweep_pipeline: *sdl.GPUComputePipeline,
     blend_energy_pipeline: *sdl.GPUComputePipeline,
+    mipmap_energy_pipeline: *sdl.GPUComputePipeline,
 
-    visibility_targets: [2]*sdl.GPUBuffer,
+    visibility_targets: [3]*sdl.GPUBuffer, // old/new, old/new, mipmap
 
     color_cascades: [2]*sdl.GPUTexture,
     energy_cascades: [2]*sdl.GPUTexture,
@@ -931,6 +933,34 @@ const VoxelizePass = struct {
         };
         errdefer sdl.releaseGPUComputePipeline(device, visibility_update_pipeline);
 
+        const mipmap_visibility_pipeline = blk: {
+            const file = try std.fs.cwd().openFile(
+                "data/shaders/mipmap_visibility.comp.spv",
+                .{ .mode = .read_only },
+            );
+            defer file.close();
+            var reader = file.reader(&read_buffer);
+            const bytes = try reader.interface.allocRemaining(gpa, .unlimited);
+            defer gpa.free(bytes);
+
+            break :blk try sdl.createGPUComputePipeline(device, &.{
+                .code_size = bytes.len,
+                .code = bytes.ptr,
+                .entrypoint = "main",
+                .format = sdl.c.SDL_GPU_SHADERFORMAT_SPIRV,
+                .num_samplers = 0,
+                .num_readonly_storage_textures = 0,
+                .num_readonly_storage_buffers = 2,
+                .num_readwrite_storage_textures = 0,
+                .num_readwrite_storage_buffers = 1,
+                .num_uniform_buffers = 2,
+                .threadcount_x = 64,
+                .threadcount_y = 1,
+                .threadcount_z = 1,
+            });
+        };
+        errdefer sdl.releaseGPUComputePipeline(device, mipmap_visibility_pipeline);
+
         const skylight_sweep_pipeline = blk: {
             const file = try std.fs.cwd().openFile(
                 "data/shaders/skylight_sweep.comp.spv",
@@ -987,6 +1017,34 @@ const VoxelizePass = struct {
         };
         errdefer sdl.releaseGPUComputePipeline(device, blend_energy_pipeline);
 
+        const mipmap_energy_pipeline = blk: {
+            const file = try std.fs.cwd().openFile(
+                "data/shaders/mipmap_energy.comp.spv",
+                .{ .mode = .read_only },
+            );
+            defer file.close();
+            var reader = file.reader(&read_buffer);
+            const bytes = try reader.interface.allocRemaining(gpa, .unlimited);
+            defer gpa.free(bytes);
+
+            break :blk try sdl.createGPUComputePipeline(device, &.{
+                .code_size = bytes.len,
+                .code = bytes.ptr,
+                .entrypoint = "main",
+                .format = sdl.c.SDL_GPU_SHADERFORMAT_SPIRV,
+                .num_samplers = 0,
+                .num_readonly_storage_textures = 0,
+                .num_readonly_storage_buffers = 0,
+                .num_readwrite_storage_textures = 3,
+                .num_readwrite_storage_buffers = 0,
+                .num_uniform_buffers = 2,
+                .threadcount_x = 64,
+                .threadcount_y = 1,
+                .threadcount_z = 1,
+            });
+        };
+        errdefer sdl.releaseGPUComputePipeline(device, mipmap_energy_pipeline);
+
         var voxel_targets: [2]*sdl.GPUBuffer = undefined;
         voxel_targets[0] = try sdl.createGPUBuffer(device, &.{
             .usage = sdl.c.SDL_GPU_BUFFERUSAGE_COMPUTE_STORAGE_READ |
@@ -1029,7 +1087,7 @@ const VoxelizePass = struct {
         });
         errdefer sdl.releaseGPUBuffer(device, triangle_bins);
 
-        var visibility_targets: [2]*sdl.GPUBuffer = undefined;
+        var visibility_targets: [3]*sdl.GPUBuffer = undefined;
         visibility_targets[0] = try sdl.createGPUBuffer(device, &.{
             .usage = sdl.c.SDL_GPU_BUFFERUSAGE_COMPUTE_STORAGE_READ |
                 sdl.c.SDL_GPU_BUFFERUSAGE_COMPUTE_STORAGE_WRITE,
@@ -1042,6 +1100,12 @@ const VoxelizePass = struct {
             .size = len_cascades * @sizeOf(u32),
         });
         errdefer sdl.releaseGPUBuffer(device, visibility_targets[1]);
+        visibility_targets[2] = try sdl.createGPUBuffer(device, &.{
+            .usage = sdl.c.SDL_GPU_BUFFERUSAGE_COMPUTE_STORAGE_READ |
+                sdl.c.SDL_GPU_BUFFERUSAGE_COMPUTE_STORAGE_WRITE,
+            .size = len_cascades * @sizeOf(u32),
+        });
+        errdefer sdl.releaseGPUBuffer(device, visibility_targets[2]);
 
         var energy_cascades: [2]*sdl.GPUTexture = undefined;
         energy_cascades[0] = try sdl.createGPUTexture(device, &.{
@@ -1113,8 +1177,10 @@ const VoxelizePass = struct {
             .triangle_buffer = triangle_buffer,
             .triangle_bins = triangle_bins,
             .visibility_update_pipeline = visibility_update_pipeline,
+            .mipmap_visibility_pipeline = mipmap_visibility_pipeline,
             .skylight_sweep_pipeline = skylight_sweep_pipeline,
             .blend_energy_pipeline = blend_energy_pipeline,
+            .mipmap_energy_pipeline = mipmap_energy_pipeline,
             .visibility_targets = visibility_targets,
             .energy_cascades = energy_cascades,
             .color_cascades = color_cascades,
@@ -1126,14 +1192,18 @@ const VoxelizePass = struct {
         sdl.releaseGPUBuffer(pass.device, pass.triangle_buffer);
         sdl.releaseGPUBuffer(pass.device, pass.triangle_bin_offsets);
         sdl.releaseGPUBuffer(pass.device, pass.triangle_bin_counters);
+        for (0..3) |i| {
+            sdl.releaseGPUBuffer(pass.device, pass.visibility_targets[i]);
+        }
         for (0..2) |i| {
             sdl.releaseGPUTexture(pass.device, pass.color_cascades[i]);
             sdl.releaseGPUTexture(pass.device, pass.energy_cascades[i]);
-            sdl.releaseGPUBuffer(pass.device, pass.visibility_targets[i]);
             sdl.releaseGPUBuffer(pass.device, pass.voxel_targets[i]);
         }
+        sdl.releaseGPUComputePipeline(pass.device, pass.mipmap_energy_pipeline);
         sdl.releaseGPUComputePipeline(pass.device, pass.blend_energy_pipeline);
         sdl.releaseGPUComputePipeline(pass.device, pass.skylight_sweep_pipeline);
+        sdl.releaseGPUComputePipeline(pass.device, pass.mipmap_visibility_pipeline);
         sdl.releaseGPUComputePipeline(pass.device, pass.visibility_update_pipeline);
         sdl.releaseGPUComputePipeline(pass.device, pass.blend_color_pipeline);
         sdl.releaseGPUComputePipeline(pass.device, pass.voxelization_pipeline);
@@ -1500,6 +1570,30 @@ const VoxelizePass = struct {
         }
         sdl.endGPUComputePass(skylight_sweep_pass);
 
+        const mipmap_visibility_pass = try sdl.beginGPUComputePass(command_buffer, &.{}, &.{
+            .{ .buffer = pass.visibility_targets[2] },
+        });
+        sdl.bindGPUComputeStorageBuffers(mipmap_visibility_pass, 0, &.{
+            pass.voxel_targets[pass.ix_new_slot],
+            pass.visibility_targets[pass.ix_new_slot],
+        });
+        sdl.bindGPUComputePipeline(mipmap_visibility_pass, pass.mipmap_visibility_pipeline);
+        sdl.pushGPUComputeUniformData(command_buffer, 0, &CommonUBO{
+            .cascade_size = cascade_size,
+            .cascade_mask = cascade_mask,
+            .n_cascades = n_cascades,
+            .min_voxel_size = min_voxel_size,
+            .anchors = pass.anchors,
+        }, @sizeOf(CommonUBO));
+        for (0..n_cascades) |i| {
+            sdl.pushGPUComputeUniformData(command_buffer, 1, &VoxelizeUBO{
+                .bin_group_offset = 0,
+                .target_cascade = @intCast(i),
+            }, @sizeOf(VoxelizeUBO));
+            sdl.dispatchGPUCompute(mipmap_visibility_pass, (cascade_size[3] + 63) / 64, 1, 1);
+        }
+        sdl.endGPUComputePass(mipmap_visibility_pass);
+
         const blend_energy_pass = try sdl.beginGPUComputePass(command_buffer, &.{
             .{ .texture = pass.energy_cascades[pass.ix_old_slot] }, // could be a sampler
             .{ .texture = pass.energy_cascades[pass.ix_new_slot], .cycle = true },
@@ -1507,7 +1601,7 @@ const VoxelizePass = struct {
         sdl.bindGPUComputePipeline(blend_energy_pass, pass.blend_energy_pipeline);
         sdl.bindGPUComputeStorageBuffers(blend_energy_pass, 0, &.{
             pass.voxel_targets[pass.ix_new_slot],
-            pass.visibility_targets[pass.ix_new_slot],
+            pass.visibility_targets[2],
         });
         sdl.pushGPUComputeUniformData(command_buffer, 0, &CommonUBO{
             .cascade_size = cascade_size,
@@ -1523,6 +1617,27 @@ const VoxelizePass = struct {
         }, @sizeOf(UpdateUBO2));
         sdl.dispatchGPUCompute(blend_energy_pass, (len_cascades + 63) / 64, 1, 1);
         sdl.endGPUComputePass(blend_energy_pass);
+
+        // const mipmap_energy_pass = try sdl.beginGPUComputePass(command_buffer, &.{
+        //     .{ .texture = pass.mipmapped_energy_cascades, .cycle = true },
+        //     .{ .texture = pass.energy_cascades[pass.ix_new_slot] },
+        // }, &.{});
+        // sdl.bindGPUComputePipeline(mipmap_energy_pass, pass.mipmap_energy_pipeline);
+        // sdl.pushGPUComputeUniformData(command_buffer, 0, &CommonUBO{
+        //     .cascade_size = cascade_size,
+        //     .cascade_mask = cascade_mask,
+        //     .n_cascades = n_cascades,
+        //     .min_voxel_size = min_voxel_size,
+        //     .anchors = pass.anchors,
+        // }, @sizeOf(CommonUBO));
+        // for (0..n_cascades) |i| {
+        //     sdl.pushGPUComputeUniformData(command_buffer, 1, &VoxelizeUBO{
+        //         .bin_group_offset = 0,
+        //         .target_cascade = @intCast(i),
+        //     }, @sizeOf(VoxelizeUBO));
+        //     sdl.dispatchGPUCompute(mipmap_energy_pass, (cascade_size[3] + 63) / 64, 1, 1);
+        // }
+        // sdl.endGPUComputePass(mipmap_energy_pass);
 
         sdl.popGPUDebugGroup(command_buffer);
     }

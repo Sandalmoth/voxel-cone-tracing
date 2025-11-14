@@ -170,7 +170,7 @@ void main() {
 
     const float gi_factor = 16.0;
     const float ao_power = 1.0;
-    const vec3 ambient = vec3(5e-2);
+    const vec3 ambient = vec3(2.5e-2);
     rad += u_material_data.diffuse.rgb * pow(gi.a, ao_power) *
           (gi_factor * gi.rgb + ambient);
    

@@ -30,7 +30,7 @@ layout(std140, set = 2, binding = 1) uniform UpdateUBO {
 
 #include "include/voxel_utils.glsl"
 
-float blend_rate_modifier = 0.05;
+float blend_rate_modifier = 0.125;
 float blend_rates[MAX_CASCADES] = {
     6.145e-01, 6.145e-01,
     3.542e-01, 3.542e-01,

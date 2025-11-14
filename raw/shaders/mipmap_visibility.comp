@@ -1,0 +1,93 @@
+#version 460
+
+#include "include/defines.glsl"
+
+layout(local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
+
+layout(std430, set = 0, binding = 0) readonly buffer VoxelTargets {
+    uint voxel_targets[];
+};
+layout(std430, set = 0, binding = 1) readonly buffer NewVisTargets {
+    uint visibility_targets[];
+};
+
+layout(std430, set = 1, binding = 0) buffer MipmapTargets {
+    uint mipmap_targets[];
+};
+
+layout(std140, set = 2, binding = 0) uniform CommonUBO {
+    uvec4 cascade_size; // xyz
+    uvec4 cascade_mask;
+    uint n_cascades;
+    float min_voxel_size;
+    vec4 anchors[MAX_CASCADES];
+};
+layout(std140, set = 2, binding = 1) uniform VoxelizeUBO {
+    uint bin_group_offset; // we just need the target_cascade, but i didn't want to do the cpuside
+    uint target_cascade;  
+};
+
+#include "include/voxel_utils.glsl"
+
+ivec3 offsets[8] = {
+    ivec3(0, 0, 0),
+    ivec3(0, 0, 1),
+    ivec3(0, 1, 0),
+    ivec3(0, 1, 1),
+    ivec3(1, 0, 0),
+    ivec3(1, 0, 1),
+    ivec3(1, 1, 0),
+    ivec3(1, 1, 1)
+};
+
+void main() {
+    uint global_id = gl_GlobalInvocationID.x;
+    if (global_id >= cascade_size[3]) return;
+
+    if (target_cascade == 0) {
+        mipmap_targets[global_id] = visibility_targets[global_id];
+        return;
+    }
+
+    ivec3 local_pos = indexToPos(global_id);
+    // hardcoded dims...
+    if (local_pos.x < -16 || local_pos.x >= 15 ||
+        local_pos.y < -16 || local_pos.y >= 15 ||
+        local_pos.z < -16 || local_pos.z >= 15) {
+
+        uint ix = indexFromCascadePos(target_cascade, local_pos);
+        mipmap_targets[ix] = visibility_targets[ix];
+    } else {
+        float opacity = 0.0;
+        vec4 visibility = vec4(0.0);
+        for (uint i = 0; i < 8; ++i) {
+            ivec3 pos = 2 * local_pos + offsets[i];
+            uint ix = indexFromCascadePos(target_cascade - 1, pos);
+            opacity += unpackOpacity(voxel_targets[ix]);
+            visibility += unpackUnorm4x8(visibility_targets[ix]);
+        }
+        if (opacity > 0) {
+            visibility /= opacity;
+        } else {
+            visibility = vec4(0.0);
+        }
+        mipmap_targets[indexFromCascadePos(target_cascade, local_pos)] = packUnorm4x8(visibility);
+    }
+
+    // // hardcoded sizes for simplicity
+    // ivec3 local_pos = ivec3(
+    //      global_id & 0x1Fu,
+    //     (global_id / 32) & 0x1Fu,
+    //     (global_id / (32 * 32)) & 0x1Fu
+    // ) - ivec3(16);
+
+    // vec4 visibility = vec4(0.0);
+    // for (uint i = 0; i < 8; ++i) {
+    //     ivec3 pos = 2 * local_pos + offsets[i];
+    //     visibility += unpackUnorm4x8(
+    //         visibility_targets[indexFromCascadePos(target_cascade - 1, pos)]
+    //     );
+    // }
+    // visibility *= 0.125;
+    // visibility_targets[indexFromCascadePos(target_cascade, local_pos)] = packUnorm4x8(visibility);
+}
