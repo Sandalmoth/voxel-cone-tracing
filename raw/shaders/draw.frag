@@ -119,12 +119,13 @@ vec4 gatherRadiance(vec3 origin, vec3 normal, vec3 dir) {
             (uvw.x + float(cascade)) / float(n_cascades),
             uvw.yz
         )));
+        energy = max(0.0, energy);
         vec4 color = texture(u_color_cascades, vec3(
             (uvw.x + float(cascade)) / float(n_cascades),
             uvw.yz
         ));
-        // color.rgb *= energy / (1 + radius);
-        color.rgb *= energy;
+        color.rgb *= energy / (1 + radius);
+        // color.rgb *= energy;
 
         color *= first_cascade_fraction;
         first_cascade_fraction = 1.0;
@@ -155,7 +156,7 @@ void main() {
         bounced += cone_weights[i] * gatherRadiance(v_position, v_normal, amat * diffuse_cones[i]);
     }
     bounced.a = 1.0 - bounced.a;
-    vec4 gi = vec4(0.0, 0.0, 0.0, bounced.a); // just AO
+    vec4 gi = bounced;
 
     float shadow = computeShadow();
 
@@ -167,15 +168,11 @@ void main() {
 
     rad += u_material_data.emissive.rgb;
 
-    const float gi_factor = 1.0;
+    const float gi_factor = 16.0;
     const float ao_power = 1.0;
     const vec3 ambient = vec3(5e-2);
-    // vec4 gi = texelFetch(u_gi, ivec2(gl_FragCoord.xy), 0);
-    // gi.r = max(0, gi.r);
-    // gi.g = max(0, gi.g);
-    // gi.b = max(0, gi.b);
     rad += u_material_data.diffuse.rgb * pow(gi.a, ao_power) *
-          (gi_factor * gi.rgb + vec3(5e-2));
+          (gi_factor * gi.rgb + ambient);
    
     o_color = vec4(rad, 1.0);
 }

@@ -155,6 +155,7 @@ pub fn main() !void {
         //     try trigger();
         // }
 
+        // std.debug.print("{}\n", .{frame_timer.read()});
         lag += @min(frame_timer.lap(), max_tick_ns);
 
         var event: sdl.c.SDL_Event = undefined;

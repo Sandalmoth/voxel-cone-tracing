@@ -30,6 +30,7 @@ layout(std140, set = 2, binding = 1) uniform UpdateUBO {
 
 #include "include/voxel_utils.glsl"
 
+float blend_rate_modifier = 0.05;
 float blend_rates[MAX_CASCADES] = {
     6.145e-01, 6.145e-01,
     3.542e-01, 3.542e-01,
@@ -93,12 +94,12 @@ void main() {
     // vec4 energy = vec4(0.0, 0.0, 0.0, max(dot(normal, -light_direction.xyz), 0.0) * visibility);
 
     if (reprojected_cascade >= n_cascades) {
-        vec4 mixed = mix(vec4(0.0), energy, 0.125 * blend_rates[cascade]);
+        vec4 mixed = mix(vec4(0.0), energy, blend_rate_modifier * blend_rates[cascade]);
         // if (dot(mixed, mixed) < 0.001) mixed = vec4(0.0);
         imageStore(u_new_energy_cascades, image_pos, mixed);
     } else {
         vec4 old = imageLoad(u_old_energy_cascades, reprojected_image_pos);
-        vec4 mixed = mix(old, energy, 0.125 * blend_rates[cascade]);
+        vec4 mixed = mix(old, energy, blend_rate_modifier * blend_rates[cascade]);
         // if (dot(mixed, mixed) < 0.001) mixed = vec4(0.0);
         imageStore(u_new_energy_cascades, image_pos, mixed);
     }
