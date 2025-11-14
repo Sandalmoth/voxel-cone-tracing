@@ -9,7 +9,7 @@ layout(std430, set = 0, binding = 0) readonly buffer VoxelCascades {
 };
 
 layout(std430, set = 1, binding = 0) buffer SkylightVisibility {
-    float visibility_targets[];
+    uint visibility_targets[];
 };
 
 layout(std140, set = 2, binding = 0) uniform CommonUBO {
@@ -24,7 +24,7 @@ layout(std140, set = 2, binding = 1) uniform InjectUBO {
     ivec4 origin;
     ivec4 step_a;
     ivec4 step_b;
-    vec4 light_direction;
+    vec4 light_direction; // could be used in dda
     uint n_a;
     uint n_b;
     uint target_cascade;
@@ -34,6 +34,7 @@ layout(std140, set = 2, binding = 1) uniform InjectUBO {
 
 void main() {
     uint global_id = gl_GlobalInvocationID.x;
+    if (global_id >= n_a * n_b) return;
     
     int a = int(global_id % n_a);
     int b = int(global_id / n_a);
@@ -62,8 +63,8 @@ void main() {
         
         uint ix_voxel = indexFromCascadePos(target_cascade, voxel_pos);
         float opacity = unpackOpacity(voxel_targets[ix_voxel]);
-        visibility *= 1 - opacity;
         visibility_targets[ix_voxel] = packUnorm4x8(vec4(visibility, 0.0, 0.0, 0.0));
+        visibility *= 1 - opacity;
     }
 }
 

@@ -173,10 +173,10 @@ pub fn main() !void {
             if (input.peek(.trigger_capture).pressed) try trigger();
             if (input.peek(.trigger_debug).pressed) extra_debug_trigger = !extra_debug_trigger;
             if (input.peek(.prev_debug_view).pressed) {
-                debug_pass.debug_view = (debug_pass.debug_view + 2) % 3;
+                debug_pass.debug_view = (debug_pass.debug_view + 3) % 4;
             }
             if (input.peek(.next_debug_view).pressed) {
-                debug_pass.debug_view = (debug_pass.debug_view + 1) % 3;
+                debug_pass.debug_view = (debug_pass.debug_view + 1) % 4;
             }
 
             for (scene.motions.items) |*motion| motion.update(tick);
@@ -270,6 +270,7 @@ pub fn main() !void {
             command_buffer,
             voxelize_pass.anchors,
             voxelize_pass.voxel_targets[voxelize_pass.ix_new_slot],
+            // voxelize_pass.visibility_targets[voxelize_pass.ix_new_slot],
             voxelize_pass.energy_cascades[voxelize_pass.ix_new_slot],
             voxelize_pass.color_cascades[voxelize_pass.ix_new_slot],
             camera.v(alpha),
@@ -597,6 +598,11 @@ const VoxelizePass = struct {
         anchor_moves: [MAX_ANCHORS][4]f32 align(16),
         target_cascades: [2]u32 align(16),
     };
+    const UpdateUBO2 = extern struct {
+        anchor_moves: [MAX_ANCHORS][4]f32 align(16),
+        light_direction: [3]f32 align(16),
+        light_intensity: [3]f32 align(16),
+    };
     const BinningAUBO = extern struct {
         model_matrix: [16]f32 align(16),
         diffuse: [4]f32 align(16),
@@ -628,9 +634,9 @@ const VoxelizePass = struct {
     };
     const InjectUBO = extern struct {
         bresenham: [64][4]i32 align(16),
-        origin: [3]i32,
-        step_a: [3]i32,
-        step_b: [3]i32,
+        origin: [3]i32 align(16),
+        step_a: [3]i32 align(16),
+        step_b: [3]i32 align(16),
         light_direction: [3]f32 align(16),
         n_a: u32 align(16),
         n_b: u32,
@@ -1367,7 +1373,6 @@ const VoxelizePass = struct {
         skylight_intensity: [3]f32,
     ) !void {
         sdl.pushGPUDebugGroup(command_buffer, "inject");
-        _ = skylight_intensity;
 
         const visibility_update_pass = try sdl.beginGPUComputePass(command_buffer, &.{}, &.{
             .{ .buffer = pass.visibility_targets[pass.ix_new_slot], .cycle = true },
@@ -1486,6 +1491,7 @@ const VoxelizePass = struct {
             .min_voxel_size = min_voxel_size,
             .anchors = pass.anchors,
         }, @sizeOf(CommonUBO));
+        // for ([_]u32{ 7, 6, 5, 4, 3, 2, 1 }) |target_cascade| {
         for (time_slices[pass.ix_time_slice]) |target_cascade| {
             ubo.target_cascade = @intCast(target_cascade);
             sdl.pushGPUComputeUniformData(command_buffer, 1, &ubo, @sizeOf(InjectUBO));
@@ -1509,10 +1515,11 @@ const VoxelizePass = struct {
             .min_voxel_size = min_voxel_size,
             .anchors = pass.anchors,
         }, @sizeOf(CommonUBO));
-        sdl.pushGPUComputeUniformData(command_buffer, 1, &UpdateUBO{
+        sdl.pushGPUComputeUniformData(command_buffer, 1, &UpdateUBO2{
             .anchor_moves = pass.anchor_moves,
-            .target_cascades = time_slices[pass.ix_time_slice],
-        }, @sizeOf(UpdateUBO));
+            .light_direction = skylight_direction,
+            .light_intensity = skylight_intensity,
+        }, @sizeOf(UpdateUBO2));
         sdl.dispatchGPUCompute(blend_energy_pass, (len_cascades + 63) / 64, 1, 1);
         sdl.endGPUComputePass(blend_energy_pass);
 

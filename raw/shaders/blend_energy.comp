@@ -24,7 +24,8 @@ layout(std140, set = 2, binding = 0) uniform CommonUBO {
 
 layout(std140, set = 2, binding = 1) uniform UpdateUBO {
     vec4 anchor_moves[MAX_CASCADES];
-    uvec2 target_cascades; // not used here but whatever
+    vec4 light_direction;
+    vec4 light_energy;
 };
 
 #include "include/voxel_utils.glsl"
@@ -48,11 +49,16 @@ ivec3 floorDiv2(ivec3 v) {
     );
 }
 
+const float PI = 3.141592653589793;
+const float sqrt_3_over_4pi = sqrt(3.0/(4.0 * PI));
+const float inv_sqrt_4pi = 1.0 / sqrt(4.0 * PI);
+
 void main() {
     uint global_id = gl_GlobalInvocationID.x;
     if (global_id >= n_cascades * cascade_size[3]) return;
 
     uint cascade = indexToCascade(global_id);
+    float voxel_size = voxelSize(cascade);
     ivec3 voxel_pos = indexToPos(global_id);
     vec3 anchor_move = anchor_moves[cascade].xyz / voxelSize(cascade);
     ivec3 reprojected_pos = voxel_pos + ivec3(round(anchor_move));
@@ -77,18 +83,23 @@ void main() {
     uint packed = voxel_targets[global_id];
     float visibility = unpackUnorm4x8(visibility_targets[global_id]).r;
     vec3 normal = unpackNormal(packed);
-
-    vec4 energy = vec4(0.0, 0.0, 0.0, visibility);
-    // TODO compute properly
+    normal *= sign(normal) * sign(-light_direction.xyz);
+    
+    // NOTE to support coloured lighting we have to do this and the color blend step simultaneously
+    float overall_intensity = 0.33 * (light_energy.r + light_energy.g + light_energy.b);
+    float intensity = visibility;// * overall_intensity / pow(6.0 * voxel_size, 2.0);
+    vec4 energy = intensity * vec4(sqrt_3_over_4pi * normal, inv_sqrt_4pi);
+    // vec4 energy = intensity * vec4(0.0, 0.0, 0.0, inv_sqrt_4pi);
+    // vec4 energy = vec4(0.0, 0.0, 0.0, max(dot(normal, -light_direction.xyz), 0.0) * visibility);
 
     if (reprojected_cascade >= n_cascades) {
-        vec4 mixed = mix(vec4(0.0), energy, blend_rates[cascade]);
-        if (dot(mixed, mixed) < 0.01) mixed = vec4(0.0);
+        vec4 mixed = mix(vec4(0.0), energy, 0.125 * blend_rates[cascade]);
+        // if (dot(mixed, mixed) < 0.001) mixed = vec4(0.0);
         imageStore(u_new_energy_cascades, image_pos, mixed);
     } else {
         vec4 old = imageLoad(u_old_energy_cascades, reprojected_image_pos);
-        vec4 mixed = mix(old, energy, blend_rates[cascade]);
-        if (dot(mixed, mixed) < 0.01) mixed = vec4(0.0);
+        vec4 mixed = mix(old, energy, 0.125 * blend_rates[cascade]);
+        // if (dot(mixed, mixed) < 0.001) mixed = vec4(0.0);
         imageStore(u_new_energy_cascades, image_pos, mixed);
     }
 }

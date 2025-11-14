@@ -42,10 +42,11 @@ ivec3 floorDiv2(ivec3 v) {
 void main() {
     uint global_id = gl_GlobalInvocationID.x;
     if (global_id >= n_cascades * cascade_size[3]) return;
-    
+
     uint cascade = indexToCascade(global_id);
     if (cascade == target_cascades[0] || cascade == target_cascades[1]) {
-        // we're overwriting it later anyway
+        // new_vis_targets[global_id] = packUnorm4x8(vec4(0.0));
+        // could clear but we're overwriting it later anyway
     } else {
         ivec3 voxel_pos = indexToPos(global_id);
         vec3 anchor_move = anchor_moves[cascade].xyz / voxelSize(cascade);

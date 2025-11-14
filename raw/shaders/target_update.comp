@@ -71,7 +71,6 @@ void main() {
             uint packed = old_voxel_targets[reprojected_index];
             float opacity = unpackOpacity(packed);
             new_voxel_targets[global_id] = setPackedOpacity(packed, 0.5 * opacity);
-            
         }
     }
 }

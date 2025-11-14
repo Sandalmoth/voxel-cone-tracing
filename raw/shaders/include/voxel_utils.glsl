@@ -168,6 +168,7 @@ vec3 unpackNormal(uint packed) {
     uint xnorm_bits = (packed >> 12u) & 0xFu;
     uint ynorm_bits = (packed >>  8u) & 0xFu;
     uint znorm_bits = (packed >>  4u) & 0xFu;
+    if (xnorm_bits + ynorm_bits + znorm_bits == 0) return vec3(0.0, 0.0, 0.0);
     float x = dequantizeFromBitmask(xnorm_bits, 4);
     float y = dequantizeFromBitmask(ynorm_bits, 4);
     float z = dequantizeFromBitmask(znorm_bits, 4);

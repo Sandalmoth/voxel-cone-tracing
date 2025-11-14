@@ -95,7 +95,7 @@ void main() {
     vec3 lower_bound = min(min(p0, p1), p2);
     vec3 upper_bound = max(max(p0, p1), p2);
 
-    uint packed = packDiffuseNormalOpacity(diffuse.rgb, normal, 1.0);
+    uint packed = packDiffuseNormalOpacity(diffuse.rgb, abs(normal), 1.0);
 
     // directly voxelize small triangles
     // this is increases the cost of the binning if we have many small triangles

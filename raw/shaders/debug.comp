@@ -43,6 +43,14 @@ float voxelAt(vec3 pos) {
     return unpackOpacity(diffuse_cascades[indexFromCascadePos(cascade, voxel_pos)]);
 }
 
+uint packedAt(vec3 pos) {
+    uint cascade = cascadeAt(pos);
+    if (cascade >= n_cascades) return 0u;
+    float voxel_size = voxelSize(cascade);
+    ivec3 voxel_pos = ivec3(floor((pos - anchors[cascade].xyz) / voxel_size));
+    return diffuse_cascades[indexFromCascadePos(cascade, voxel_pos)];
+}
+
 vec4 voxelAt2(vec3 pos) {
     uint cascade = cascadeAt(pos);
     if (cascade >= n_cascades) return vec4(0.0);
@@ -162,7 +170,20 @@ void main() {
 
             if (acc.a > 0.99) break;
         }
-        
+    } else if (debug_view == 3) {
+
+        float step = min_voxel_size * 0.25;
+        for (int i = 0; i < 1024; ++i) {
+            pos += step * ray_dir;
+            step *= 1.01;
+            uint packed = packedAt(pos);
+            vec3 normal = unpackNormal(packed);
+            float opacity = unpackOpacity(packed);
+            acc.rgb += normal * opacity * (1 - acc.a);
+            acc.a += opacity * (1 - acc.a);
+
+            if (acc.a > 0.99) break;
+        }
     }
 
     o_color = (1.0 - acc.a) * o_color + acc.a * acc;
