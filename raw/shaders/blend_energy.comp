@@ -30,7 +30,7 @@ layout(std140, set = 2, binding = 1) uniform UpdateUBO {
 
 #include "include/voxel_utils.glsl"
 
-float blend_rate_modifier = 0.125;
+float blend_rate_modifier = 0.0625;
 float blend_rates[MAX_CASCADES] = {
     6.145e-01, 6.145e-01,
     3.542e-01, 3.542e-01,
@@ -89,7 +89,7 @@ void main() {
     // NOTE to support coloured lighting we have to do this and the color blend step simultaneously
     float overall_intensity = 0.33 * (light_energy.r + light_energy.g + light_energy.b);
     float intensity = visibility;// * overall_intensity / pow(6.0 * voxel_size, 2.0);
-    vec4 energy = intensity * vec4(sqrt_3_over_4pi * normal, inv_sqrt_4pi);
+    vec4 energy = intensity * vec4(0.5 * sqrt_3_over_4pi * normal, inv_sqrt_4pi);
     // vec4 energy = intensity * vec4(0.0, 0.0, 0.0, inv_sqrt_4pi);
     // vec4 energy = vec4(0.0, 0.0, 0.0, max(dot(normal, -light_direction.xyz), 0.0) * visibility);
 
