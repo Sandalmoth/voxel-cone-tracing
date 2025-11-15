@@ -627,6 +627,11 @@ const VoxelizePass = struct {
         bin_group_offset: u32,
         target_cascade: u32,
     };
+    const MipmapUBO = extern struct {
+        offset_a: [3]i32 align(16),
+        offset_b: [3]i32 align(16),
+        target_cascade: u32 align(16),
+    };
     const AssignUBO = extern struct {
         inverse_vp_matrix: [16]f32 align(16),
         light_direction: [3]f32 align(16),
@@ -1586,10 +1591,11 @@ const VoxelizePass = struct {
             .anchors = pass.anchors,
         }, @sizeOf(CommonUBO));
         for (0..n_cascades) |i| {
-            sdl.pushGPUComputeUniformData(command_buffer, 1, &VoxelizeUBO{
-                .bin_group_offset = 0,
+            sdl.pushGPUComputeUniformData(command_buffer, 1, &MipmapUBO{
+                .offset_a = ubo.step_a,
+                .offset_b = ubo.step_b,
                 .target_cascade = @intCast(i),
-            }, @sizeOf(VoxelizeUBO));
+            }, @sizeOf(MipmapUBO));
             sdl.dispatchGPUCompute(mipmap_visibility_pass, (cascade_size[3] + 63) / 64, 1, 1);
         }
         sdl.endGPUComputePass(mipmap_visibility_pass);

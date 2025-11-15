@@ -22,8 +22,9 @@ layout(std140, set = 2, binding = 0) uniform CommonUBO {
     float min_voxel_size;
     vec4 anchors[MAX_CASCADES];
 };
-layout(std140, set = 2, binding = 1) uniform VoxelizeUBO {
-    uint bin_group_offset; // we just need the target_cascade, but i didn't want to do the cpuside
+layout(std140, set = 2, binding = 1) uniform MipmapUBO {
+    ivec4 offset_a;
+    ivec4 offset_b;
     uint target_cascade;  
 };
 
@@ -44,19 +45,61 @@ void main() {
     uint global_id = gl_GlobalInvocationID.x;
     if (global_id >= cascade_size[3]) return;
 
+    ivec3 local_pos = indexToPos(global_id);
+
     if (target_cascade == 0) {
-        mipmap_targets[global_id] = visibility_targets[global_id];
+        vec4 visibility = unpackUnorm4x8(visibility_targets[global_id]);
+        ivec3 pos;
+        pos = local_pos + offset_a.xyz;
+        if (pos.x >= -32 && pos.x < 32 &&
+            pos.y >= -32 && pos.y < 32 &&
+            pos.z >= -32 && pos.z < 32) {
+            visibility = max(
+                visibility,
+                unpackUnorm4x8(visibility_targets[indexFromCascadePos(0, pos)])
+            );
+        }
+        pos = local_pos + offset_b.xyz;
+        if (pos.x >= -32 && pos.x < 32 &&
+            pos.y >= -32 && pos.y < 32 &&
+            pos.z >= -32 && pos.z < 32) {
+            visibility = max(
+                visibility,
+                unpackUnorm4x8(visibility_targets[indexFromCascadePos(0, pos)])
+            );
+        }
+        mipmap_targets[global_id] = packUnorm4x8(visibility);
         return;
     }
 
-    ivec3 local_pos = indexToPos(global_id);
     // hardcoded dims...
     if (local_pos.x < -16 || local_pos.x >= 15 ||
         local_pos.y < -16 || local_pos.y >= 15 ||
         local_pos.z < -16 || local_pos.z >= 15) {
 
         uint ix = indexFromCascadePos(target_cascade, local_pos);
-        mipmap_targets[ix] = visibility_targets[ix];
+        vec4 visibility = unpackUnorm4x8(visibility_targets[ix]);
+        ivec3 pos;
+        pos = local_pos + offset_a.xyz;
+        if (pos.x >= -32 && pos.x < 32 &&
+            pos.y >= -32 && pos.y < 32 &&
+            pos.z >= -32 && pos.z < 32) {
+            visibility = max(
+                visibility,
+                unpackUnorm4x8(visibility_targets[indexFromCascadePos(target_cascade, pos)])
+            );
+        }
+        pos = local_pos + offset_b.xyz;
+        if (pos.x >= -32 && pos.x < 32 &&
+            pos.y >= -32 && pos.y < 32 &&
+            pos.z >= -32 && pos.z < 32) {
+            visibility = max(
+                visibility,
+                unpackUnorm4x8(visibility_targets[indexFromCascadePos(target_cascade, pos)])
+            );
+        }
+        mipmap_targets[ix] = packUnorm4x8(visibility);
+
     } else {
         float opacity = 0.0;
         vec4 visibility = vec4(0.0);
@@ -73,21 +116,4 @@ void main() {
         }
         mipmap_targets[indexFromCascadePos(target_cascade, local_pos)] = packUnorm4x8(visibility);
     }
-
-    // // hardcoded sizes for simplicity
-    // ivec3 local_pos = ivec3(
-    //      global_id & 0x1Fu,
-    //     (global_id / 32) & 0x1Fu,
-    //     (global_id / (32 * 32)) & 0x1Fu
-    // ) - ivec3(16);
-
-    // vec4 visibility = vec4(0.0);
-    // for (uint i = 0; i < 8; ++i) {
-    //     ivec3 pos = 2 * local_pos + offsets[i];
-    //     visibility += unpackUnorm4x8(
-    //         visibility_targets[indexFromCascadePos(target_cascade - 1, pos)]
-    //     );
-    // }
-    // visibility *= 0.125;
-    // visibility_targets[indexFromCascadePos(target_cascade, local_pos)] = packUnorm4x8(visibility);
 }
