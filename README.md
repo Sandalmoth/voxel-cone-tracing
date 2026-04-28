@@ -1,4 +1,4 @@
-# voxel-radiance-cascades
+# voxel-cone-tracing
 
 ![Screenshot](view0.png?raw=true)
 
